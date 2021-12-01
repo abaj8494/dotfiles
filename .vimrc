@@ -123,4 +123,3 @@ set colorcolumn=80
 " Plug 'nvim-lua/plenary.nvim'
 " Plug 'nvim-telescope/telescope.nvim'
 
-#hello dotfiles
