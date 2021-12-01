@@ -169,3 +169,4 @@ tt () {
 
 # aliasing config for dotfiles
 alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aayushbajaj'
+
