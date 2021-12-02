@@ -94,6 +94,7 @@ Plug 'ghifarit53/tokyonight-vim'
 " fuzzy finder fzf
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
+Plug 'tpope/vim-surround'
 call plug#end()
 "set termguicolors
 
