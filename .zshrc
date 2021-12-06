@@ -154,7 +154,7 @@ alias "vv=xclip -o -selection clipboard"
 alias "cl=clear"
 
 #aliasing cse to unsw ssh
-alias "cse=ssh z5362216@cse.unsw.edu.au"
+alias "cse=ssh -X z5362216@cse.unsw.edu.au"
 
 #aliasing displayplacer awk command to reso
 alias "reso=displayplacer list | awk 'END{print}'"
