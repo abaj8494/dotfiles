@@ -4,13 +4,17 @@ set nu
 "turn relative numbers on
 set rnu
 
+if $USER == 'aayushbajaj'
+	set nowrap
+endif
+
 " setting leader key
 let mapleader = " "
 
 
 "remaps
 
-" centre remaps
+" j and k to centre after each move
 nnoremap j jzz
 nnoremap k kzz
 nnoremap n nzzzv
@@ -36,21 +40,40 @@ inoremap <S-Tab> <C-d>
 " fzf
 nnoremap <C-u> :Files<Cr>
 
-" bracket & quote pairs
+" pairs
 inoremap { {}<Left>
 inoremap [ []<Left>
 inoremap ( ()<Left>
 inoremap ' ''<Left>
 inoremap " ""<Left>
 
+nnoremap { <C-u>zz
+nnoremap } <C-d>zz
+
 " leader
-nnoremap <leader>c :bprevious<CR>
-nnoremap <leader>r :bnext<CR> 
+" previous / next in buffer
+nnoremap <leader>h :bprevious<CR>
+nnoremap <leader>t :bnext<CR>
+" navigate buffers
 nnoremap <leader><leader> :buffers<CR>:buffer<Space>
+" insert single character
+nnoremap , i_<Esc>r
+" splits
+" horizontal / vertical split
+nnoremap <leader>- <C-w>s
+nnoremap <leader>s <C-w>v
+" move left / right / down / up through splits
+nnoremap <leader>m <C-w>h
+nnoremap <leader>w <C-w>l
+nnoremap <leader>v <C-w>j
+nnoremap <leader>z <C-w>k
+" kill split
+nnoremap <leader>x <C-w>q
+" open vert split with nt
+nnoremap <leader>u :Vex<CR><C-w>l
 
 " clipboard
 nnoremap Y "*y
-nnoremap P "*p
 
 " /remaps
 
@@ -94,7 +117,6 @@ Plug 'ghifarit53/tokyonight-vim'
 " fuzzy finder fzf
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
-Plug 'tpope/vim-surround'
 call plug#end()
 "set termguicolors
 
@@ -111,6 +133,9 @@ Plug 'wellle/targets.vim'
 " ruler at column 80
 set colorcolumn=80
 
+" keep search centred
+nnoremap n nzzzv
+nnoremap N Nzzzv
 
 " moving text (primeagen)
 " vnoremap J :m '>+1<CR>gv=gv
@@ -123,5 +148,3 @@ set colorcolumn=80
 " telescope plugin -> this only works on neovim!!
 " Plug 'nvim-lua/plenary.nvim'
 " Plug 'nvim-telescope/telescope.nvim'
-
-" hello world. 061221
