@@ -6,6 +6,11 @@ set rnu
 
 if $USER == 'aayushbajaj'
 	set nowrap
+	augroup remember_folds
+		autocmd!
+		autocmd BufWinLeave * mkview
+		autocmd BufWinEnter * silent! loadview
+	augroup END
 endif
 
 " setting leader key
@@ -136,6 +141,7 @@ set colorcolumn=80
 " keep search centred
 nnoremap n nzzzv
 nnoremap N Nzzzv
+
 
 " moving text (primeagen)
 " vnoremap J :m '>+1<CR>gv=gv
