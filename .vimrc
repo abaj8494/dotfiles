@@ -4,6 +4,9 @@ set nu
 "turn relative numbers on
 set rnu
 
+"split new window to right
+set splitright
+
 if $USER == 'aayushbajaj'
 	set nowrap
 	augroup remember_folds
@@ -66,7 +69,7 @@ nnoremap , i_<Esc>r
 " splits
 " horizontal / vertical split
 nnoremap <leader>- <C-w>s
-nnoremap <leader>s <C-w>v
+nnoremap <leader>s <C-w>v 
 " move left / right / down / up through splits
 nnoremap <leader>m <C-w>h
 nnoremap <leader>w <C-w>l
@@ -75,7 +78,7 @@ nnoremap <leader>z <C-w>k
 " kill split
 nnoremap <leader>x <C-w>q
 " open vert split with nt
-nnoremap <leader>u :Vex<CR><C-w>l
+nnoremap <leader>u :vsp<CR>:Explore<CR>
 
 " clipboard
 nnoremap Y "*y

@@ -167,6 +167,7 @@ tt () {
 	termdown $((60*$1))
 }
 
+
 # aliasing config for dotfiles
 alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aayushbajaj'
 
