@@ -157,3 +157,5 @@ nnoremap N Nzzzv
 " telescope plugin -> this only works on neovim!!
 " Plug 'nvim-lua/plenary.nvim'
 " Plug 'nvim-telescope/telescope.nvim'
+" 
+" added line 161
