@@ -145,6 +145,7 @@ set colorcolumn=80
 nnoremap n nzzzv
 nnoremap N Nzzzv
 
+autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 
 " moving text (primeagen)
 " vnoremap J :m '>+1<CR>gv=gv
@@ -157,5 +158,7 @@ nnoremap N Nzzzv
 " telescope plugin -> this only works on neovim!!
 " Plug 'nvim-lua/plenary.nvim'
 " Plug 'nvim-telescope/telescope.nvim'
-" 
-" added line 161
+"
+ 
+
+

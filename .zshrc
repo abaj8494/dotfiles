@@ -11,7 +11,7 @@ HISTFILE=~/.zsh_history
 HISTSIZE=99999
 SAVEHIST=99999
 setopt SHARE_HISTORY
-setopt extendedglob
+setopt extended_glob
 
 # exports
 export TERM=screen-256color
