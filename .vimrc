@@ -1,3 +1,12 @@
+"turn on search highlighting
+set hlsearch
+
+"turn on partial search
+set incsearch
+
+"turn on case insensitive search
+set ignorecase
+
 "turn numbers on
 set nu
 
@@ -57,6 +66,9 @@ inoremap " ""<Left>
 
 nnoremap { <C-u>zz
 nnoremap } <C-d>zz
+
+" map enter to remove search highlighting
+nnoremap <CR> :noh<CR><CR>
 
 " leader
 " previous / next in buffer

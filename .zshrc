@@ -83,3 +83,4 @@ tt () {
 }
 
 source $ZSH/oh-my-zsh.sh
+alias ZZ=exit
