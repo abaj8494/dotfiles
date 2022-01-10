@@ -77,7 +77,7 @@ nnoremap <leader>t :bnext<CR>
 " navigate buffers
 nnoremap <leader><leader> :buffers<CR>:buffer<Space>
 " insert single character
-nnoremap , i_<Esc>r
+nnoremap <leader>, i_<Esc>r
 " splits
 " horizontal / vertical split
 nnoremap <leader>- <C-w>s
