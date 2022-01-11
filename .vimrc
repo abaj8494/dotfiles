@@ -26,7 +26,7 @@ if $USER == 'aayushbajaj'
 endif
 
 " setting leader key
-let mapleader = " "
+let mapleader = "\<Esc>"
 
 
 "remaps
@@ -75,7 +75,7 @@ nnoremap <CR> :noh<CR><CR>
 nnoremap <leader>h :bprevious<CR>
 nnoremap <leader>t :bnext<CR>
 " navigate buffers
-nnoremap <leader><leader> :buffers<CR>:buffer<Space>
+nnoremap <leader>' :buffers<CR>:buffer<Space>
 " insert single character
 nnoremap <leader>, i_<Esc>r
 " splits
@@ -89,8 +89,11 @@ nnoremap <leader>v <C-w>j
 nnoremap <leader>z <C-w>k
 " kill split
 nnoremap <leader>x <C-w>q
-" open vert split with nt
+" open vert split with nerdtree
 nnoremap <leader>u :vsp<CR>:Explore<CR>
+" open empty file in new buffer
+nnoremap <leader>e :enew<CR>
+
 
 " clipboard
 nnoremap Y "*y
