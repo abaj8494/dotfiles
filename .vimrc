@@ -1,6 +1,9 @@
 "turn on search highlighting
 set hlsearch
 
+" turn on visual mode character count
+set showcmd
+
 "turn on partial search
 set incsearch
 

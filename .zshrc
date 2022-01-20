@@ -5,6 +5,11 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
+# get power10k not to give output warning for fortune
+typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
+
+#run fortune
+fortune
 
 # zsh variables
 HISTFILE=~/.zsh_history
@@ -12,9 +17,12 @@ HISTSIZE=99999
 SAVEHIST=99999
 setopt SHARE_HISTORY
 setopt extended_glob
+setopt cdablevars
+
+export gdr="$HOME/Google Drive"
 
 # exports
-export TERM=screen-256color
+export TERM=xterm-256color
 # Created by `pipx` on 2021-10-23 02:37:28
 export PATH="$PATH:/Users/aayushbajaj/.local/bin"
 # Path to your oh-my-zsh installation.
@@ -84,3 +92,5 @@ tt () {
 
 source $ZSH/oh-my-zsh.sh
 alias ZZ=exit
+
+
