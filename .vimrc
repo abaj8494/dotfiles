@@ -1,3 +1,5 @@
+runtime ftplugin/man.vim
+
 "turn on search highlighting
 set hlsearch
 
@@ -73,6 +75,8 @@ nnoremap } <C-d>zz
 " map enter to remove search highlighting
 nnoremap <CR> :noh<CR><CR>
 
+nnoremap <leader>. <Plug>Zoom
+
 " leader
 " previous / next in buffer
 nnoremap <leader>h :bprevious<CR>
@@ -143,6 +147,7 @@ Plug 'ghifarit53/tokyonight-vim'
 " fuzzy finder fzf
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
+Plug 'Mathijs-Bakker/zoom-vim'
 call plug#end()
 "set termguicolors
 
