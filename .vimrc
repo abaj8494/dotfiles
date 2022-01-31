@@ -75,7 +75,7 @@ nnoremap } <C-d>zz
 " map enter to remove search highlighting
 nnoremap <CR> :noh<CR><CR>
 
-nnoremap <leader>. <Plug>Zoom
+nmap <leader>. <Plug>Zoom
 
 " leader
 " previous / next in buffer
