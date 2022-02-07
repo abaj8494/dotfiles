@@ -24,7 +24,7 @@ export gdr="$HOME/Google Drive"
 # exports
 export TERM=xterm-256color
 # Created by `pipx` on 2021-10-23 02:37:28
-export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin"
+export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin:/usr/local/go/bin/"
 # Path to your oh-my-zsh installation.
 export ZSH="/Users/$USER/.oh-my-zsh"
 # vim as default editor
