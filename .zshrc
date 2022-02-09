@@ -28,7 +28,7 @@ export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin
 # Path to your oh-my-zsh installation.
 export ZSH="/Users/$USER/.oh-my-zsh"
 # vim as default editor
-export EDITOR="/usr/bin/vim"
+export EDITOR="/usr/local/bin/nvim"
 
 
 ZSH_THEME="powerlevel10k/powerlevel10k"
