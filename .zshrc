@@ -19,7 +19,6 @@ setopt SHARE_HISTORY
 setopt extended_glob
 setopt cdablevars
 
-export gdr="$HOME/Google Drive"
 
 # exports
 export TERM=xterm-256color
@@ -27,8 +26,12 @@ export TERM=xterm-256color
 export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin:/usr/local/go/bin/"
 # Path to your oh-my-zsh installation.
 export ZSH="/Users/$USER/.oh-my-zsh"
-# vim as default editor
+# nvim as default editor
 export EDITOR="/usr/local/bin/nvim"
+
+export gd="$HOME/Google Drive"
+export gdc="$HOME/Google Drive/2. - code"
+export gdm="$HOME/Google Drive/7. - media"
 
 
 ZSH_THEME="powerlevel10k/powerlevel10k"
@@ -67,11 +70,6 @@ unset __conda_setup
 
 
 # aliases
-# xclip
-alias "c=pbcopy"
-alias "v=pbpaste"
-alias "cc=xclip -selection clipboard"
-alias "vv=xclip -o -selection clipboard"
 # clear command
 alias "cl=clear"
 # cse to unsw ssh
@@ -81,6 +79,8 @@ alias "reso=displayplacer list | awk 'END{print}'"
 # config for dotfiles
 alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aayushbajaj'
 
+unalias gd # this was aliased to git diff
+alias ZZ=exit
 
 # custom functions
 dtail () {
@@ -91,7 +91,6 @@ tt () {
 }
 
 source $ZSH/oh-my-zsh.sh
-alias ZZ=exit
 
 
 
