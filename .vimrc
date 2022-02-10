@@ -21,7 +21,7 @@ set rnu
 "split new window to right
 set splitright
 
-if $USER == 'aayushbajaj'
+if hostname() == 'abelard.local'
 	set nowrap
 	augroup remember_folds
 		autocmd!

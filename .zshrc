@@ -79,7 +79,6 @@ alias "reso=displayplacer list | awk 'END{print}'"
 # config for dotfiles
 alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aayushbajaj'
 
-unalias gd # this was aliased to git diff
 alias ZZ=exit
 alias v=/usr/local/bin/nvim
 
