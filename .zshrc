@@ -81,6 +81,7 @@ alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aa
 
 unalias gd # this was aliased to git diff
 alias ZZ=exit
+alias v=/usr/local/bin/nvim
 
 # custom functions
 dtail () {
