@@ -1,0 +1,51 @@
+set preview true
+set hidden true
+map t open
+
+cmd zip %zip -r "$f" "$f"
+cmd tar %tar cvf "$f.tar" "$f"
+
+map m
+map o
+map n
+map "'"
+map '"'
+map d
+map c
+map e
+map f
+
+# File Openers
+map ee $$EDITOR "$f"
+map u $view "$f"
+
+# Archive Mappings
+map az zip
+map at tar
+
+# Trash Mappings
+map dd trash
+map tc clear_trash
+map tr restore_trash
+
+map . set hidden!
+map DD delete
+map p paste
+map x cut
+map y copy
+map <enter> open
+map mf mkfile
+map mr sudomkfile
+map md mkdir
+map ms $mkscript
+map o open_config
+map r rename
+map R reload
+map C clear
+
+# Movement
+map gdr cd ~/Google\ Drive
+map gc  cd ~/Google\ Drive/2.\ -\ code
+map gdd cd ~/Downloads
+
+map gi cd ~/.config
