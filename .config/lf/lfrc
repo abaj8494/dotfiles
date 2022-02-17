@@ -5,12 +5,17 @@ map t open
 cmd zip %zip -r "$f" "$f"
 cmd tar %tar cvf "$f.tar" "$f"
 
+cmd mkdir ${{
+	printf "Directory name: "
+	read ans
+	mkdir $ans
+}}
+
 map m
 map o
 map n
 map "'"
 map '"'
-map d
 map c
 map e
 map f
@@ -45,7 +50,7 @@ map C clear
 
 # Movement
 map gdr cd ~/Google\ Drive
-map gc  cd ~/Google\ Drive/2.\ -\ code
-map gdd cd ~/Downloads
-
-map gi cd ~/.config
+map gdc  cd ~/Google\ Drive/2.\ -\ code
+map gD cd ~/Downloads
+map gc cd ~/.config
+map gdtbooks cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"
