@@ -82,6 +82,8 @@ alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aa
 alias ZZ=exit
 alias v=/usr/local/bin/nvim
 
+alias tordl="'/Users/aayushbajaj/Google Drive/8. - software/800. - git/cli-torrent-dl/tordl.sh'"
+
 # custom functions
 dtail () {
 	tail -n $1 "$2" | wc -c | xargs -I {} truncate "$2" -s -{}
@@ -89,6 +91,8 @@ dtail () {
 tt () {
 	termdown $((60*$1))
 }
+
+
 
 source $ZSH/oh-my-zsh.sh
 
