@@ -189,4 +189,5 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 "
  
 
-
+let g:vimwiki_list = [{'path': '~/vimwiki/',
+                      \ 'syntax': 'markdown', 'ext': '.md'}]
