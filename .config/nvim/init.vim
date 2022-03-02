@@ -193,9 +193,9 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 "
  
 
-let g:vimwiki_list = [{'path': '~/vimwiki/',
+let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki',
                       \ 'syntax': 'markdown', 'ext': '.md'}]
 
 
-nmap <C-Enter> <Plug>VimwikiToggleListItem
-vmap <C-Enter> <Plug>VimwikiToggleListItem
+nmap <space><space> <Plug>VimwikiToggleListItem
+vmap <space><space> <Plug>VimwikiToggleListItem
