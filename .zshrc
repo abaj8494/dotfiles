@@ -41,7 +41,7 @@ plugins=(
     z
     zsh-vi-mode
     macos
-    copydir
+    copypath
     zsh-history-substring-search
     zsh-reload
     dirhistory

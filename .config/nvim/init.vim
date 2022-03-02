@@ -1,5 +1,9 @@
 runtime ftplugin/man.vim
 
+" allow persistent undos
+set undodir=~/.config/nvim/undid
+set undofile
+
 "turn on search highlighting
 set hlsearch
 
@@ -191,3 +195,7 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 
 let g:vimwiki_list = [{'path': '~/vimwiki/',
                       \ 'syntax': 'markdown', 'ext': '.md'}]
+
+
+nmap <C-Enter> <Plug>VimwikiToggleListItem
+vmap <C-Enter> <Plug>VimwikiToggleListItem
