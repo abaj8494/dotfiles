@@ -32,6 +32,8 @@ if hostname() == 'abelard.local'
 		autocmd BufWinLeave * mkview
 		autocmd BufWinEnter * silent! loadview
 	augroup END
+	let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki',
+						  \ 'syntax': 'markdown', 'ext': '.md'}]
 endif
 
 " setting leader key
@@ -193,7 +195,7 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 "
  
 
-let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki',
+let g:vimwiki_list = [{'path': '~/vimwiki',
                       \ 'syntax': 'markdown', 'ext': '.md'}]
 
 
