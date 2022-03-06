@@ -25,6 +25,10 @@ set rnu
 "split new window to right
 set splitright
 
+
+let g:vimwiki_list = [{'path': '~/vimwiki',
+                      \ 'syntax': 'markdown', 'ext': '.md'}]
+
 if hostname() == 'abelard.local'
 	set nowrap
 	augroup remember_folds
@@ -194,9 +198,6 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 " Plug 'nvim-telescope/telescope.nvim'
 "
  
-
-let g:vimwiki_list = [{'path': '~/vimwiki',
-                      \ 'syntax': 'markdown', 'ext': '.md'}]
 
 
 nmap <space><space> <Plug>VimwikiToggleListItem
