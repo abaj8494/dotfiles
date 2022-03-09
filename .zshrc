@@ -28,6 +28,8 @@ export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin
 export ZSH="/Users/$USER/.oh-my-zsh"
 # nvim as default editor
 export EDITOR="/usr/local/bin/nvim"
+# adding the .scripts folder to path
+export PATH="$PATH:$HOME/.scripts"
 
 export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"

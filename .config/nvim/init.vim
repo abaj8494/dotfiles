@@ -109,6 +109,8 @@ nnoremap <leader>v <C-w>j
 nnoremap <leader>z <C-w>k
 " kill split
 nnoremap <leader>x <C-w>q
+" kill buffer
+nnoremap <leader>X :bd<CR>
 " open vert split with nerdtree
 nnoremap <leader>u :vsp<CR>:Explore<CR>
 " open empty file in new buffer
