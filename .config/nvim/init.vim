@@ -31,14 +31,16 @@ let g:vimwiki_list = [{'path': '~/vimwiki',
 
 if hostname() == 'abelard.local'
 	set nowrap
-	augroup remember_folds
-		autocmd!
-		autocmd BufWinLeave * mkview
-		autocmd BufWinEnter * silent! loadview
-	augroup END
 	let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki',
 						  \ 'syntax': 'markdown', 'ext': '.md'}]
 endif
+
+augroup remember_folds
+	autocmd!
+	autocmd BufWinLeave * mkview
+	autocmd BufWinEnter * silent! loadview
+augroup END
+
 
 " setting leader key
 let mapleader = "\<Esc>"
@@ -200,7 +202,23 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 " Plug 'nvim-telescope/telescope.nvim'
 "
  
-
-
 nmap <space><space> <Plug>VimwikiToggleListItem
 vmap <space><space> <Plug>VimwikiToggleListItem
+
+
+" testing vimwiki markdown folding
+" let g:markdown_folding = 1
+
+" function MarkdownLevel()
+" 	let h = matchstr(getline(v:lnum), '^#\+')
+" 	if empty(h)
+" 		return "="     
+" 	else       
+" 		return ">" . len(h)     
+" 	endif 
+" endfunction
+" au BufEnter *.md setlocal foldexpr=MarkdownLevel()  
+" au BufEnter *.md setlocal foldmethod=expr
+" 
+" 
+" https://www.reddit.com/r/vim/comments/lf8mgr/enable_markdown_folding_in_vimwiki/
