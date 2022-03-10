@@ -25,6 +25,8 @@ set rnu
 "split new window to right
 set splitright
 
+set nofoldenable
+
 
 let g:vimwiki_list = [{'path': '~/vimwiki',
                       \ 'syntax': 'markdown', 'ext': '.md'}]
@@ -171,8 +173,11 @@ Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
-Plug 'vim-pandoc/vim-pandoc'
-Plug 'vim-pandoc/vim-pandoc-syntax'
+"Plug 'vim-pandoc/vim-pandoc'
+"Plug 'vim-pandoc/vim-pandoc-syntax'
+"Plug 'godlygeek/tabular'
+"Plug 'preservim/vim-markdown'
+"Plug 'masukomi/vim-markdown-folding'
 call plug#end()
 "set termguicolors
 
@@ -209,22 +214,27 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 "
 
 
-
+let g:markdown_folding = 1
 
 " testing vimwiki markdown folding
-" let g:markdown_folding = 1
+
+let g:vimwiki_global_ext = 0
+ 
+autocmd FileType vimwiki setlocal syntax=markdown
+
+" set nocompatible
+" if has("autocmd")
+"   filetype plugin indent on
+" endif
+" autocmd FileType vimwiki setlocal foldenable
+
+"let g:vim_markdown_folding_style_pythonic = 1
+
+" autocmd FileType vimwiki setlocal foldenable
 
 " Pandoc 
 
-let g:pandoc#filetypes#handled = ["pandoc", "markdown"]
-let g:pandoc#folding#mode = 'syntax'
-let g:pandoc#modules#enabled = ["folding"] " obviously add any other modules you require
-
-" VimWiki
-
-let g:vimwiki_folding='custom'
-au FileType vimwiki set syntax=markdown.pandoc
-let g:vimwiki_global_ext= 0
+" let g:vimwiki_global_ext= 0
 
 " function MarkdownLevel()
 " 	let h = matchstr(getline(v:lnum), '^#\+')
