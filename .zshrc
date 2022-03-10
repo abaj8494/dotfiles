@@ -86,6 +86,10 @@ alias v=/usr/local/bin/nvim
 
 alias tordl="'/Users/aayushbajaj/Google Drive/8. - software/800. - git/cli-torrent-dl/tordl.sh'"
 
+# music
+alias npi="ncmpcpp -c ~/.config/ncmpcpp/config_rpi -b ~/.config/ncmpcpp/bindings"
+alias nab="ncmpcpp -c ~/.config/ncmpcpp/config_abel -b ~/.config/ncmpcpp/bindings"
+
 # custom functions
 dtail () {
 	tail -n $1 "$2" | wc -c | xargs -I {} truncate "$2" -s -{}
