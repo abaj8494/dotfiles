@@ -118,6 +118,10 @@ nnoremap <leader>u :vsp<CR>:Explore<CR>
 " open empty file in new buffer
 nnoremap <leader>e :enew<CR>
 
+" vimwiki remaps
+" toggle todos
+nmap <space><space> <Plug>VimwikiToggleListItem
+vmap <space><space> <Plug>VimwikiToggleListItem
 
 " clipboard
 nnoremap Y "*y
@@ -167,6 +171,8 @@ Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
+Plug 'vim-pandoc/vim-pandoc'
+Plug 'vim-pandoc/vim-pandoc-syntax'
 call plug#end()
 "set termguicolors
 
@@ -201,13 +207,24 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 " Plug 'nvim-lua/plenary.nvim'
 " Plug 'nvim-telescope/telescope.nvim'
 "
- 
-nmap <space><space> <Plug>VimwikiToggleListItem
-vmap <space><space> <Plug>VimwikiToggleListItem
+
+
 
 
 " testing vimwiki markdown folding
 " let g:markdown_folding = 1
+
+" Pandoc 
+
+let g:pandoc#filetypes#handled = ["pandoc", "markdown"]
+let g:pandoc#folding#mode = 'syntax'
+let g:pandoc#modules#enabled = ["folding"] " obviously add any other modules you require
+
+" VimWiki
+
+let g:vimwiki_folding='custom'
+au FileType vimwiki set syntax=markdown.pandoc
+let g:vimwiki_global_ext= 0
 
 " function MarkdownLevel()
 " 	let h = matchstr(getline(v:lnum), '^#\+')
@@ -222,3 +239,6 @@ vmap <space><space> <Plug>VimwikiToggleListItem
 " 
 " 
 " https://www.reddit.com/r/vim/comments/lf8mgr/enable_markdown_folding_in_vimwiki/
+" 
+" 
+
