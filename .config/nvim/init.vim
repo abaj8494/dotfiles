@@ -177,7 +177,7 @@ Plug 'tpope/vim-surround'
 "Plug 'vim-pandoc/vim-pandoc-syntax'
 "Plug 'godlygeek/tabular'
 "Plug 'preservim/vim-markdown'
-"Plug 'masukomi/vim-markdown-folding'
+Plug 'masukomi/vim-markdown-folding'
 call plug#end()
 "set termguicolors
 
@@ -214,18 +214,18 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 "
 
 
-let g:markdown_folding = 1
+" folding
 
-" testing vimwiki markdown folding
+let g:markdown_folding = 1
 
 let g:vimwiki_global_ext = 0
  
 autocmd FileType vimwiki setlocal syntax=markdown
 
-" set nocompatible
-" if has("autocmd")
-"   filetype plugin indent on
-" endif
+set nocompatible
+if has("autocmd")
+  filetype plugin indent on
+endif
 " autocmd FileType vimwiki setlocal foldenable
 
 "let g:vim_markdown_folding_style_pythonic = 1
