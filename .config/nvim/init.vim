@@ -25,7 +25,7 @@ set rnu
 "split new window to right
 set splitright
 
-set nofoldenable
+"set nofoldenable
 
 
 let g:vimwiki_list = [{'path': '~/vimwiki',
@@ -36,6 +36,7 @@ if hostname() == 'abelard.local'
 	let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki',
 						  \ 'syntax': 'markdown', 'ext': '.md'}]
 endif
+
 
 augroup remember_folds
 	autocmd!
@@ -216,21 +217,20 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 
 let g:vimwiki_global_ext = 0
 
-" folding
-
-let g:vimwiki_folding = 'expr'
-autocmd FileType vimwiki setlocal syntax=markdown
-
-autocmd FileType vimwiki setlocal foldenable 
+""silent autocmd FileType vimwiki set ft=markdown
 
 
-let g:markdown_folding = 1
-autocmd FileType markdown set foldexpr=NestedMarkdownFolds()
-set nocompatible
-if has("autocmd")
-  filetype plugin indent on
-endif
-" autocmd FileType vimwiki setlocal foldenable
+""let g:markdown_folding = 1
+""autocmd FileType markdown set foldexpr=NestedMarkdownFolds()
+""set nocompatible
+""if has("autocmd")
+""  filetype plugin indent on
+""endif
 
-"let g:vim_markdown_folding_style_pythonic = 1
-
+let g:vimwiki_folding = 'custom'
+augroup folds
+	autocmd!
+	autocmd FileType vimwiki set foldenable
+	autocmd FileType vimwiki set syntax=markdown
+	autocmd FileType vimwiki set foldmethod=expr
+augroup END
