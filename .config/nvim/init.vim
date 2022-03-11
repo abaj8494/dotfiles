@@ -214,14 +214,18 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 "
 
 
+let g:vimwiki_global_ext = 0
+
 " folding
 
-let g:markdown_folding = 1
-
-let g:vimwiki_global_ext = 0
- 
+let g:vimwiki_folding = 'expr'
 autocmd FileType vimwiki setlocal syntax=markdown
 
+autocmd FileType vimwiki setlocal foldenable 
+
+
+let g:markdown_folding = 1
+autocmd FileType markdown set foldexpr=NestedMarkdownFolds()
 set nocompatible
 if has("autocmd")
   filetype plugin indent on
@@ -229,26 +233,4 @@ endif
 " autocmd FileType vimwiki setlocal foldenable
 
 "let g:vim_markdown_folding_style_pythonic = 1
-
-" autocmd FileType vimwiki setlocal foldenable
-
-" Pandoc 
-
-" let g:vimwiki_global_ext= 0
-
-" function MarkdownLevel()
-" 	let h = matchstr(getline(v:lnum), '^#\+')
-" 	if empty(h)
-" 		return "="     
-" 	else       
-" 		return ">" . len(h)     
-" 	endif 
-" endfunction
-" au BufEnter *.md setlocal foldexpr=MarkdownLevel()  
-" au BufEnter *.md setlocal foldmethod=expr
-" 
-" 
-" https://www.reddit.com/r/vim/comments/lf8mgr/enable_markdown_folding_in_vimwiki/
-" 
-" 
 

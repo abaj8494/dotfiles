@@ -90,6 +90,11 @@ alias tordl="'/Users/aayushbajaj/Google Drive/8. - software/800. - git/cli-torre
 alias npi="ncmpcpp -c ~/.config/ncmpcpp/config_rpi -b ~/.config/ncmpcpp/bindings"
 alias nab="ncmpcpp -c ~/.config/ncmpcpp/config_abel -b ~/.config/ncmpcpp/bindings"
 
+# configs
+alias trc="v ~/.tmux.config"
+alias vrc="v ~/.config/nvim/init.vim"
+alias zrc="v ~/.zshrc"
+
 # custom functions
 dtail () {
 	tail -n $1 "$2" | wc -c | xargs -I {} truncate "$2" -s -{}
