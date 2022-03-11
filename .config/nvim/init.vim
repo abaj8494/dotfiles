@@ -229,7 +229,6 @@ let g:vimwiki_global_ext = 0
 
 let g:vimwiki_folding = 'custom'
 augroup folds
-	autocmd!
 	autocmd FileType vimwiki set foldenable
 	autocmd FileType vimwiki set syntax=markdown
 	autocmd FileType vimwiki set foldmethod=expr
