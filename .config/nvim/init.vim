@@ -92,8 +92,12 @@ nnoremap <CR> :noh<CR><CR>
 
 nmap <leader>. <Plug>Zoom
 
+" opens tag under cursor
 nnoremap go g<c-]>
 vnoremap go g<c-]>
+
+" remaps backspace to file explorer in normal mode
+nnoremap <backspace> :E<CR>
 
 " leader
 " previous / next in buffer
@@ -226,6 +230,8 @@ let g:vimwiki_global_ext = 0
 ""if has("autocmd")
 ""  filetype plugin indent on
 ""endif
+
+set nofoldenable
 
 let g:vimwiki_folding = 'custom'
 augroup folds
