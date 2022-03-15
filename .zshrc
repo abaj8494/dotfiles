@@ -48,7 +48,7 @@ plugins=(
     zsh-history-substring-search
     zsh-reload
     dirhistory
-    git
+    # git
     copyfile
     zsh-autosuggestions
     zsh-syntax-highlighting
