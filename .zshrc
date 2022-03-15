@@ -34,6 +34,7 @@ export PATH="$PATH:$HOME/.scripts"
 export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"
 export gdm="$HOME/Google Drive/7. - media"
+export gdv="$gdc/212. - vimwiki"
 
 
 ZSH_THEME="powerlevel10k/powerlevel10k"
