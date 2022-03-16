@@ -183,6 +183,7 @@ Plug 'tpope/vim-surround'
 "Plug 'godlygeek/tabular'
 "Plug 'preservim/vim-markdown'
 Plug 'masukomi/vim-markdown-folding'
+Plug 'dhruvasagar/vim-table-mode'
 call plug#end()
 "set termguicolors
 
@@ -234,8 +235,8 @@ let g:vimwiki_global_ext = 0
 
 let g:vimwiki_folding = 'custom'
 augroup folds
-	autocmd FileType vimwiki set foldenable
 	autocmd FileType vimwiki set foldexpr=MarkdownFold()
 	autocmd FileType vimwiki set syntax=markdown
 	autocmd FileType vimwiki set foldmethod=expr
+	autocmd FileType vimwiki set nofoldenable
 augroup END
