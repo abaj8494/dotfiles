@@ -35,6 +35,7 @@ export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"
 export gdm="$HOME/Google Drive/7. - media"
 export gdv="$gdc/212. - vimwiki"
+export gdt="$gd/1. - goodnotes/11. - tuition/"
 
 
 ZSH_THEME="powerlevel10k/powerlevel10k"
