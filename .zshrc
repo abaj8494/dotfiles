@@ -82,6 +82,8 @@ alias "reso=displayplacer list | awk 'END{print}'"
 # config for dotfiles
 alias cfg='/usr/bin/git --git-dir=/Users/aayushbajaj/.cfg/ --work-tree=/Users/aayushbajaj'
 
+alias pty="cd '$HOME/Google Drive/2. - code/212. - vimwiki/2022' && find . -type f -name 'week*.md' | sort | sed 's/.\{3\}$//' | xargs -I {} pandoc {}.md -o {}.pdf && pdfunite week*.pdf year.pdf && rm week*.pdf && cd -"
+
 alias ZZ=exit
 alias v=/usr/local/bin/nvim
 
