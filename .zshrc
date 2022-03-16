@@ -113,3 +113,4 @@ source $ZSH/oh-my-zsh.sh
 # Generated for envman. Do not edit.
 [ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
 
+export HOMEBREW_GITHUB_API_TOKEN=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
