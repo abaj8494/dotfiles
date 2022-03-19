@@ -78,6 +78,7 @@ unset __conda_setup
 alias "cl=clear"
 # cse to unsw ssh
 alias "cse=ssh -Y z5362216@weill.cse.unsw.edu.au"
+alias "rpi=ssh -X alarm@192.168.1.125"
 # displayplacer awk command to reso
 alias "reso=displayplacer list | awk 'END{print}'"
 # config for dotfiles
