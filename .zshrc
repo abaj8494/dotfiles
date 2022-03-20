@@ -37,6 +37,7 @@ export gdm="$HOME/Google Drive/7. - media"
 export gdv="$gdc/212. - vimwiki"
 export gdt="$gd/1. - goodnotes/11. - tuition/"
 
+export HOMEBREW_GITHUB_API_TOKEN=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
 
 ZSH_THEME="powerlevel10k/powerlevel10k"
 
@@ -117,4 +118,3 @@ source $ZSH/oh-my-zsh.sh
 # Generated for envman. Do not edit.
 [ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
 
-export HOMEBREW_GITHUB_API_TOKEN=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
