@@ -30,6 +30,7 @@ set splitright
 
 let g:vimwiki_list = [{'path': '~/vimwiki',
                       \ 'syntax': 'markdown', 'ext': '.md'}]
+let g:calendar_monday = 1
 
 if hostname() == 'abelard.local'
 	set nowrap
@@ -124,26 +125,36 @@ nnoremap <leader>X :bd<CR>
 nnoremap <leader>u :vsp<CR>:Explore<CR>
 " open empty file in new buffer
 nnoremap <leader>e :enew<CR>
+" open config
+nnoremap <leader>r :RC<CR>
 
 " vimwiki remaps
 " toggle todos
 nmap <space><space> <Plug>VimwikiToggleListItem
 vmap <space><space> <Plug>VimwikiToggleListItem
 " open vimwiki
-nmap <space>w <Plug>VimwikiIndex
-vmap <space>w <Plug>VimwikiIndex
+nmap <space>v <Plug>VimwikiIndex
+vmap <space>v <Plug>VimwikiIndex
+" diary
 " open vimdiary
-nmap <space>v <Plug>VimwikiDiaryIndex
-vmap <space>v <Plug>VimwikiDiaryIndex
+nmap <space>V <Plug>VimwikiDiaryIndex
+vmap <space>V <Plug>VimwikiDiaryIndex
 " create today entry
-nmap <space>t <Plug>VimwikiMakeDiaryNote
-vmap <space>t <Plug>VimwikiMakeDiaryNote
+nmap <space>w <Plug>VimwikiMakeDiaryNote
+vmap <space>w <Plug>VimwikiMakeDiaryNote
 " create yesterday entry
 nmap <space>m <Plug>VimwikiMakeYesterdayDiaryNote
 vmap <space>m <Plug>VimwikiMakeYesterdayDiaryNote
 " create tomorrow entry
 nmap <space>z <Plug>VimwikiMakeTomorrowDiaryNote
 vmap <space>z <Plug>VimwikiMakeTomorrowDiaryNote
+" remap diary next / previous day
+nmap <space>t <Plug>VimwikiDiaryNextDay
+vmap <space>t <Plug>VimwikiDiaryNextDay
+nmap <space>h <Plug>VimwikiDiaryPrevDay
+vmap <space>h <Plug>VimwikiDiaryPrevDay
+" diary calendar
+nmap <space>c :CalendarVR<CR>
 
 
 " clipboard
@@ -200,6 +211,7 @@ Plug 'tpope/vim-surround'
 "Plug 'preservim/vim-markdown'
 Plug 'masukomi/vim-markdown-folding'
 Plug 'dhruvasagar/vim-table-mode'
+Plug 'mattn/calendar-vim'
 call plug#end()
 "set termguicolors
 
@@ -260,3 +272,10 @@ augroup END
 
 " commands
 command RC e $MYVIMRC
+
+" vimwiki autogroup
+augroup vimwikigroup
+    autocmd!
+    " automatically update links on read diary
+    autocmd BufRead,BufNewFile diary.md VimwikiDiaryGenerateLinks
+augroup end
