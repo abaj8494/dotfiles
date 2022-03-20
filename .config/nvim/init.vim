@@ -129,6 +129,22 @@ nnoremap <leader>e :enew<CR>
 " toggle todos
 nmap <space><space> <Plug>VimwikiToggleListItem
 vmap <space><space> <Plug>VimwikiToggleListItem
+" open vimwiki
+nmap <space>w <Plug>VimwikiIndex
+vmap <space>w <Plug>VimwikiIndex
+" open vimdiary
+nmap <space>v <Plug>VimwikiDiaryIndex
+vmap <space>v <Plug>VimwikiDiaryIndex
+" create today entry
+nmap <space>t <Plug>VimwikiMakeDiaryNote
+vmap <space>t <Plug>VimwikiMakeDiaryNote
+" create yesterday entry
+nmap <space>m <Plug>VimwikiMakeYesterdayDiaryNote
+vmap <space>m <Plug>VimwikiMakeYesterdayDiaryNote
+" create tomorrow entry
+nmap <space>z <Plug>VimwikiMakeTomorrowDiaryNote
+vmap <space>z <Plug>VimwikiMakeTomorrowDiaryNote
+
 
 " clipboard
 nnoremap Y "*y
@@ -240,3 +256,7 @@ augroup folds
 	autocmd FileType vimwiki set foldmethod=expr
 	autocmd FileType vimwiki set nofoldenable
 augroup END
+
+
+" commands
+command RC e $MYVIMRC

@@ -89,6 +89,7 @@ alias pty="cd '$HOME/Google Drive/2. - code/212. - vimwiki/2022' && find . -type
 
 alias ZZ=exit
 alias v=/usr/local/bin/nvim
+alias vv="/usr/local/bin/nvim '$gdv/index.md'"
 
 alias tordl="'/Users/aayushbajaj/Google Drive/8. - software/800. - git/cli-torrent-dl/tordl.sh'"
 
