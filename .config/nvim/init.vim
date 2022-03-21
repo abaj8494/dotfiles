@@ -27,10 +27,12 @@ set splitright
 
 "set nofoldenable
 
-
+" vimwiki lets
 let g:vimwiki_list = [{'path': '~/vimwiki',
                       \ 'syntax': 'markdown', 'ext': '.md'}]
+" diary lets
 let g:calendar_monday = 1
+let g:calendar_weeknm = 2 
 
 if hostname() == 'abelard.local'
 	set nowrap
@@ -155,6 +157,10 @@ nmap <space>h <Plug>VimwikiDiaryPrevDay
 vmap <space>h <Plug>VimwikiDiaryPrevDay
 " diary calendar
 nmap <space>c :CalendarVR<CR>
+vmap <space>c :CalendarVR<CR>
+
+nmap <space>r <Plug>VimwikiDiaryGenerateLinks
+vmap <space>r :<Plug>VimwikiDiaryGenerateLinks
 
 
 " clipboard
@@ -234,14 +240,6 @@ nnoremap N Nzzzv
 
 autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 
-" moving text (primeagen)
-" vnoremap J :m '>+1<CR>gv=gv
-" vnoremap K :m '<-2<CR>gv=gv
-" inoremap <C-j> :m .+1<CR>==
-" inoremap <C-k> :m .-2<CR>==
-" nnoremap <leader>j :m .+1<CR>==
-" nnoremap <leader>k :m .-2<CR>==
-
 " telescope plugin -> this only works on neovim!!
 " Plug 'nvim-lua/plenary.nvim'
 " Plug 'nvim-telescope/telescope.nvim'
@@ -274,8 +272,6 @@ augroup END
 command RC e $MYVIMRC
 
 " vimwiki autogroup
-augroup vimwikigroup
-    autocmd!
-    " automatically update links on read diary
-    autocmd BufRead,BufNewFile diary.md VimwikiDiaryGenerateLinks
-augroup end
+"augroup vimwikidiary
+"    autocmd BufRead diary.md VimwikiDiaryGenerateLinks
+"augroup end
