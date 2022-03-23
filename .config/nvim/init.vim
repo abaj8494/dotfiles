@@ -77,8 +77,6 @@ vnoremap <S-Tab> <gv
 nnoremap <S-Tab> <<
 inoremap <S-Tab> <C-d>
 
-" fzf
-nnoremap <C-u> :Files<Cr>
 
 " pairs
 inoremap { {}<Left>
@@ -101,6 +99,9 @@ vnoremap go g<c-]>
 
 " remaps backspace to file explorer in normal mode
 nnoremap <backspace> :E<CR>
+
+" fzf
+map <C-u> :Files<CR>
 
 " leader
 " previous / next in buffer
