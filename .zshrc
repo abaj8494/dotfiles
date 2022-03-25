@@ -78,8 +78,8 @@ unset __conda_setup
 # clear command
 alias "cl=clear"
 # cse to unsw ssh
-alias "cse=ssh -Y z5362216@weill.cse.unsw.edu.au"
-alias "rpi=ssh -X alarm@192.168.1.125"
+alias cse="ssh -Y z5362216@weill.cse.unsw.edu.au"
+alias rpi="ssh -X alarm@192.168.1.125"
 # displayplacer awk command to reso
 alias "reso=displayplacer list | awk 'END{print}'"
 # config for dotfiles
@@ -119,4 +119,5 @@ source $ZSH/oh-my-zsh.sh
 
 # Generated for envman. Do not edit.
 [ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
+
 
