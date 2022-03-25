@@ -160,8 +160,8 @@ vmap <space>h <Plug>VimwikiDiaryPrevDay
 nmap <space>c :CalendarVR<CR>
 vmap <space>c :CalendarVR<CR>
 
-nmap <space>r <Plug>VimwikiDiaryGenerateLinks
-vmap <space>r :<Plug>VimwikiDiaryGenerateLinks
+nmap <space>g <Plug>VimwikiDiaryGenerateLinks
+vmap <space>g :<Plug>VimwikiDiaryGenerateLinks
 
 
 " clipboard
