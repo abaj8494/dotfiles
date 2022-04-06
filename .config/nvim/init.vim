@@ -208,12 +208,11 @@ call plug#begin('~/.vim/plugged')
 Plug 'ghifarit53/tokyonight-vim'
 " fuzzy finder fzf
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
-Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
-Plug 'vim-pandoc/vim-pandoc'
-Plug 'vim-pandoc/vim-pandoc-syntax'
+"Plug 'vim-pandoc/vim-pandoc'
+"Plug 'vim-pandoc/vim-pandoc-syntax'
 "Plug 'godlygeek/tabular'
 "Plug 'preservim/vim-markdown'
 Plug 'masukomi/vim-markdown-folding'
@@ -268,6 +267,7 @@ augroup folds
 	autocmd FileType vimwiki set nofoldenable
 augroup END
 
+autocmd BufRead * if expand('%') =~ "index" | set syntax=vimwiki | endif
 
 " commands
 command RC e $MYVIMRC
