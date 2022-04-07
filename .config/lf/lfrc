@@ -1,10 +1,14 @@
+
 set cleaner '~/.config/lf/cleaner'
-set previewer '~/.config/lf/preview'
+set previewer '~/.config/lf/scope'
 set ratios 1:2:3
+
+set preview_images true
+set preview_images_method iterm2
 
 set preview true
 set hidden true
-map t open
+# set drawbox true
 
 cmd zip %zip -r "$f" "$f"
 cmd tar %tar cvf "$f.tar" "$f"
@@ -37,6 +41,7 @@ map dd trash
 map tc clear_trash
 map tr restore_trash
 
+map t open
 map . set hidden!
 map DD delete
 map p paste
@@ -57,4 +62,6 @@ map gdr cd ~/Google\ Drive
 map gdc  cd ~/Google\ Drive/2.\ -\ code
 map gD cd ~/Downloads
 map gc cd ~/.config
+map gdt cd "~/Google Drive/1. - goodnotes/11. - tuition"
+map gds cd "~/Google Drive/1. - goodnotes/11. - tuition/111. - students"
 map gdtbooks cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"
