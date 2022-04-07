@@ -262,17 +262,17 @@ let g:vimwiki_global_ext = 0
 let g:vimwiki_folding = 'custom'
 augroup folds
 	autocmd FileType vimwiki set foldexpr=MarkdownFold()
-	autocmd FileType vimwiki set syntax=markdown
 	autocmd FileType vimwiki set foldmethod=expr
 	autocmd FileType vimwiki set nofoldenable
 augroup END
 
-autocmd BufRead * if expand('%') =~ "index" | set syntax=vimwiki | endif
+"autocmd BufRead * if expand('%') =~ "index" | set syntax=vimwiki | endif
 
 " commands
 command RC e $MYVIMRC
 
 " vimwiki autogroup
-"augroup vimwikidiary
-"    autocmd BufRead diary.md VimwikiDiaryGenerateLinks
-"augroup end
+augroup vimwiki
+    autocmd BufRead diary.md VimwikiDiaryGenerateLinks
+	autocmd BufNewFile,BufRead !index.md set syntax=vimwiki
+augroup end
