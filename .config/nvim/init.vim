@@ -208,6 +208,7 @@ call plug#begin('~/.vim/plugged')
 Plug 'ghifarit53/tokyonight-vim'
 " fuzzy finder fzf
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
@@ -245,34 +246,25 @@ autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
 " Plug 'nvim-telescope/telescope.nvim'
 "
 
-
 let g:vimwiki_global_ext = 0
-
-""silent autocmd FileType vimwiki set ft=markdown
-
-
-""let g:markdown_folding = 1
-""autocmd FileType markdown set foldexpr=NestedMarkdownFolds()
-""set nocompatible
-""if has("autocmd")
-""  filetype plugin indent on
-""endif
-
 
 let g:vimwiki_folding = 'custom'
 augroup folds
 	autocmd FileType vimwiki set foldexpr=MarkdownFold()
 	autocmd FileType vimwiki set foldmethod=expr
+	autocmd FileType vimwiki set syntax=markdown
 	autocmd FileType vimwiki set nofoldenable
 augroup END
 
-"autocmd BufRead * if expand('%') =~ "index" | set syntax=vimwiki | endif
 
 " commands
 command RC e $MYVIMRC
 
 " vimwiki autogroup
-augroup vimwiki
-    autocmd BufRead diary.md VimwikiDiaryGenerateLinks
-	autocmd BufNewFile,BufRead !index.md set syntax=vimwiki
-augroup end
+"augroup vimwiki
+"	autocmd!
+"augroup end
+"autocmd BufRead * if expand('%') =~ "index" | set syntax=vimwiki | endif
+
+autocmd BufEnter diary.md VimwikiDiaryGenerateLinks
+autocmd BufEnter index.md set syntax=vimwiki
