@@ -1,7 +1,8 @@
 
-set cleaner '~/.config/lf/cleaner'
-set previewer '~/.config/lf/scope'
-set ratios 1:2:3
+set previewer stpv
+set cleaner stpvimgclr
+&stpvimg --listen $id
+cmd on-quit $stpvimg --end $id
 
 set preview true
 set hidden true
@@ -61,4 +62,4 @@ map gD cd ~/Downloads
 map gc cd ~/.config
 map gdt cd "~/Google Drive/1. - goodnotes/11. - tuition"
 map gds cd "~/Google Drive/1. - goodnotes/11. - tuition/111. - students"
-map gdtbooks cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"
+map gdtb cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"
