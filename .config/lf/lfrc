@@ -1,3 +1,7 @@
+set cleaner '~/.config/lf/cleaner'
+set previewer '~/.config/lf/scope'
+set ratios 1:2:3
+
 set preview true
 set hidden true
 map t open

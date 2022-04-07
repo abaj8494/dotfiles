@@ -13,8 +13,8 @@ fortune
 
 # zsh variables
 HISTFILE=~/.zsh_history
-HISTSIZE=99999
-SAVEHIST=99999
+HISTSIZE=999999999
+SAVEHIST=999999999
 setopt SHARE_HISTORY
 setopt extended_glob
 setopt cdablevars
@@ -102,6 +102,7 @@ alias nab="ncmpcpp -c ~/.config/ncmpcpp/config_abel -b ~/.config/ncmpcpp/binding
 alias trc="v ~/.tmux.config"
 alias vrc="v ~/.config/nvim/init.vim"
 alias zrc="v ~/.zshrc"
+alias lrc="v ~/.config/lf/lfrc"
 
 # custom functions
 dtail () {
