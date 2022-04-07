@@ -1,9 +1,8 @@
 
-set previewer stpv
-set cleaner stpvimgclr
-&stpvimg --listen $id
-cmd on-quit $stpvimg --end $id
-
+set previewer '~/.config/lf/bs_preview'
+#set cleaner stpvimgclr
+#&stpvimg --listen $id
+#cmd on-quit $stpvimg --end $id
 set preview true
 set hidden true
 # set drawbox true

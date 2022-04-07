@@ -30,6 +30,8 @@ export ZSH="/Users/$USER/.oh-my-zsh"
 export EDITOR="/usr/local/bin/nvim"
 # adding the .scripts folder to path
 export PATH="$PATH:$HOME/.scripts"
+# adding go to path
+export PATH="$PATH:$HOME/.go/bin"
 
 export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"
@@ -121,4 +123,7 @@ source $ZSH/oh-my-zsh.sh
 # Generated for envman. Do not edit.
 [ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
 
+
+
+test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"
 
