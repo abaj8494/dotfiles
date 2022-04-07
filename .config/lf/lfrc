@@ -1,5 +1,6 @@
 
-set previewer '~/.config/lf/bs_preview'
+set previewer '~/.config/lf/preview'
+set cleaner '~/.config/lf/cleaner'
 #set cleaner stpvimgclr
 #&stpvimg --listen $id
 #cmd on-quit $stpvimg --end $id
