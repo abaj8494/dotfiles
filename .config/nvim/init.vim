@@ -212,6 +212,7 @@ Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
+Plug 'xuhdev/vim-latex-live-preview', { 'for': 'tex' }
 "Plug 'vim-pandoc/vim-pandoc'
 "Plug 'vim-pandoc/vim-pandoc-syntax'
 "Plug 'godlygeek/tabular'
@@ -268,3 +269,6 @@ command RC e $MYVIMRC
 
 autocmd BufEnter diary.md VimwikiDiaryGenerateLinks
 autocmd BufEnter index.md set syntax=vimwiki
+
+
+let g:livepreview_previewer = 'zathura'
