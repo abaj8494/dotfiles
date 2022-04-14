@@ -212,7 +212,8 @@ Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
-Plug 'xuhdev/vim-latex-live-preview', { 'for': 'tex' }
+"Plug 'xuhdev/vim-latex-live-preview', { 'for': 'tex' }
+Plug 'lervag/vimtex'
 "Plug 'vim-pandoc/vim-pandoc'
 "Plug 'vim-pandoc/vim-pandoc-syntax'
 "Plug 'godlygeek/tabular'
@@ -271,4 +272,18 @@ autocmd BufEnter diary.md VimwikiDiaryGenerateLinks
 autocmd BufEnter index.md set syntax=vimwiki
 
 
-let g:livepreview_previewer = 'zathura'
+function! InstallPackages()
+    let winview = winsaveview()
+    call inputsave()
+    let cmd = ['sudo -S tlmgr install']
+    %call add(cmd, matchstr(getline('.'), '\\usepackage\(\[.*\]\)\?{\zs.*\ze\}'))
+    echomsg join(cmd)
+    let pass = inputsecret('Enter sudo password:') . "\n"
+    echo system(join(cmd), pass)
+    call inputrestore()
+    call winrestview(winview)
+endfunction
+
+command! InstallPackages call InstallPackages()
+
+let g:vimtex_view_general_viewer = 'zathura'
