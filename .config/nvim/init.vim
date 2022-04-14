@@ -84,6 +84,7 @@ inoremap [ []<Left>
 inoremap ( ()<Left>
 inoremap ' ''<Left>
 inoremap " ""<Left>
+inoremap $ $$<Left>
 
 nnoremap { <C-u>zz
 nnoremap } <C-d>zz
