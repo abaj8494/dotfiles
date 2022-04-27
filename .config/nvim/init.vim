@@ -222,6 +222,7 @@ Plug 'lervag/vimtex'
 Plug 'masukomi/vim-markdown-folding'
 Plug 'dhruvasagar/vim-table-mode'
 Plug 'mattn/calendar-vim'
+Plug 'https://github.com/wgurecky/vimSum.git', { 'do' : ':UpdateRemotePlugins' }
 call plug#end()
 "set termguicolors
 
