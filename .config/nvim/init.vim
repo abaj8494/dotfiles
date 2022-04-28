@@ -220,8 +220,8 @@ Plug 'junegunn/fzf.vim'
 Plug 'Mathijs-Bakker/zoom-vim'
 Plug 'vimwiki/vimwiki'
 Plug 'tpope/vim-surround'
-"Plug 'xuhdev/vim-latex-live-preview', { 'for': 'tex' }
 Plug 'lervag/vimtex'
+"Plug 'xuhdev/vim-latex-live-preview', { 'for': 'tex' }
 "Plug 'vim-pandoc/vim-pandoc'
 "Plug 'vim-pandoc/vim-pandoc-syntax'
 "Plug 'godlygeek/tabular'
@@ -230,8 +230,11 @@ Plug 'masukomi/vim-markdown-folding'
 Plug 'dhruvasagar/vim-table-mode'
 Plug 'mattn/calendar-vim'
 Plug 'https://github.com/wgurecky/vimSum.git', { 'do' : ':UpdateRemotePlugins' }
+Plug 'preservim/nerdtree'
+Plug 'nvim-lua/plenary.nvim'
+Plug 'nvim-telescope/telescope.nvim'
 call plug#end()
-"set termguicolors
+
 
 let g:tokyonight_style = 'night' " available: night, storm
 let g:tokyonight_enable_italic = 1
@@ -251,11 +254,6 @@ nnoremap n nzzzv
 nnoremap N Nzzzv
 
 autocmd FileType python map <buffer> <leader>r :w<CR>:!clear;python3 %<CR>
-
-" telescope plugin -> this only works on neovim!!
-" Plug 'nvim-lua/plenary.nvim'
-" Plug 'nvim-telescope/telescope.nvim'
-"
 
 let g:vimwiki_global_ext = 0
 
