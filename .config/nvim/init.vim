@@ -48,11 +48,11 @@ if hostname() == 'alarmpi'
 endif
 
 
-augroup remember_folds
-	autocmd!
-	autocmd BufWinLeave * mkview
-	autocmd BufWinEnter * silent! loadview
-augroup END
+""augroup remember_folds
+"	autocmd!
+"	autocmd BufWinLeave * mkview
+"	autocmd BufWinEnter * silent! loadview
+"augroup END
 
 
 " setting leader key
@@ -108,8 +108,6 @@ vnoremap go g<c-]>
 " remaps backspace to file explorer in normal mode
 nnoremap <backspace> :E<CR>
 
-" fzf
-map <C-u> :Files<CR>
 
 " leader
 " previous / next in buffer
@@ -279,3 +277,15 @@ autocmd BufEnter diary.md VimwikiDiaryGenerateLinks
 autocmd BufEnter index.md set syntax=vimwiki
 
 let g:vimtex_view_general_viewer = 'zathura'
+
+
+" nerdtree stuff in flux
+
+autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
+
+let NERDTreeMinimalUI=1
+
+map <space>e :NERDTreeToggle<CR>
+
+" telescope in flux
+map <C-u> :Telescope live_grep<CR>
