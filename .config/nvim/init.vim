@@ -28,16 +28,23 @@ set splitright
 "set nofoldenable
 
 " vimwiki lets
-let g:vimwiki_list = [{'path': '~/vimwiki',
-                      \ 'syntax': 'markdown', 'ext': '.md'}]
+"let g:vimwiki_list = [{'path': '~/vimwiki',
+"                      \ 'syntax': 'markdown', 'ext': '.md'}]
+
 " diary lets
 let g:calendar_monday = 1
 let g:calendar_weeknm = 2 
 
 if hostname() == 'abelard.local'
-	set nowrap
 	let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki',
 						  \ 'syntax': 'markdown', 'ext': '.md'}]
+endif
+
+if hostname() == 'alarmpi'
+	let g:vimwiki_list = [{'path': '$HOME/vimwiki',
+							\ 'syntax': 'markdown', 'ext': '.md'},
+							\ {'path': '$HOME/Google Drive/2. - code/212. - vimwiki',
+							\ 'syntax': 'markdown', 'ext': '.md'}]
 endif
 
 
@@ -272,20 +279,5 @@ command RC e $MYVIMRC
 
 autocmd BufEnter diary.md VimwikiDiaryGenerateLinks
 autocmd BufEnter index.md set syntax=vimwiki
-
-
-function! InstallPackages()
-    let winview = winsaveview()
-    call inputsave()
-    let cmd = ['sudo -S tlmgr install']
-    %call add(cmd, matchstr(getline('.'), '\\usepackage\(\[.*\]\)\?{\zs.*\ze\}'))
-    echomsg join(cmd)
-    let pass = inputsecret('Enter sudo password:') . "\n"
-    echo system(join(cmd), pass)
-    call inputrestore()
-    call winrestview(winview)
-endfunction
-
-command! InstallPackages call InstallPackages()
 
 let g:vimtex_view_general_viewer = 'zathura'
