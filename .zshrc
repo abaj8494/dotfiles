@@ -5,6 +5,12 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
+LFCD="$HOME/.scripts/lfcd.sh"
+if [ -f "$LFCD" ]; then
+	source "$LFCD"
+fi
+
+
 # get power10k not to give output warning for fortune
 typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
 

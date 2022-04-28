@@ -9,6 +9,11 @@ set preview true
 set hidden true
 # set drawbox true
 
+# from default rc
+#set shell sh
+#set shellopts '-eu'
+#set ifs "\n"
+
 cmd zip %zip -r "$f" "$f"
 cmd tar %tar cvf "$f.tar" "$f"
 
@@ -17,6 +22,15 @@ cmd mkdir ${{
 	read ans
 	mkdir $ans
 }}
+
+cmd yank-path $printf '%s' "$fx" | pbcopy
+# the below 2 do not work as the head command on osx cannot handle negative
+# values. you will need to use some text manipulation trickery with tail / sed 
+# / awk to get this to work. nffs.
+#cmd yank-dirname $dirname -- "$f" | head -c-1 | pbcopy
+#cmd yank-basename $basename -a -- $fx | head -c-1 | pbcopy
+
+
 
 map m
 map o
@@ -40,13 +54,14 @@ map dd trash
 map tc clear_trash
 map tr restore_trash
 
+
 map t open
 map . set hidden!
 map DD delete
 map p paste
 map x cut
 map y copy
-map <enter> open
+map <enter> shell
 map mf mkfile
 map mr sudomkfile
 map md mkdir
@@ -55,8 +70,10 @@ map o open_config
 map r rename
 map R reload
 map C clear
+map { half-up
+map } half-down
 
-# Movement
+# Custom Directories
 map gdr cd ~/Google\ Drive
 map gdc  cd ~/Google\ Drive/2.\ -\ code
 map gD cd ~/Downloads
@@ -64,3 +81,7 @@ map gc cd ~/.config
 map gdt cd "~/Google Drive/1. - goodnotes/11. - tuition"
 map gds cd "~/Google Drive/1. - goodnotes/11. - tuition/111. - students"
 map gdtb cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"
+
+
+# Path
+map cp yank-path 
