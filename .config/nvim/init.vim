@@ -289,3 +289,5 @@ map <space>e :NERDTreeToggle<CR>
 
 " telescope in flux
 map <C-u> :Telescope live_grep<CR>
+
+
