@@ -75,9 +75,11 @@ map } half-down
 
 # Custom Directories
 map gdr cd ~/Google\ Drive
-map gdc  cd ~/Google\ Drive/2.\ -\ code
+map gdc  cd "~/Google Drive/2. - code"
+map gdv  cd "~/Google Drive/2. - code/212. - vimwiki"
 map gD cd ~/Downloads
-map gc cd ~/.config
+map g.c cd ~/.config
+map gcu cd "/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - courses"
 map gdt cd "~/Google Drive/1. - goodnotes/11. - tuition"
 map gds cd "~/Google Drive/1. - goodnotes/11. - tuition/111. - students"
 map gdtb cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"

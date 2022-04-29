@@ -45,6 +45,7 @@ export gdm="$HOME/Google Drive/7. - media"
 export gdv="$gdc/212. - vimwiki"
 export gdt="$gd/1. - goodnotes/11. - tuition"
 export unsw="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw"
+export gcu="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - courses"
 
 export HOMEBREW_GITHUB_API_TOKEN=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
 
