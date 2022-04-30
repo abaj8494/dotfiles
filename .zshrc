@@ -43,7 +43,7 @@ export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"
 export gdm="$HOME/Google Drive/7. - media"
 export gcv="$gdc/212. - vimwiki"
-export ggt="$gd/1. - goodnotes/11. - tuition"
+export gnt="$gd/1. - goodnotes/11. - tuition"
 export gcn="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw"
 export gcu="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - courses"
 
