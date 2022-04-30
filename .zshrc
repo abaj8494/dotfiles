@@ -1,4 +1,4 @@
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
@@ -42,9 +42,9 @@ export PATH="$PATH:$HOME/.go/bin"
 export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"
 export gdm="$HOME/Google Drive/7. - media"
-export gdv="$gdc/212. - vimwiki"
-export gdt="$gd/1. - goodnotes/11. - tuition"
-export unsw="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw"
+export gcv="$gdc/212. - vimwiki"
+export ggt="$gd/1. - goodnotes/11. - tuition"
+export gcn="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw"
 export gcu="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - courses"
 
 export HOMEBREW_GITHUB_API_TOKEN=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
