@@ -113,6 +113,7 @@ alias trc="v ~/.tmux.config"
 alias vrc="v ~/.config/nvim/init.vim"
 alias zrc="v ~/.zshrc"
 alias lrc="v ~/.config/lf/lfrc"
+alias krc="v ~/.config/karabiner/karabiner.json"
 
 # custom functions
 dtail () {
