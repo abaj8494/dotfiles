@@ -28,17 +28,13 @@ setopt cdablevars
 
 # exports
 export TERM=xterm-256color
-# Created by `pipx` on 2021-10-23 02:37:28
-export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin:/usr/local/go/bin/"
 # Path to your oh-my-zsh installation.
 export ZSH="/Users/$USER/.oh-my-zsh"
 # nvim as default editor
 export EDITOR="/usr/local/bin/nvim"
-# adding the .scripts folder to path
-export PATH="$PATH:$HOME/.scripts"
-# adding go to path
-export PATH="$PATH:$HOME/.go/bin"
 
+
+## navigation
 export gd="$HOME/Google Drive"
 export gdc="$HOME/Google Drive/2. - code"
 export gdm="$HOME/Google Drive/7. - media"
@@ -46,6 +42,15 @@ export gcv="$gdc/212. - vimwiki"
 export gnt="$gd/1. - goodnotes/11. - tuition"
 export gcn="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw"
 export gcu="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - courses"
+
+## path
+### Created by `pipx` on 2021-10-23 02:37:28
+export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin:/usr/local/go/bin/"
+### .scripts folder
+export PATH="$PATH:$HOME/.scripts"
+### go (the language)
+export PATH="$PATH:$HOME/.go/bin"
+
 
 export HOMEBREW_GITHUB_API_TOKEN=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
 
