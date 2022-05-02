@@ -116,7 +116,7 @@ nnoremap <leader>t :bnext<CR>
 " navigate buffers
 nnoremap <leader>' :buffers<CR>:buffer<Space>
 " insert single character
-nnoremap <leader>, i_<Esc>r
+nnoremap <leader>, a_<Esc>r
 " splits
 " horizontal / vertical split
 nnoremap <leader>- <C-w>s
@@ -172,6 +172,10 @@ vmap <space>g :<Plug>VimwikiDiaryGenerateLinks
 
 " clipboard
 nnoremap Y "*y
+
+nnoremap <space>o o<Esc>
+nnoremap <space>O O<Esc>
+
 
 " /remaps
 
