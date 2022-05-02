@@ -327,3 +327,10 @@ endfunction
 
 nmap <silent> <leader>l :call ToggleList("Location List", 'l')<CR>
 nmap <silent> <leader>q :call ToggleList("Quickfix List", 'c')<CR>
+
+
+" placing after table-mode plugin is loaded
+nnoremap <space>[ [\|
+nnoremap <space>] ]\|
+nnoremap <space>{ {\|
+nnoremap <space>} }\|
