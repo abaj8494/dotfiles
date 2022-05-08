@@ -20,7 +20,7 @@ cmd tar %tar cvf "$f.tar" "$f"
 cmd mkdir ${{
 	printf "Directory name: "
 	read ans
-	mkdir $ans
+	mkdir "$ans"
 }}
 
 cmd yank-path $printf '%s' "$fx" | pbcopy
