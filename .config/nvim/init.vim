@@ -291,6 +291,7 @@ map <space>e :NERDTreeToggle<CR>
 " telescope in flux
 map <C-u> :Telescope live_grep<CR>
 
+" quick fix list navigation
 nnoremap <leader>g :cprev<CR>
 nnoremap <leader>c :cnext<CR>
 nnoremap <space>q :cexpr []<cr> 
@@ -486,9 +487,10 @@ nnoremap <Leader>fb :lua require'telescope.builtin'.buffers(require('telescope.t
 
 nnoremap <leader>zf :lua require('telekasten').find_notes()<CR>
 nnoremap <leader>zd :lua require('telekasten').find_daily_notes()<CR>
-nnoremap <leader>zb :lua require('telekasten').find_daily_notes()<CR>
+nnoremap <leader>zb :lua require('telekasten').show_backlinks()<CR>
 nnoremap <leader>zg :lua require('telekasten').search_notes()<CR>
 nnoremap <leader>zz :lua require('telekasten').follow_link()<CR>
+nnoremap <leader>zn :lua require('telekasten').new_note()<CR>
 
 " on hesitation, bring up the panel
 nnoremap <leader>z :lua require('telekasten').panel()<CR>
