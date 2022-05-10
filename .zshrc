@@ -32,6 +32,9 @@ export TERM=xterm-256color
 export ZSH="/Users/$USER/.oh-my-zsh"
 # nvim as default editor
 export EDITOR="/usr/local/bin/nvim"
+# dbus for scli
+export DBUS_LAUNCHD_SESSION_BUS_SOCKET="$HOME/Library/Caches/dbus/bus"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$DBUS_LAUNCHD_SESSION_BUS_SOCKET"
 
 
 ## navigation
