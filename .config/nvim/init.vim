@@ -231,7 +231,7 @@ Plug 'preservim/nerdtree'
 Plug 'nvim-lua/plenary.nvim'
 Plug 'nvim-telescope/telescope.nvim'
 Plug 'renerocksai/telekasten.nvim'
-
+Plug 'michal-h21/vim-zettel'
 call plug#end()
 
 
@@ -467,9 +467,22 @@ require('telekasten').setup({
 END
 
 
+" vim-zettel
+let g:zettel_fzf_command = "rg --column --line-number --ignore-case --no-heading --color=always "
+
+let g:zettel_options = [{}, {"front_matter" : [["tags", ""], ["type","note"]], "template" :  "~/mytemplate.tpl"}]
 
 
 
+" telescope remaps
+
+nnoremap <Leader>w :lua require'telescope.builtin'.grep_string(require('telescope.themes').get_dropdown({}))<cr>
+
+nnoremap <Leader>ff :lua require'telescope.builtin'.find_files(require('telescope.themes').get_dropdown({}))<cr>
+
+nnoremap <Leader>fg :lua require'telescope.builtin'.live_grep(require('telescope.themes').get_dropdown({}))<cr>
+
+nnoremap <Leader>fb :lua require'telescope.builtin'.buffers(require('telescope.themes').get_dropdown({}))<cr>
 
 
 
