@@ -5,7 +5,7 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
-LFCD="$HOME/.scripts/lfcd.sh"
+LFCD="$HOME/Google Drive/2. - code/206. - scripts/lfcd.sh"
 if [ -f "$LFCD" ]; then
 	source "$LFCD"
 fi
@@ -50,7 +50,7 @@ export gcu="/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - course
 ### Created by `pipx` on 2021-10-23 02:37:28
 export PATH="$PATH:/Users/aayushbajaj/.local/bin:/Users/aayushbajaj/.emacs.d/bin:/usr/local/go/bin/"
 ### .scripts folder
-export PATH="$PATH:$HOME/.scripts"
+export PATH="$PATH:$HOME/Google Drive/2. - code/206. - scripts"
 ### go (the language)
 export PATH="$PATH:$HOME/.go/bin"
 
