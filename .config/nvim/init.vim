@@ -231,6 +231,7 @@ Plug 'preservim/nerdtree'
 Plug 'nvim-lua/plenary.nvim'
 Plug 'nvim-telescope/telescope.nvim'
 Plug 'renerocksai/telekasten.nvim'
+
 call plug#end()
 
 
