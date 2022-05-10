@@ -35,17 +35,12 @@ set splitright
 let g:calendar_monday = 1
 let g:calendar_weeknm = 2 
 
-if hostname() == 'abelard.local'
-	let g:vimwiki_list = [{'path': '~/Google Drive/2. - code/212. - vimwiki/212.00 - cs',
-						  \ 'syntax': 'markdown', 'ext': '.md'}]
-endif
-
-if hostname() == 'alarmpi'
-	let g:vimwiki_list = [{'path': '$HOME/vimwiki',
-							\ 'syntax': 'markdown', 'ext': '.md'},
-							\ {'path': '$HOME/Google Drive/2. - code/212. - vimwiki',
-							\ 'syntax': 'markdown', 'ext': '.md'}]
-endif
+" if hostname() == 'abelard.local'
+" endif
+let g:vimwiki_list = [{'path': '$HOME/Google Drive/2. - code/212. - vimwiki/212.00 - cs',
+					  \ 'syntax': 'markdown', 'ext': '.md'},
+					  \ {'path': '$HOME/Google Drive/2. - code/212. - vimwiki/212.01 - pkm',
+					  \ 'syntax': 'markdown', 'ext': '.md'}]
 
 
 ""augroup remember_folds
