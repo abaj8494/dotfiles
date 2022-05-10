@@ -420,7 +420,7 @@ require('telekasten').setup({
     tag_notation = "#tag",
 
     -- command palette theme: dropdown (window) or ivy (bottom panel)
-    command_palette_theme = "ivy",
+    command_palette_theme = "dropdown",
 
     -- tag list theme:
     -- get_cursor: small tag list at cursor; ivy and dropdown like above
@@ -468,7 +468,7 @@ END
 
 
 " vim-zettel
-let g:zettel_fzf_command = "rg --column --line-number --ignore-case --no-heading --color=always "
+let g:zettel_fzf_command = "rg --column --line-number --ignore-case --no-heading --color=always"
 
 let g:zettel_options = [{}, {"front_matter" : [["tags", ""], ["type","note"]], "template" :  "~/mytemplate.tpl"}]
 
@@ -476,7 +476,7 @@ let g:zettel_options = [{}, {"front_matter" : [["tags", ""], ["type","note"]], "
 
 " telescope remaps
 
-nnoremap <Leader>w :lua require'telescope.builtin'.grep_string(require('telescope.themes').get_dropdown({}))<cr>
+nnoremap <Leader>fw :lua require'telescope.builtin'.grep_string(require('telescope.themes').get_dropdown({}))<cr>
 
 nnoremap <Leader>ff :lua require'telescope.builtin'.find_files(require('telescope.themes').get_dropdown({}))<cr>
 
@@ -484,5 +484,12 @@ nnoremap <Leader>fg :lua require'telescope.builtin'.live_grep(require('telescope
 
 nnoremap <Leader>fb :lua require'telescope.builtin'.buffers(require('telescope.themes').get_dropdown({}))<cr>
 
+nnoremap <leader>zf :lua require('telekasten').find_notes()<CR>
+nnoremap <leader>zd :lua require('telekasten').find_daily_notes()<CR>
+nnoremap <leader>zb :lua require('telekasten').find_daily_notes()<CR>
+nnoremap <leader>zg :lua require('telekasten').search_notes()<CR>
+nnoremap <leader>zz :lua require('telekasten').follow_link()<CR>
 
+" on hesitation, bring up the panel
+nnoremap <leader>z :lua require('telekasten').panel()<CR>
 
