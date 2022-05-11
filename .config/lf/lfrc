@@ -74,7 +74,7 @@ map { half-up
 map } half-down
 
 # Custom Directories
-map gd cd ~/Google\ Drive
+map gdd cd ~/Google\ Drive
 map gdc  cd "~/Google Drive/2. - code"
 map gcv  cd "~/Google Drive/2. - code/212. - vimwiki"
 map gDw cd ~/Downloads
