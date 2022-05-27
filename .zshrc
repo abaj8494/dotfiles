@@ -125,6 +125,8 @@ alias zrc="v ~/.config/zsh/.zshrc"
 alias lrc="v ~/.config/lf/lfrc"
 alias krc="v ~/.config/karabiner/karabiner.json"
 
+alias a="tmux a"
+
 # custom functions
 dtail () {
 	tail -n $1 "$2" | wc -c | xargs -I {} truncate "$2" -s -{}
