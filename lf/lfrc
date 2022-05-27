@@ -1,0 +1,92 @@
+
+#set previewer '~/.config/lf/preview'
+#set cleaner '~/.config/lf/cleaner'
+set previewer stpv
+# put stpv in above line instead of iterm2
+set cleaner stpvimgclr
+&stpvimg --listen $id
+cmd on-quit $stpvimg --end $id
+set preview true
+set hidden true
+# set drawbox true
+
+# from default rc
+#set shell sh
+#set shellopts '-eu'
+#set ifs "\n"
+
+cmd zip %zip -r "$f" "$f"
+cmd tar %tar cvf "$f.tar" "$f"
+
+cmd mkdir ${{
+	printf "Directory name: "
+	read ans
+	mkdir "$ans"
+}}
+
+cmd yank-path $printf '%s' "$fx" | pbcopy
+# the below 2 do not work as the head command on osx cannot handle negative
+# values. you will need to use some text manipulation trickery with tail / sed 
+# / awk to get this to work. nffs.
+#cmd yank-dirname $dirname -- "$f" | head -c-1 | pbcopy
+#cmd yank-basename $basename -a -- $fx | head -c-1 | pbcopy
+
+
+
+map m
+map o
+map n
+map "'"
+map '"'
+map c
+map e
+map f
+
+# File Openers
+map e $$EDITOR "$f"
+map u $view "$f"
+
+# Archive Mappings
+map az zip
+map at tar
+
+# Trash Mappings
+map dd trash
+map tc clear_trash
+map tr restore_trash
+
+
+map t open
+map . set hidden!
+map DD delete
+map p paste
+map x cut
+map y copy
+map <enter> shell
+map mf mkfile
+map mr sudomkfile
+map md mkdir
+map ms $mkscript
+map o open_config
+map r rename
+map R reload
+map C clear
+map { half-up
+map } half-down
+
+# Custom Directories
+map gdd cd ~/Google\ Drive
+map gdc  cd "~/Google Drive/2. - code"
+map gcv  cd "~/Google Drive/2. - code/212. - vimwiki"
+map gaw cd ~/Downloads
+map gac cd ~/Documents
+map g.c cd ~/.config
+map gcu cd "/Users/aayushbajaj/Google Drive/2. - code/211. - unsw/211.1 - courses"
+map gnu cd "~/Google Drive/1. - goodnotes/10. - uni/100. - unsw"
+map gnt cd "~/Google Drive/1. - goodnotes/11. - tuition"
+map gns cd "~/Google Drive/1. - goodnotes/11. - tuition/111. - students"
+map gnx cd "/Users/aayushbajaj/Google Drive/1. - goodnotes/12. - pkm/121. - textbooks"
+
+
+# Path
+map cp yank-path 
