@@ -1,9 +1,7 @@
-set previewer stpv
-set cleaner stpvimgclr
-&stpvimg --listen $id
-cmd on-quit $stpvimg --end $id
+set cleaner ~/.config/lf/clean
+set previewer ~/.config/lf/preview
 
-set preview true
+
 set hidden true
 
 # from default rc
