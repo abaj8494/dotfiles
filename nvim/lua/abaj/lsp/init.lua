@@ -124,7 +124,8 @@ require("mason-lspconfig").setup({
     "svelte",
     "intelephense",
     "cssls",
-    "html"
+    "html",
+    "jdtls"
   },
   automatic_installation = true,
 })
