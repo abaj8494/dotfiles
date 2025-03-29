@@ -103,3 +103,10 @@ vim.keymap.set('n', '<leader>B', "<cmd>lua require'telescope.builtin'.buffers(re
 vim.keymap.set('n', '<leader>F', "<cmd>lua require'telescope.builtin'.find_files(require('telescope.themes').get_dropdown({}))<CR>", opts)
 
 -- No more vimwiki mappings
+
+-- folding
+vim.keymap.set('n', '<leader>z', 'za', { desc = 'Toggle fold under cursor', noremap = true, silent = true })
+vim.keymap.set('n', '<leader>o', 'zo', { desc = 'Open fold under cursor', noremap = true, silent = true })
+vim.keymap.set('n', '<leader>c', 'zc', { desc = 'Close fold under cursor', noremap = true, silent = true })
+vim.keymap.set('n', '<leader>O', 'zR', { desc = 'Open all folds', noremap = true, silent = true })
+vim.keymap.set('n', '<leader>C', 'zM', { desc = 'Close all folds', noremap = true, silent = true })
