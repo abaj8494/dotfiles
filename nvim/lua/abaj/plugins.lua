@@ -44,12 +44,6 @@ packer.init({
 return packer.startup(function(use)
 
     use 'wbthomason/packer.nvim'
-    use {
-        'kyazdani42/nvim-tree.lua',
-        requires = {
-            'kyazdani42/nvim-web-devicons', -- optional, for file icons
-        }
-    }
     use { 
         'junegunn/fzf', 
         run = function() vim.fn['fzf#install']() end 
@@ -79,7 +73,7 @@ return packer.startup(function(use)
                     sidebars = "dark",
                     floats = "dark",
                 },
-                sidebars = { "qf", "help", "terminal", "packer", "NvimTree" },
+                sidebars = { "qf", "help", "terminal", "packer" },
                 hide_inactive_statusline = false,
             })
         end

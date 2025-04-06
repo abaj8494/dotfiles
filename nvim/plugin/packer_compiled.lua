@@ -84,11 +84,6 @@ _G.packer_plugins = {
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/asyncrun.vim",
     url = "https://github.com/skywind3000/asyncrun.vim"
   },
-  ["calendar-vim"] = {
-    loaded = true,
-    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/calendar-vim",
-    url = "https://github.com/mattn/calendar-vim"
-  },
   ["cmp-buffer"] = {
     loaded = true,
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/cmp-buffer",
@@ -164,11 +159,6 @@ _G.packer_plugins = {
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/mason.nvim",
     url = "https://github.com/williamboman/mason.nvim"
   },
-  nerdtree = {
-    loaded = true,
-    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/nerdtree",
-    url = "https://github.com/preservim/nerdtree"
-  },
   ["null-ls.nvim"] = {
     loaded = true,
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/null-ls.nvim",
@@ -194,16 +184,6 @@ _G.packer_plugins = {
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/nvim-transparent",
     url = "https://github.com/xiyaowong/nvim-transparent"
   },
-  ["nvim-tree.lua"] = {
-    loaded = true,
-    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/nvim-tree.lua",
-    url = "https://github.com/kyazdani42/nvim-tree.lua"
-  },
-  ["nvim-web-devicons"] = {
-    loaded = true,
-    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/nvim-web-devicons",
-    url = "https://github.com/kyazdani42/nvim-web-devicons"
-  },
   ["packer.nvim"] = {
     loaded = true,
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/packer.nvim",
@@ -225,7 +205,7 @@ _G.packer_plugins = {
     url = "https://github.com/nvim-telescope/telescope.nvim"
   },
   ["tokyonight.nvim"] = {
-    config = { "\27LJ\2\ný\2\0\0\5\0\14\0\0196\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\3\0005\3\5\0005\4\4\0=\4\6\0035\4\a\0=\4\b\0034\4\0\0=\4\t\0034\4\0\0=\4\n\3=\3\v\0025\3\f\0=\3\r\2B\0\2\1K\0\1\0\rsidebars\1\6\0\0\aqf\thelp\rterminal\vpacker\rNvimTree\vstyles\14variables\14functions\rkeywords\1\0\1\vitalic\2\rcomments\1\0\6\vfloats\tdark\rsidebars\tdark\14variables\0\14functions\0\rkeywords\0\rcomments\0\1\0\1\vitalic\2\1\0\6\20terminal_colors\2\16transparent\2\rsidebars\0\nstyle\nnight\29hide_inactive_statusline\1\vstyles\0\nsetup\15tokyonight\frequire\0" },
+    config = { "\27LJ\2\nô\2\0\0\5\0\14\0\0196\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\3\0005\3\5\0005\4\4\0=\4\6\0035\4\a\0=\4\b\0034\4\0\0=\4\t\0034\4\0\0=\4\n\3=\3\v\0025\3\f\0=\3\r\2B\0\2\1K\0\1\0\rsidebars\1\5\0\0\aqf\thelp\rterminal\vpacker\vstyles\14variables\14functions\rkeywords\1\0\1\vitalic\2\rcomments\1\0\6\rcomments\0\vfloats\tdark\rsidebars\tdark\14variables\0\14functions\0\rkeywords\0\1\0\1\vitalic\2\1\0\6\rsidebars\0\vstyles\0\20terminal_colors\2\16transparent\2\nstyle\nnight\29hide_inactive_statusline\1\nsetup\15tokyonight\frequire\0" },
     loaded = true,
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/tokyonight.nvim",
     url = "https://github.com/folke/tokyonight.nvim"
@@ -240,20 +220,10 @@ _G.packer_plugins = {
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/vim-surround",
     url = "https://github.com/tpope/vim-surround"
   },
-  ["vim-table-mode"] = {
-    loaded = true,
-    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/vim-table-mode",
-    url = "https://github.com/dhruvasagar/vim-table-mode"
-  },
   vimtex = {
     loaded = true,
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/vimtex",
     url = "https://github.com/lervag/vimtex"
-  },
-  vimwiki = {
-    loaded = true,
-    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/vimwiki",
-    url = "https://github.com/vimwiki/vimwiki"
   },
   ["zoom-vim"] = {
     loaded = true,
@@ -265,7 +235,7 @@ _G.packer_plugins = {
 time([[Defining packer_plugins]], false)
 -- Config for: tokyonight.nvim
 time([[Config for tokyonight.nvim]], true)
-try_loadstring("\27LJ\2\ný\2\0\0\5\0\14\0\0196\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\3\0005\3\5\0005\4\4\0=\4\6\0035\4\a\0=\4\b\0034\4\0\0=\4\t\0034\4\0\0=\4\n\3=\3\v\0025\3\f\0=\3\r\2B\0\2\1K\0\1\0\rsidebars\1\6\0\0\aqf\thelp\rterminal\vpacker\rNvimTree\vstyles\14variables\14functions\rkeywords\1\0\1\vitalic\2\rcomments\1\0\6\vfloats\tdark\rsidebars\tdark\14variables\0\14functions\0\rkeywords\0\rcomments\0\1\0\1\vitalic\2\1\0\6\20terminal_colors\2\16transparent\2\rsidebars\0\nstyle\nnight\29hide_inactive_statusline\1\vstyles\0\nsetup\15tokyonight\frequire\0", "config", "tokyonight.nvim")
+try_loadstring("\27LJ\2\nô\2\0\0\5\0\14\0\0196\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\3\0005\3\5\0005\4\4\0=\4\6\0035\4\a\0=\4\b\0034\4\0\0=\4\t\0034\4\0\0=\4\n\3=\3\v\0025\3\f\0=\3\r\2B\0\2\1K\0\1\0\rsidebars\1\5\0\0\aqf\thelp\rterminal\vpacker\vstyles\14variables\14functions\rkeywords\1\0\1\vitalic\2\rcomments\1\0\6\rcomments\0\vfloats\tdark\rsidebars\tdark\14variables\0\14functions\0\rkeywords\0\1\0\1\vitalic\2\1\0\6\rsidebars\0\vstyles\0\20terminal_colors\2\16transparent\2\nstyle\nnight\29hide_inactive_statusline\1\nsetup\15tokyonight\frequire\0", "config", "tokyonight.nvim")
 time([[Config for tokyonight.nvim]], false)
 
 _G._packer.inside_compile = false

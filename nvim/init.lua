@@ -6,7 +6,7 @@ require "abaj.lsp"
 require "abaj.latex"
 require "abaj.luasnip"
 require "abaj.mod"
-require "abaj.ntree"
+-- require "abaj.ntree"
 
 -- latex
 vim.g.vimtex_view_general_viewer = 'open -a Brave Browser Beta.app'
