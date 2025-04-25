@@ -184,6 +184,12 @@ _G.packer_plugins = {
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/nvim-transparent",
     url = "https://github.com/xiyaowong/nvim-transparent"
   },
+  ["nvim-treesitter"] = {
+    config = { "\27LJ\2\nô\1\0\0\4\0\n\0\r6\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\4\0005\3\3\0=\3\5\0025\3\6\0=\3\a\0025\3\b\0=\3\t\2B\0\2\1K\0\1\0\14highlight\1\0\1\venable\2\vindent\1\0\1\venable\2\21ensure_installed\1\0\3\14highlight\0\vindent\0\21ensure_installed\0\1\t\0\0\6c\bcpp\blua\vpython\ago\15javascript\15typescript\trust\nsetup\28nvim-treesitter.configs\frequire\0" },
+    loaded = true,
+    path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/nvim-treesitter",
+    url = "https://github.com/nvim-treesitter/nvim-treesitter"
+  },
   ["packer.nvim"] = {
     loaded = true,
     path = "/Users/aayushbajaj/.local/share/nvim/site/pack/packer/start/packer.nvim",
@@ -233,6 +239,10 @@ _G.packer_plugins = {
 }
 
 time([[Defining packer_plugins]], false)
+-- Config for: nvim-treesitter
+time([[Config for nvim-treesitter]], true)
+try_loadstring("\27LJ\2\nô\1\0\0\4\0\n\0\r6\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\4\0005\3\3\0=\3\5\0025\3\6\0=\3\a\0025\3\b\0=\3\t\2B\0\2\1K\0\1\0\14highlight\1\0\1\venable\2\vindent\1\0\1\venable\2\21ensure_installed\1\0\3\14highlight\0\vindent\0\21ensure_installed\0\1\t\0\0\6c\bcpp\blua\vpython\ago\15javascript\15typescript\trust\nsetup\28nvim-treesitter.configs\frequire\0", "config", "nvim-treesitter")
+time([[Config for nvim-treesitter]], false)
 -- Config for: tokyonight.nvim
 time([[Config for tokyonight.nvim]], true)
 try_loadstring("\27LJ\2\nô\2\0\0\5\0\14\0\0196\0\0\0'\2\1\0B\0\2\0029\0\2\0005\2\3\0005\3\5\0005\4\4\0=\4\6\0035\4\a\0=\4\b\0034\4\0\0=\4\t\0034\4\0\0=\4\n\3=\3\v\0025\3\f\0=\3\r\2B\0\2\1K\0\1\0\rsidebars\1\5\0\0\aqf\thelp\rterminal\vpacker\vstyles\14variables\14functions\rkeywords\1\0\1\vitalic\2\rcomments\1\0\6\rcomments\0\vfloats\tdark\rsidebars\tdark\14variables\0\14functions\0\rkeywords\0\1\0\1\vitalic\2\1\0\6\rsidebars\0\vstyles\0\20terminal_colors\2\16transparent\2\nstyle\nnight\29hide_inactive_statusline\1\nsetup\15tokyonight\frequire\0", "config", "tokyonight.nvim")

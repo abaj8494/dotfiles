@@ -101,6 +101,8 @@ vim.keymap.set('n', 'E', ':silent ! \'/Users/aayushbajaj/Google Drive/2. - code/
 vim.keymap.set('n', '<leader>U', "<cmd>lua require'telescope.builtin'.live_grep(require('telescope.themes').get_dropdown({}))<CR>", opts)
 vim.keymap.set('n', '<leader>B', "<cmd>lua require'telescope.builtin'.buffers(require('telescope.themes').get_dropdown({}))<CR>", opts)
 vim.keymap.set('n', '<leader>F', "<cmd>lua require'telescope.builtin'.find_files(require('telescope.themes').get_dropdown({}))<CR>", opts)
+vim.keymap.set('n', '<leader>ts', '<cmd>Telescope treesitter<CR>', { desc = 'Find functions in current file' })
+
 
 -- No more vimwiki mappings
 

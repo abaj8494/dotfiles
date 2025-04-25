@@ -53,6 +53,29 @@ return packer.startup(function(use)
     use 'tpope/vim-surround'
     use 'nvim-lua/plenary.nvim'
     use 'nvim-telescope/telescope.nvim'
+    use {
+        'nvim-treesitter/nvim-treesitter',
+        run = ':TSUpdate',
+        config = function()
+            require'nvim-treesitter.configs'.setup({
+                ensure_installed = {
+                    "c",
+                    "cpp",
+                    "lua",
+                    "python",
+                    "go",
+                    "javascript",
+                    "typescript",
+                    "rust",
+                },
+                indent = {
+                    enable = true,
+                },
+                highlight = { enable = true },
+            })
+        end
+    }
+
     use 'skywind3000/asyncrun.vim'
     use 'ptzz/lf.vim'
     use 'voldikss/vim-floaterm'
