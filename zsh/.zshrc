@@ -141,7 +141,8 @@ unset __conda_setup
 # <<< conda initialize <<<
 
 alias emacs='$(/Applications/Emacs.app/Contents/MacOS/Emacs "$@")'
-alias lrc='vim ~/.config/lf/lfrc'
+alias lrc='nvim ~/.config/lf/lfrc'
+alias zrc='nvim ~/.config/zsh/.zshrc'
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
