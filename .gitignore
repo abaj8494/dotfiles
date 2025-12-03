@@ -2,3 +2,30 @@ karabiner/automatic_backups/
 zsh/.z
 zsh/.zprofile
 zsh/.zsh_history
+
+# Stow management
+.stow-local-ignore
+stow-packages/
+restructure.sh
+STOW-MIGRATION-PLAN.md
+
+# Sensitive/temporary zsh files
+zsh/.zsh_history
+zsh/.z
+zsh/.zsh_sessions/
+zsh/.zcompdump*
+
+# Emacs backup
+.emacs.d.backup/
+
+# Old emacs.el (now merged into emacs package)
+emacs.el
+
+# macOS
+.DS_Store
+
+# Temporary files
+*~
+*.bak
+*.old
+*-temp/

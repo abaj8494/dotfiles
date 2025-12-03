@@ -1,0 +1,139 @@
+set cleaner ~/.config/lf/clean
+set previewer ~/.config/lf/preview
+
+
+set hidden true
+
+# from default rc
+set shell sh
+#set shellopts '-eu'
+#set ifs "\n"
+
+set icons
+#set dircounts
+map ff $lf -remote "send $id select \"$(fzf)\""
+map ss &tmux split-window -h lf
+map s- &tmux split-window -v lf
+
+cmd zip ${{
+	zip -r "$f".zip "$f"
+}}
+cmd tar %tar cvf "$f.tar" "$f"
+cmd unzip ${{
+	unzip "$f"
+}}
+
+cmd wall ${{
+	wallpaper set "$f"
+}}
+
+cmd mkdir ${{
+	printf "Directory name: "
+	read ans
+	mkdir "$ans"
+}}
+
+cmd mkfile ${{
+	printf "File name: "
+	read ans
+	touch "$ans"
+}}
+
+
+cmd trash ${{
+   mkdir -p ~/.trash
+   if [ -z "$fs" ]; then
+	   mv "$f" ~/.trash
+   else
+	   IFS="`printf '\n\t'`"; mv $fs ~/.trash
+   fi
+}}
+
+cmd brave ${{
+	open -a "Google Chrome.app" "$f"
+}}
+
+cmd open_selected ${{
+    echo "$fs" | xargs -I{} open -a "Brave Browser Beta.app" {}
+}}
+
+
+cmd yank-path $printf '%s' "$fx" | pbcopy
+# the below 2 do not work as the head command on osx cannot handle negative
+# values. you will need to use some text manipulation trickery with tail / sed 
+# / awk to get this to work. nffs.
+#cmd yank-dirname $dirname -- "$f" | head -c-1 | pbcopy
+#cmd yank-basename $basename -a -- $fx | head -c-1 | pbcopy
+
+
+map m
+map o
+map n
+map "'"
+map '"'
+map c
+map e
+map f
+
+# File Openers
+map e $$EDITOR "$f"
+map E $$EDITOR -R "$f"
+map l $view "$f"
+map u unzip
+
+# Archive Mappings
+map az zip
+map at tar
+
+# Trash Mappings
+map DD trash
+map tc clear_trash
+map tr restore_trash
+
+
+map T tag-toggle
+map N :set sortby natural; set info; set reverse!
+map R :set sortby time; set info time; set reverse!
+map sS :set sortby size; set info size
+map t open
+map . set hidden!
+map DdD delete
+map p paste
+map x cut
+map y copy
+map <enter> shell
+map mf mkfile
+map mr sudomkfile
+map md mkdir
+map ms $mkscript
+map o brave
+map O open_selected
+map r rename
+map R reload
+map C clear
+map { half-up
+map } half-down
+map w wall
+
+# Custom Directories
+map gH cd "~"
+map gW cd "~/Downloads"
+map gD cd "~/Documents"
+map gdu cd "~/Documents/uni"
+map gds cd "~/Documents/new-site"
+map gdc cd "~/Documents/code"
+map gm cd "~/Music"
+map gua cd "~"
+map g.c cd "~/.config"
+map g.t cd "~/.Trash/"
+map g.s cd "~/.scripts"
+map g.l cd "~/.local"
+map gre cd "/etc"
+map gru cd "/usr"
+map grv cd "/Volumes/"
+map grb cd "/bin"
+map grr cd "/"
+
+
+# Path
+map Y yank-path 
