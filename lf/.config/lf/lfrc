@@ -2,6 +2,8 @@ set cleaner ~/.config/lf/clean
 set previewer ~/.config/lf/preview
 
 
+set ifs "\n"
+
 set hidden true
 
 # from default rc
@@ -40,14 +42,54 @@ cmd mkfile ${{
 }}
 
 
+# --- Trash (Finder Trash via Homebrew `trash`) ---
 cmd trash ${{
-   mkdir -p ~/.trash
-   if [ -z "$fs" ]; then
-	   mv "$f" ~/.trash
-   else
-	   IFS="`printf '\n\t'`"; mv $fs ~/.trash
-   fi
+  # If there is a selection, trash all selected; otherwise trash current file.
+  if [ -n "$fs" ]; then
+    printf '%s\n' "$fs" | while IFS= read -r p; do
+      [ -n "$p" ] && trash -- "$p"
+    done
+  else
+    trash -- "$f"
+  fi
 }}
+
+# --- Restore (Finder “Put Back” via AppleScript `put away`) ---
+# Works best when you are browsing ~/.Trash (or a volume’s .Trashes/<uid>/).
+cmd restore_trash ${{
+  restore_one() {
+    /usr/bin/osascript - "$1" <<'APPLESCRIPT'
+on run argv
+  set p to item 1 of argv
+  tell application "Finder"
+    try
+      put away {(POSIX file p) as alias}
+    end try
+  end tell
+end run
+APPLESCRIPT
+  }
+
+  if [ -n "$fs" ]; then
+    printf '%s\n' "$fs" | while IFS= read -r p; do
+      [ -n "$p" ] && restore_one "$p"
+    done
+  else
+    restore_one "$f"
+  fi
+}}
+
+# --- Empty Trash (with confirmation) ---
+cmd clear_trash ${{
+  printf "Empty macOS Trash? This is permanent. [y/N] "
+  read ans
+  case "$ans" in
+    y|Y)
+      /usr/bin/osascript -e 'tell application "Finder" to empty the trash'
+      ;;
+  esac
+}}
+
 
 cmd brave ${{
 	open -a "Google Chrome.app" "$f"

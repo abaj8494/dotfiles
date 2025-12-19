@@ -84,9 +84,12 @@
 (add-to-list 'package-archives
              '("melpa" . "https://melpa.org/packages/") t)
 
- 	
-(use-package tex
-  :ensure auctex)
+
+;; AUCTeX via straight.el
+(use-package latex
+  :straight auctex      ;; tell straight to install *auctex*, not tex
+  :defer t
+  :mode ("\\.tex\\'" . LaTeX-mode))
 
 
 (use-package elpy

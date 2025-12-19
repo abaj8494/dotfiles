@@ -92,7 +92,7 @@ outer.right =      18
 
 # You can uncomment this line to open up terminal with alt + enter shortcut
 # See: https://nikitabobko.github.io/AeroSpace/commands#exec-and-forget
-cmd-enter = 'exec-and-forget kitty ~ -1'
+cmd-enter = 'exec-and-forget kitty --single-instance ~ -1'
 
 # See: https://nikitabobko.github.io/AeroSpace/commands#layout
 cmd-slash = 'layout tiles horizontal vertical'

@@ -140,8 +140,11 @@ fi
 unset __conda_setup
 # <<< conda initialize <<<
 
+alias icat='kitty +kitten icat "$@"'
 alias emacs='$(/Applications/Emacs.app/Contents/MacOS/Emacs "$@")'
-alias lrc='vim ~/.config/lf/lfrc'
+alias lrc='nvim ~/.config/lf/lfrc'
+alias zrc='nvim ~/.config/zsh/.zshrc'
+alias nrc='nvim ~/.config/nvim/'
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
@@ -154,3 +157,6 @@ disable r
 export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
 export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"
 export PATH=/opt/homebrew/opt/llvm/bin:$PATH
+
+export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
+
