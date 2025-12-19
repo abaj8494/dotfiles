@@ -226,6 +226,7 @@ ANKI_NOTE_TYPE=\"Cloze\" and ANKI_PREPEND_HEADING=\"t\"."
   (define-key org-mode-map (kbd "C-c a P") #'aj/anki-push-notes-with-heading)
   (define-key org-mode-map (kbd "C-c a s") #'anki-editor-sync-collection)
   (define-key org-mode-map (kbd "C-c a m") #'anki-editor-mode)
+  (define-key org-mode-map (kbd "C-c a D") #'anki-editor-delete-note-at-point)
   (define-key org-mode-map (kbd "C-c a d") #'anki-editor-set-deck)
   (define-key org-mode-map (kbd "C-c a h") #'anki-editor-toggle-prepend-heading)
   (define-key org-mode-map (kbd "C-c a c") #'anki-editor-cloze-region))

@@ -42,41 +42,28 @@ cmd mkfile ${{
 }}
 
 
-# --- Trash (Finder Trash via Homebrew `trash`) ---
 cmd trash ${{
-  # If there is a selection, trash all selected; otherwise trash current file.
-  if [ -n "$fs" ]; then
-    printf '%s\n' "$fs" | while IFS= read -r p; do
-      [ -n "$p" ] && trash -- "$p"
-    done
-  else
-    trash -- "$f"
-  fi
-}}
+  printf '%s\n' "$fx" | while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    [ -e "$p" ] || { printf 'trash: missing: %s\n' "$p" >&2; continue; }
 
-# --- Restore (Finder “Put Back” via AppleScript `put away`) ---
-# Works best when you are browsing ~/.Trash (or a volume’s .Trashes/<uid>/).
-cmd restore_trash ${{
-  restore_one() {
-    /usr/bin/osascript - "$1" <<'APPLESCRIPT'
+    /usr/bin/osascript - "$p" <<'APPLESCRIPT'
 on run argv
   set p to item 1 of argv
+  set a to (POSIX file p) as alias
   tell application "Finder"
-    try
-      put away {(POSIX file p) as alias}
-    end try
+    delete a
   end tell
 end run
 APPLESCRIPT
-  }
+  done
+}}
 
-  if [ -n "$fs" ]; then
-    printf '%s\n' "$fs" | while IFS= read -r p; do
-      [ -n "$p" ] && restore_one "$p"
-    done
-  else
-    restore_one "$f"
-  fi
+
+cmd restore_trash ${{
+  printf '%s\n' "$fx" | while IFS= read -r p; do
+    [ -n "$p" ] && command trash-putback "$p"
+  done
 }}
 
 # --- Empty Trash (with confirmation) ---
@@ -129,11 +116,11 @@ map at tar
 
 # Trash Mappings
 map DD trash
-map tc clear_trash
-map tr restore_trash
+map Tc clear_trash
+map Tr restore_trash
 
 
-map T tag-toggle
+map TT tag-toggle
 map N :set sortby natural; set info; set reverse!
 map R :set sortby time; set info time; set reverse!
 map sS :set sortby size; set info size
@@ -164,10 +151,11 @@ map gD cd "~/Documents"
 map gdu cd "~/Documents/uni"
 map gds cd "~/Documents/new-site"
 map gdc cd "~/Documents/code"
+map gdd cd "~/Documents/doc"
 map gm cd "~/Music"
 map gua cd "~"
 map g.c cd "~/.config"
-map g.t cd "~/.Trash/"
+map g.T cd "~/.Trash/"
 map g.s cd "~/.scripts"
 map g.l cd "~/.local"
 map gre cd "/etc"
