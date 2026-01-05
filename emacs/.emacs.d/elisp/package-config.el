@@ -232,5 +232,71 @@
 
 (setq bookmark-save-flag 1)   ; save after every change
 
+(use-package ox-hugo
+  :straight t
+  :after ox)
+
+;; ---------------------------------------------------------------------------
+;; Org-transclusion - get v2.0.0-rc from development branch
+;; ---------------------------------------------------------------------------
+
+(use-package org-transclusion
+  :straight (:host github :repo "nobiot/org-transclusion")
+  :after org
+  :bind (("C-c t a" . org-transclusion-add)
+         ("C-c t m" . org-transclusion-transient-menu)
+         ("C-c t t" . org-transclusion-mode))
+  :init
+  ;; Define the variable if it doesn't exist to avoid "void variable" error
+  (unless (boundp 'org-transclusion-indent-mode)
+    (defvar org-transclusion-indent-mode nil
+      "Whether to enable indent mode for transclusions."))
+  :config
+  ;; Font-lock mode is enabled by default, but we ensure it here
+  (require 'org-transclusion-font-lock)
+  ;; Custom face coloring for transclusion fringe
+  (set-face-attribute
+    'org-transclusion-fringe t
+    :foreground "#73c936"
+    :background "#73c936")
+  (org-transclusion-font-lock-mode +1))
+
+(use-package org-roam-ui
+  :bind (("C-c n r" . org-roam-ui-mode))
+  :straight
+    (:host github :repo "org-roam/org-roam-ui" :branch "main" :files ("*.el" "out"))
+    :after org-roam
+;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
+;;         a hookable mode anymore, you're advised to pick something yourself
+;;         if you don't care about startup time, use
+;;  :hook (after-init . org-roam-ui-mode)
+    :config
+    (setq org-roam-ui-sync-theme t
+          org-roam-ui-follow t
+          org-roam-ui-update-on-save t
+          org-roam-ui-open-on-start t))
+
+;; ---------------------------------------------------------------------------
+;; GPTel - LLM integration with Claude
+;; ---------------------------------------------------------------------------
+
+(use-package gptel
+  :straight t
+  :config
+  ;; Set Claude as the default backend
+  (setq gptel-model 'claude-sonnet-4-20250514
+        gptel-backend (gptel-make-anthropic "Claude"
+                        :stream t
+                        :key (lambda ()
+                               (or (getenv "ANTHROPIC_API_KEY")
+                                   (auth-source-pick-first-password
+                                    :host "api.anthropic.com"
+                                    :user "apikey")))))
+  :bind (("C-c g g" . gptel)              ; Open gptel chat buffer
+         ("C-c g s" . gptel-send)         ; Send region/buffer to LLM
+         ("C-c g m" . gptel-menu)         ; Quick settings menu
+         ("C-c g r" . gptel-rewrite)))
+
+
 (provide 'package-config)
 ;;; package-config.el ends here

@@ -15,7 +15,7 @@
 (auto-save-visited-mode 1)
 
 ;; Set the interval to 60 seconds (1 minute)
-(setq auto-save-visited-interval 60)
+(setq auto-save-visited-interval 120)
 
 ;; ---------------------------------------------------------------------------
 ;; Configure standard auto-save behavior as backup

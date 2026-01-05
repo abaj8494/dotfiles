@@ -91,7 +91,7 @@
 
 (add-to-list 'org-preview-latex-process-alist luamagick)
 
-(setq org-preview-latex-image-directory ".")
+(setq org-preview-latex-image-directory "ltximg/")
 (setq org-startup-with-inline-images t)
 
 (setq org-latex-pdf-process

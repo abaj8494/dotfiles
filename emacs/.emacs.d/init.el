@@ -92,13 +92,7 @@
 (add-to-list 'load-path "~/.emacs.d/elisp")
 (require 'ob-markdown)
 
-(setq elpy-shell-starting-directory 'current-directory) ;; default is 'project-root 
-
-  
-(require 'package)
-(add-to-list 'package-archives
-             '("melpa" . "https://melpa.org/packages/") t)
-
+(setq elpy-shell-starting-directory 'current-directory) ;; default is 'project-root
 
 ;; AUCTeX via straight.el
 (use-package latex
@@ -128,6 +122,7 @@
   (org-roam-db-autosync-mode)
   ;; If using org-roam-protocol
   (require 'org-roam-protocol)
+  (setq find-file-visit-truename t)
 
   ;; Custom node type method - must be inside :config so org-roam-node class exists
   (cl-defmethod org-roam-node-type ((node org-roam-node))
@@ -159,10 +154,16 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
+ '(custom-safe-themes
+   '("e27c9668d7eddf75373fa6b07475ae2d6892185f07ebed037eedf783318761d7"
+     default))
  '(org-agenda-files '("/Users/aayushbajaj/Documents/org/tasks.org"))
+ '(org-export-with-drawers nil)
  '(org-format-latex-options
-   '(:foreground default :background "Transparent" :scale 1.0 :html-foreground "Black" :html-background "Transparent" :html-scale 1.0 :matchers
-		 ("begin" "$1" "$" "$$" "\\(" "\\[")))
+   '(:foreground default :background "Transparent" :scale 1.0
+                 :html-foreground "Black" :html-background
+                 "Transparent" :html-scale 1.0 :matchers
+                 ("begin" "$1" "$" "$$" "\\(" "\\[")))
  '(org-latex-classes
    '(("standalone" "\\documentclass{standalone}"
       ("\\section{%s}" . "\\section*{%s}")
@@ -184,7 +185,11 @@
       ("\\subsection{%s}" . "\\subsection*{%s}")
       ("\\subsubsection{%s}" . "\\subsubsection*{%s}"))))
  '(org-latex-default-class "standalone")
+ '(org-latex-image-default-scale "1")
+ '(org-log-into-drawer "PROPERTIES")
  '(package-selected-packages '(auctex jupyter conda elpy ox-hugo magit))
+ '(safe-local-variable-values
+   '((eval setq org-preview-latex-default-process 'imagemagick)))
  '(tex-run-command "tex"))
 
 (custom-set-faces
@@ -317,7 +322,7 @@
 (add-to-list 'org-preview-latex-process-alist luamagick)
 
 ;; some sane options:
-(setq org-preview-latex-image-directory ".")
+(setq org-preview-latex-image-directory "ltximg/")
 
 (org-toggle-inline-images)
 

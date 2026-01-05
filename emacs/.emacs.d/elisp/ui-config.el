@@ -10,12 +10,30 @@
 ;; ---------------------------------------------------------------------------
 
 ;; Load theme
-(load-theme 'modus-vivendi t)
+;;(load-theme 'modus-vivendi t)
+
+
+
+;; Add custom theme directories
+(add-to-list 'custom-theme-load-path "~/.emacs.d/custom-themes/gruber-darker-theme/")
+(add-to-list 'custom-theme-load-path "~/.emacs.d/custom-themes/")
 
 ;; Custom font face
 (custom-set-faces
  '(default ((t (:family "Menlo" :foundry "nil" :slant normal
                         :weight regular :height 180 :width normal)))))
+
+;; Load gruber-themes for toggle and ergonomic headings
+(require 'gruber-themes)
+
+;; Load default theme
+(load-theme 'gruber-darker t)
+
+;; Keybinding for theme toggle (similar to modus-themes)
+(global-set-key (kbd "C-c T") #'gruber-toggle)
+
+(global-set-key (kbd "C-c e i") (lambda () (interactive) (find-file "~/.emacs.d/init.el")))
+(global-set-key (kbd "C-c e d") (lambda () (interactive) (find-file "~/.emacs.d/elisp/")))
 
 ;; ---------------------------------------------------------------------------
 ;; Splash screen / my-home

@@ -167,7 +167,7 @@
                    (find-file (button-get btn 'my-file))))
         (insert "\n")
         (setq count (1+ count))
-        (when (>= count 8)
+        (when (>= count 40)
           (setq recentf-list nil)   ; break the loop without cl-return
           )))))
 
