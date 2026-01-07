@@ -141,7 +141,7 @@ unset __conda_setup
 # <<< conda initialize <<<
 
 alias icat='kitty +kitten icat "$@"'
-alias emacs='$(/Applications/Emacs.app/Contents/MacOS/Emacs "$@")'
+alias emacs='$(/Applications/MacPorts/Emacs.app/ "$@")'
 alias lrc='nvim ~/.config/lf/lfrc'
 alias zrc='nvim ~/.config/zsh/.zshrc'
 alias nrc='nvim ~/.config/nvim/'

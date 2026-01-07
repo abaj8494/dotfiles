@@ -236,6 +236,207 @@
   :straight t
   :after ox)
 
+(use-package org-roam
+  :ensure t
+  :custom
+  (org-roam-directory (file-truename "~/Documents/new-site/content-org/"))
+  :bind (("C-c n l" . org-roam-buffer-toggle)
+         ("C-c n f" . org-roam-node-find)
+         ("C-c n g" . org-roam-graph)
+         ("C-c n i" . org-roam-node-insert)
+         ("C-c n c" . org-roam-capture)
+         ("C-c n I" . org-roam-node-insert-immediate)
+         ("C-c n j" . org-roam-dailies-capture-today)
+         ("C-c n C-f" . aj/org-roam-dailies-goto-next-day)
+         ("C-c n C-b" . aj/org-roam-dailies-goto-previous-day))
+  :init
+  ;; Load dailies module BEFORE :bind-keymap so the keymap exists
+  (require 'org-roam-dailies)
+  :bind-keymap
+  ("C-c n d" . org-roam-dailies-map)
+  :config
+  ;; Require cl-lib for cl-defmethod
+  (require 'cl-lib)
+
+  ;; Add extra bindings to dailies map
+  (define-key org-roam-dailies-map (kbd "Y") #'org-roam-dailies-capture-yesterday)
+  (define-key org-roam-dailies-map (kbd "T") #'org-roam-dailies-capture-tomorrow)
+
+  ;; Dailies capture template with day of week
+  ;; * Tasks is created by refile function when needed, not in template
+  (setq org-roam-dailies-capture-templates
+        '(("d" "default" entry
+           "* %(aj/dailies-entry-prefix)%?"
+           :target (file+head "%<%Y-%m-%d>.org"
+                              "#+title: %<%Y-%m-%d> | %<%A>\n#+EXPORT_FILE_NAME: %<%Y-%m-%d>\n"))))
+
+  ;; If you're using a vertical completion framework, you might want a more informative completion interface
+  (org-roam-db-autosync-mode)
+  ;; If using org-roam-protocol
+  (require 'org-roam-protocol)
+  (setq find-file-visit-truename t)
+
+  ;; Custom node type method - must be inside :config so org-roam-node class exists
+  (cl-defmethod org-roam-node-type ((node org-roam-node))
+    "Return the TYPE of NODE."
+    (condition-case nil
+        (file-name-nondirectory
+         (directory-file-name
+          (file-name-directory
+           (file-relative-name (org-roam-node-file node) org-roam-directory))))
+      (error "")))
+
+  (setq org-roam-node-display-template
+        (concat "${type:15} ${title:*} " (propertize "${tags:10}" 'face 'org-tag)))
+
+  (setq org-roam-capture-templates
+        '(("r" "roam" plain "%?"
+           :target (file+head "roam/${slug}.org"
+                    ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n")
+           :unnarrowed t)
+          ("p" "private" plain "%?"
+           :target (file+head "private/${slug}.org"
+                    ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n")
+           :unnarrowed t))))
+
+;; Helper for dailies time prefix - shows time only for today's captures
+(defun aj/dailies-entry-prefix ()
+  "Return time prefix for today's captures, empty string otherwise."
+  (let* ((capture-time (org-capture-get :default-time))
+         (today (format-time-string "%Y-%m-%d"))
+         (capture-date (format-time-string "%Y-%m-%d" capture-time)))
+    (if (equal today capture-date)
+        (format-time-string "%I:%M%p | " capture-time)
+      "")))
+
+;; Track dailies file for repositioning after capture
+(defvar aj/--dailies-capture-file nil)
+
+(defun aj/dailies-track-file ()
+  "Track the dailies file being captured to."
+  (when (org-roam-dailies--daily-note-p)
+    (setq aj/--dailies-capture-file (buffer-file-name))))
+
+(defun aj/dailies-reposition-entry ()
+  "In dailies files, move any entries after * Tasks to before it."
+  (when aj/--dailies-capture-file
+    (let ((file aj/--dailies-capture-file))
+      (setq aj/--dailies-capture-file nil)
+      (with-current-buffer (find-file-noselect file)
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^\\* Tasks$" nil t)
+            (let ((tasks-beg (line-beginning-position)))
+              (goto-char (point-max))
+              (when (and (re-search-backward "^\\* " tasks-beg t)
+                         (> (point) tasks-beg))
+                (let* ((entry-beg (point))
+                       (entry-end (save-excursion
+                                    (if (re-search-forward "^\\* " nil t)
+                                        (line-beginning-position)
+                                      (point-max))))
+                       (entry-text (buffer-substring entry-beg entry-end)))
+                  (delete-region entry-beg entry-end)
+                  (goto-char tasks-beg)
+                  (insert entry-text))))))
+        (save-buffer)))))
+
+(add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
+(add-hook 'org-capture-after-finalize-hook #'aj/dailies-reposition-entry)
+
+(defun aj/org-roam-dailies-goto-next-day ()
+  "Go to the next day's daily note, creating it if necessary.
+Unlike `org-roam-dailies-goto-next-note', this always goes to the
+chronologically next day, not just the next existing note."
+  (interactive)
+  (unless (org-roam-dailies--daily-note-p)
+    (user-error "Not in a daily-note"))
+  (let* ((filename (file-name-sans-extension
+                    (file-name-nondirectory (buffer-file-name))))
+         (current-time (org-time-string-to-time filename))
+         (next-time (time-add current-time 86400))) ; 86400 seconds = 1 day
+    (org-roam-dailies--capture next-time t)))
+
+(defun aj/org-roam-dailies-goto-previous-day ()
+  "Go to the previous day's daily note, creating it if necessary.
+Unlike `org-roam-dailies-goto-previous-note', this always goes to the
+chronologically previous day, not just the previous existing note."
+  (interactive)
+  (unless (org-roam-dailies--daily-note-p)
+    (user-error "Not in a daily-note"))
+  (let* ((filename (file-name-sans-extension
+                    (file-name-nondirectory (buffer-file-name))))
+         (current-time (org-time-string-to-time filename))
+         (prev-time (time-add current-time -86400))) ; -86400 seconds = -1 day
+    (org-roam-dailies--capture prev-time t)))
+
+(defun org-roam-node-insert-immediate (arg &rest args)
+    "Insert an org-roam node link with immediate finish.
+  Prompts for which capture template to use."
+    (interactive "P")
+    (let* ((candidates (mapcar (lambda (tpl)
+                                 (cons (format "%s - %s" (car tpl) (cadr tpl))
+                                       (car tpl)))
+                               org-roam-capture-templates))
+           (selection (completing-read "Template: " (mapcar #'car candidates)))
+           (template-key (cdr (assoc selection candidates)))
+           (template (assoc template-key org-roam-capture-templates))
+           (args (cons arg args))
+           (org-roam-capture-templates (list (append template
+                                                     '(:immediate-finish t)))))
+      (apply #'org-roam-node-insert args)))
+
+
+;; Copy completed TODOs to today's daily note
+(defun my/org-roam-copy-todo-to-today ()
+  "Refile the current heading to today's daily note under the 'Tasks' heading."
+  (interactive)
+  (let ((org-refile-keep t) ;; Set to nil to move instead of copy
+        (org-after-refile-insert-hook #'save-buffer)
+        today-file
+        pos)
+    ;; Open today's daily and ensure "Tasks" heading exists
+    (save-window-excursion
+      (org-roam-dailies--capture (current-time) t)
+      (setq today-file (buffer-file-name))
+      ;; Create "Tasks" heading if it doesn't exist (for older dailies)
+      (goto-char (point-min))
+      (unless (re-search-forward "^\\* Tasks$" nil t)
+        (goto-char (point-max))
+        (unless (bolp) (insert "\n"))
+        (insert "* Tasks\n"))
+      ;; Get position of Tasks heading
+      (goto-char (point-min))
+      (re-search-forward "^\\* Tasks$" nil t)
+      (setq pos (point))
+      (save-buffer))
+
+    ;; Only refile if the target file is different than the current file
+    (unless (equal (file-truename today-file)
+                   (file-truename (buffer-file-name)))
+      (org-refile nil nil (list "Tasks" today-file nil pos)))))
+
+(add-to-list 'org-after-todo-state-change-hook
+             (lambda ()
+               (when (equal org-state "DONE")
+                 (my/org-roam-copy-todo-to-today))))
+
+
+;;(defun org-roam-node-insert-immediate (arg &rest args)
+;;  (interactive "P")
+;;  (let ((args (cons arg args))
+;;        (org-roam-capture-templates (list (append (car org-roam-capture-templates)
+;;                                                  '(:immediate-finish t)))))
+;;    (apply #'org-roam-node-insert args)))
+
+(require 'info)
+
+(with-eval-after-load 'info
+  (add-to-list 'Info-directory-list
+               (expand-file-name "straight/build/org-roam/" user-emacs-directory)))
+
+
+
 ;; ---------------------------------------------------------------------------
 ;; Org-transclusion - get v2.0.0-rc from development branch
 ;; ---------------------------------------------------------------------------
@@ -283,15 +484,13 @@
 (use-package gptel
   :straight t
   :config
+  (require 'auth-source)
   ;; Set Claude as the default backend
   (setq gptel-model 'claude-sonnet-4-20250514
         gptel-backend (gptel-make-anthropic "Claude"
                         :stream t
-                        :key (lambda ()
-                               (or (getenv "ANTHROPIC_API_KEY")
-                                   (auth-source-pick-first-password
-                                    :host "api.anthropic.com"
-                                    :user "apikey")))))
+                        :key (auth-source-pick-first-password
+                              :host "api.anthropic.com")))
   :bind (("C-c g g" . gptel)              ; Open gptel chat buffer
          ("C-c g s" . gptel-send)         ; Send region/buffer to LLM
          ("C-c g m" . gptel-menu)         ; Quick settings menu

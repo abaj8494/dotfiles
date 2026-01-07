@@ -106,49 +106,6 @@
   :init
   (elpy-enable))
 
-(use-package org-roam
-  :ensure t
-  :custom
-  (org-roam-directory (file-truename "~/Documents/new-site/content-org/"))
-  :bind (("C-c n l" . org-roam-buffer-toggle)
-         ("C-c n f" . org-roam-node-find)
-         ("C-c n g" . org-roam-graph)
-         ("C-c n i" . org-roam-node-insert)
-         ("C-c n c" . org-roam-capture)
-         ;; Dailies
-         ("C-c n j" . org-roam-dailies-capture-today))
-  :config
-  ;; If you're using a vertical completion framework, you might want a more informative completion interface
-  (org-roam-db-autosync-mode)
-  ;; If using org-roam-protocol
-  (require 'org-roam-protocol)
-  (setq find-file-visit-truename t)
-
-  ;; Custom node type method - must be inside :config so org-roam-node class exists
-  (cl-defmethod org-roam-node-type ((node org-roam-node))
-    "Return the TYPE of NODE."
-    (condition-case nil
-        (file-name-nondirectory
-         (directory-file-name
-          (file-name-directory
-           (file-relative-name (org-roam-node-file node) org-roam-directory))))
-      (error "")))
-
-  (setq org-roam-node-display-template
-        (concat "${type:15} ${title:*} " (propertize "${tags:10}" 'face 'org-tag)))
-
-  (setq org-roam-capture-templates
-        '(("r" "roam" plain "%?"
-           :target (file+head "roam/${slug}.org"
-                    ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n")
-           :unnarrowed t))))
-
-(require 'info)
-
-(with-eval-after-load 'info
-  (add-to-list 'Info-directory-list
-               (expand-file-name "straight/build/org-roam/" user-emacs-directory)))
-
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
@@ -401,7 +358,7 @@
   (setq org-log-done 'time)
   (setq org-log-into-drawer t)
 
-  (setq org-directory "/Users/aayushbajaj/Documents/org/")
+  (setq org-directory "/Users/aayushbajaj/Documents/new-site/content-org/daily/")
   (setq org-agenda-files (list org-directory))
 
   (setq org-todo-keywords
