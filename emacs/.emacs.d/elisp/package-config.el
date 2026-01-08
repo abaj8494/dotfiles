@@ -245,15 +245,12 @@
          ("C-c n g" . org-roam-graph)
          ("C-c n i" . org-roam-node-insert)
          ("C-c n c" . org-roam-capture)
-         ("C-c n I" . org-roam-node-insert-immediate)
-         ("C-c n j" . org-roam-dailies-capture-today)
-         ("C-c n C-f" . aj/org-roam-dailies-goto-next-day)
-         ("C-c n C-b" . aj/org-roam-dailies-goto-previous-day))
+         ("C-c n I" . org-roam-node-insert-immediate))
   :init
   ;; Load dailies module BEFORE :bind-keymap so the keymap exists
   (require 'org-roam-dailies)
   :bind-keymap
-  ("C-c n d" . org-roam-dailies-map)
+  ("C-c d" . org-roam-dailies-map)
   :config
   ;; Require cl-lib for cl-defmethod
   (require 'cl-lib)
@@ -261,6 +258,8 @@
   ;; Add extra bindings to dailies map
   (define-key org-roam-dailies-map (kbd "Y") #'org-roam-dailies-capture-yesterday)
   (define-key org-roam-dailies-map (kbd "T") #'org-roam-dailies-capture-tomorrow)
+  (define-key org-roam-dailies-map (kbd "F") #'aj/org-roam-dailies-goto-next-day)
+  (define-key org-roam-dailies-map (kbd "B") #'aj/org-roam-dailies-goto-previous-day)
 
   ;; Dailies capture template with day of week
   ;; * Tasks is created by refile function when needed, not in template
