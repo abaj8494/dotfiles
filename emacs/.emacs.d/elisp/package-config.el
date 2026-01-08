@@ -142,25 +142,88 @@
           :buffer "*helm fd*"
           :prompt "Find file: ")))
 
-(defun aj/helm-fd-grep ()
-  "Use helm to fuzzy grep with fd+grep in current directory or project root."
+(defun aj/helm-rg ()
+  "Fast ripgrep search in project root (shallow, depth 3).
+For deeper search use `aj/helm-rg-deep' or press C-c d in helm."
   (interactive)
-  (require 'helm-grep)
-  (let ((default-directory (aj/project-root)))
-    (helm-do-grep-ag default-directory)))
+  (require 'helm-ag)
+  (let ((default-directory (aj/project-root))
+        (helm-ag-base-command "rg --no-heading --vimgrep --smart-case --max-depth 3 -g !public/ -g !node_modules/ -g !.git/ -g !build/ -g !dist/"))
+    (helm-ag default-directory)))
+
+(defun aj/helm-rg-deep ()
+  "Deep ripgrep search (no depth limit). Use sparingly on large repos."
+  (interactive)
+  (require 'helm-ag)
+  (let ((default-directory (aj/project-root))
+        (helm-ag-base-command "rg --no-heading --vimgrep --smart-case -g !public/ -g !node_modules/ -g !.git/ -g !build/ -g !dist/"))
+    (helm-ag default-directory)))
+
+;; ---------------------------------------------------------------------------
+;; Iterative Deepening Search (throttled, CPU-friendly)
+;; ---------------------------------------------------------------------------
+
+(defvar aj/rg-iterative-max-depth 8
+  "Maximum depth for iterative deepening search.")
+
+(defun aj/helm-rg-iterative ()
+  "Iterative deepening ripgrep search. Starts shallow, progressively deeper.
+Prompts for max depth, then collects results level by level."
+  (interactive)
+  (require 'helm)
+  (let* ((default-directory (aj/project-root))
+         (pattern (read-string "Search pattern: "))
+         (max-depth (read-number "Max depth (1-10): " 5))
+         (all-results nil)
+         (seen (make-hash-table :test 'equal)))
+    (when (and pattern (not (string-empty-p pattern)))
+      ;; Collect results depth by depth
+      (dotimes (d max-depth)
+        (let* ((depth (1+ d))
+               (cmd (format "rg --no-heading --vimgrep --smart-case --max-depth %d -g !public/ -g !node_modules/ -g !.git/ -g !build/ -g !dist/ -- %s ."
+                            depth
+                            (shell-quote-argument pattern)))
+               (output (shell-command-to-string cmd))
+               (lines (split-string output "\n" t)))
+          (message "Searching depth %d/%d... (%d results so far)"
+                   depth max-depth (length all-results))
+          (dolist (line lines)
+            (unless (gethash line seen)
+              (puthash line t seen)
+              (push line all-results)))
+          ;; Small delay to not hammer CPU
+          (sit-for 0.1)))
+      ;; Show results in helm
+      (if (null all-results)
+          (message "No results found for '%s'" pattern)
+        (helm :sources
+              (helm-build-sync-source (format "rg: %s" pattern)
+                :candidates (nreverse all-results)
+                :action (lambda (candidate)
+                          (when (string-match "\\`\\([^:]+\\):\\([0-9]+\\):" candidate)
+                            (find-file (expand-file-name (match-string 1 candidate)))
+                            (goto-char (point-min))
+                            (forward-line (1- (string-to-number (match-string 2 candidate))))))
+                :persistent-action (lambda (candidate)
+                                     (when (string-match "\\`\\([^:]+\\):\\([0-9]+\\):" candidate)
+                                       (find-file-other-window (expand-file-name (match-string 1 candidate)))
+                                       (goto-char (point-min))
+                                       (forward-line (1- (string-to-number (match-string 2 candidate)))))))
+              :buffer "*helm rg*")))))
 
 ;; Unified search dispatcher - choose your search method
 (defun aj/search-menu ()
   "Display a menu to choose between different search methods."
   (interactive)
   (let ((choice (read-char-choice
-                 "Search: [f]d-async [l]ocate [g]rep [d]eep [q]uit: "
-                 '(?f ?l ?g ?d ?q))))
+                 "Search: [f]d [g]rep(shallow) [i]terative [D]eep [l]ocate [q]uit: "
+                 '(?f ?g ?i ?D ?l ?q))))
     (pcase choice
       (?f (call-interactively #'aj/helm-fd))
+      (?g (call-interactively #'aj/helm-rg))
+      (?i (call-interactively #'aj/helm-rg-iterative))
+      (?D (call-interactively #'aj/helm-rg-deep))
       (?l (call-interactively #'aj/helm-locate-wrapper))
-      (?g (call-interactively #'aj/helm-fd-grep))
-      (?d (call-interactively #'aj/helm-fd-async))
       (?q (message "Search cancelled")))))
 
 
@@ -193,8 +256,9 @@
          ("s-f" . aj/helm-fd)              ; Command+F for fuzzy file finding (project)
          ("s-F" . aj/helm-fd-async)        ; Command+Shift+F for deep async search
          ("s-l" . aj/helm-locate-wrapper)  ; Command+L for system-wide locate
-         ("s-g" . aj/helm-fd-grep)         ; Command+G for grep
-         ("s-s" . aj/search-menu))         ; Command+S for search menu (optional)
+         ("s-g" . aj/helm-rg-iterative)    ; Command+G for iterative ripgrep (CPU-friendly)
+         ("s-G" . aj/helm-rg-deep)         ; Command+Shift+G for deep ripgrep
+         ("s-s" . aj/search-menu))         ; Command+S for search menu
   :config
   (helm-mode 1))
 
