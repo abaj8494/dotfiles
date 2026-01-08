@@ -1,17 +1,18 @@
-;;; custom-vars.el --- Custom variables and faces set by Emacs -*- lexical-binding: t; -*-
+;;; custom-vars.el --- Emacs customization settings -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; This file contains custom variables and faces set by the Emacs customization system.
+;; This file is the designated location for Emacs customize system.
+;; Set via (setq custom-file ...) in init.el.
+;; Do not edit manually unless you know what you're doing.
 
 ;;; Code:
 
-;; ---------------------------------------------------------------------------
-;; Custom variables (from Custom)
-;; ---------------------------------------------------------------------------
-
 (custom-set-variables
+ '(custom-safe-themes
+   '("e27c9668d7eddf75373fa6b07475ae2d6892185f07ebed037eedf783318761d7"
+     default))
  '(org-agenda-files
-   '("/Users/aayushbajaj/Documents/new-site/static/doc/org/tasks.org"))
+   '("/Users/aayushbajaj/Documents/new-site/content-org/daily/"))
  '(org-export-with-drawers nil)
  '(org-format-latex-options
    '(:foreground default :background "Transparent" :scale 2.0
@@ -45,6 +46,9 @@
    '((eval setq org-preview-latex-default-process 'imagemagick)))
  '(tex-run-command "tex"))
 
+(custom-set-faces
+ '(default ((t (:family "Menlo" :foundry "nil" :slant normal
+                        :weight regular :height 180 :width normal)))))
+
 (provide 'custom-vars)
 ;;; custom-vars.el ends here
-

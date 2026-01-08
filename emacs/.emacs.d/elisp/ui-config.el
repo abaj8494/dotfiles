@@ -18,10 +18,7 @@
 (add-to-list 'custom-theme-load-path "~/.emacs.d/custom-themes/gruber-darker-theme/")
 (add-to-list 'custom-theme-load-path "~/.emacs.d/custom-themes/")
 
-;; Custom font face
-(custom-set-faces
- '(default ((t (:family "Menlo" :foundry "nil" :slant normal
-                        :weight regular :height 180 :width normal)))))
+;; Font is set via custom-set-faces in custom-vars.el
 
 ;; Load gruber-themes for toggle and ergonomic headings
 (require 'gruber-themes)
