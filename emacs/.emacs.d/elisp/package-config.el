@@ -8,6 +8,33 @@
 (require 'use-package)
 
 ;; ---------------------------------------------------------------------------
+;; Persistent History - save command/search/kill-ring history across sessions
+;; ---------------------------------------------------------------------------
+
+(use-package savehist
+  :straight (:type built-in)
+  :init
+  (savehist-mode 1)
+  :config
+  (setq savehist-file (expand-file-name "savehist" user-emacs-directory)
+        history-length 10000
+        history-delete-duplicates t
+        savehist-save-minibuffer-history t
+        savehist-additional-variables
+        '(kill-ring
+          search-ring
+          regexp-search-ring
+          extended-command-history
+          file-name-history
+          command-history
+          shell-command-history
+          compile-history
+          minibuffer-history
+          read-expression-history
+          register-alist
+          bookmark-alist)))
+
+;; ---------------------------------------------------------------------------
 ;; Core packages via use-package / straight
 ;; ---------------------------------------------------------------------------
 
@@ -76,6 +103,31 @@
    "~/Library/Application Support/Anki2/j/collection.anki2")
   (ankiorg-media-directory
    "~/Library/Application Support/Anki2/j/collection.media/"))
+
+;; ---------------------------------------------------------------------------
+;; Tag Headings by Level - useful with anki-editor for bulk tagging
+;; ---------------------------------------------------------------------------
+
+(defun my/tag-headings-at-level (level tag)
+  "Tag all org headings at LEVEL within the region with TAG.
+Interactively prompts for level (default: current heading level) and tag."
+  (interactive
+   (list
+    (read-number "Heading level: "
+                 (save-excursion
+                   (when (org-at-heading-p)
+                     (org-current-level))))
+    (read-string "Tag: ")))
+  (save-excursion
+    (let ((beg (region-beginning))
+          (end (region-end))
+          (count 0))
+      (goto-char beg)
+      (while (re-search-forward org-heading-regexp end t)
+        (when (= (org-current-level) level)
+          (org-set-tags (cons tag (org-get-tags nil t)))
+          (setq count (1+ count))))
+      (message "Tagged %d headings at level %d with :%s:" count level tag))))
 
 ;; Other packages you had in package-selected-packages; keep them available
 (use-package magit      :defer t)
@@ -485,6 +537,62 @@ chronologically previous day, not just the previous existing note."
                  (my/org-roam-copy-todo-to-today))))
 
 
+(defun my/insert-week-calendar ()
+  "Insert formatted calendar under a Week N heading."
+  (interactive)
+  (save-excursion
+    (org-back-to-heading t)
+    (let* ((heading (org-get-heading t t t t))
+           (week-num (and (string-match "Week \\([0-9]+\\)" heading)
+                          (string-to-number (match-string 1 heading))))
+           (base-year 2026)
+           (month-greek ["α" "β" "γ" "δ" "ε" "ζ" "η" "θ" "ι" "κ" "λ" "μ"])
+           (jan-4 (encode-time 0 0 0 4 1 base-year))
+           (jan-4-dow (string-to-number (format-time-string "%u" jan-4)))
+           (week-1-monday (time-subtract jan-4 (days-to-time (1- jan-4-dow))))
+           (week-monday (time-add week-1-monday (days-to-time (* 7 (1- week-num)))))
+           (week-thursday (time-add week-monday (days-to-time 3)))
+           (cal-month (string-to-number (format-time-string "%m" week-thursday)))
+           (cal-year (string-to-number (format-time-string "%Y" week-thursday)))
+           (month-letter (aref month-greek (1- cal-month)))
+           (cal-output (shell-command-to-string (format "cal %d %d" cal-month cal-year)))
+           (lines (split-string cal-output "\n")))
+
+      ;; Clean up after heading
+      (org-end-of-meta-data t)
+      (delete-horizontal-space)
+      (when (looking-at "\n+")
+        (replace-match ""))
+
+      ;; Month title (2 spaces prefix)
+      (insert "  " (string-trim (car lines)) "\n")
+      ;; Header: 5 spaces + day names + 5 spaces + Σ
+      (insert (format "     %s    Σ   %s\n" (nth 1 lines) month-letter))
+
+      ;; Day rows
+      (let ((week-counter 1))
+        (dolist (line (nthcdr 2 lines))
+          (when (string-match "[0-9]" line)
+            (let* ((trimmed (string-trim line))
+                   (nums (split-string trimmed " " t))
+                   (last-day (string-to-number (car (last nums))))
+                   (date (encode-time 0 0 0 last-day cal-month cal-year))
+                   (iso-wk (string-to-number (format-time-string "%V" date)))
+                   (line-20 (substring (concat line "                    ") 0 20)))
+
+              (if (= iso-wk week-num)
+                  ;; Bold: (4 + first_digit_pos) leading spaces + *numbers*
+                  (let* ((first-digit-pos (string-match "[0-9]" line-20))
+                         (leading-count (+ 4 first-digit-pos))
+                         (numbers (string-trim-right (substring line-20 first-digit-pos)))
+                         (bold-line (concat (make-string leading-count ?\s) "*" numbers "*")))
+                    ;; 26-char bold content + 4 spaces = position 30
+                    (insert (format "%-26s    %2d   %d\n" bold-line iso-wk week-counter)))
+                ;; Normal: 5 spaces + 20-char cal line + 5 spaces
+                (insert (format "     %s     %2d   %d\n" line-20 iso-wk week-counter)))
+              (setq week-counter (1+ week-counter)))))))))
+
+
 ;;(defun org-roam-node-insert-immediate (arg &rest args)
 ;;  (interactive "P")
 ;;  (let ((args (cons arg args))
@@ -558,6 +666,15 @@ chronologically previous day, not just the previous existing note."
          ("C-c g s" . gptel-send)         ; Send region/buffer to LLM
          ("C-c g m" . gptel-menu)         ; Quick settings menu
          ("C-c g r" . gptel-rewrite)))
+
+
+;; ---------------------------------------------------------------------------
+;; Bytelocker - custom plugin; neovim port
+;; ---------------------------------------------------------------------------
+(use-package bytelocker
+  :straight (:type git :host github :repo "abaj8494/bytelocker.el")
+  :config
+  (bytelocker-setup))
 
 
 (provide 'package-config)
