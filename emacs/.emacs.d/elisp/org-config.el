@@ -109,6 +109,9 @@
 (global-set-key (kbd "C-c c") #'my/org-main-map)
 (define-key my/org-main-map (kbd "c") #'org-capture)
 
+;; Org agenda
+(global-set-key (kbd "C-c a") #'org-agenda)
+
 ;; ---------------------------------------------------------------------------
 ;; LaTeX Document Classes
 ;; ---------------------------------------------------------------------------

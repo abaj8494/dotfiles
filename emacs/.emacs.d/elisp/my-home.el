@@ -32,7 +32,9 @@
   (setq buffer-read-only t
         truncate-lines t
         mode-line-format '("  " mode-name))
-  (setq-local cursor-type nil))
+  (setq-local cursor-type nil)
+  ;; Add focus highlight hook locally
+  (add-hook 'post-command-hook #'my-home--focus-update nil t))
 
 (defface my-home-focus
   '((t :inherit hl-line))
@@ -51,8 +53,6 @@
       (if btn
           (move-overlay my-home--focus-ov (button-start btn) (button-end btn))
         (delete-overlay my-home--focus-ov)))))
-
-(add-hook 'post-command-hook #'my-home--focus-update nil t)
 
 ;; Nice keys
 (define-key my-home-mode-map (kbd "TAB")       #'forward-button)

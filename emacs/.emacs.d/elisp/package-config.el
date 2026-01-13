@@ -55,6 +55,8 @@
   (setq elpy-shell-starting-directory 'current-directory)) ;; default is 'project-root
 
 (use-package conda
+  :custom
+  (conda-anaconda-home "/opt/anaconda3")
   :config
   ;; interactive shell support
   (conda-env-initialize-interactive-shells)
@@ -376,9 +378,11 @@ Prompts for max depth, then collects results level by level."
   (define-key org-roam-dailies-map (kbd "T") #'org-roam-dailies-capture-tomorrow)
   (define-key org-roam-dailies-map (kbd "F") #'aj/org-roam-dailies-goto-next-day)
   (define-key org-roam-dailies-map (kbd "B") #'aj/org-roam-dailies-goto-previous-day)
+  ;; V = capture to date (creates note if needed, prompts for date)
+  (define-key org-roam-dailies-map (kbd "V") #'org-roam-dailies-capture-date)
 
   ;; Dailies capture template with day of week
-  ;; * Tasks is created by refile function when needed, not in template
+  ;; Entries go BEFORE * Tasks heading via post-capture repositioning
   (setq org-roam-dailies-capture-templates
         '(("d" "default" entry
            "* %(aj/dailies-entry-prefix)%?"
@@ -401,9 +405,31 @@ Prompts for max depth, then collects results level by level."
            (file-relative-name (org-roam-node-file node) org-roam-directory))))
       (error "")))
 
-  (setq org-roam-node-display-template
-        (concat "${type:15} ${title:*} " (propertize "${tags:10}" 'face 'org-tag)))
+  (cl-defmethod org-roam-node-directories ((node org-roam-node))
+    (if-let ((dirs (file-name-directory (file-relative-name (org-roam-node-file node) org-roam-directory))))
+        (format "(%s)" (car (split-string dirs "/")))
+      ""))
 
+  (cl-defmethod org-roam-node-backlinkscount ((node org-roam-node))
+    (let ((count (caar (org-roam-db-query
+                        [:select (funcall count source)
+                         :from links
+                         :where (= dest $s1)
+                         :and (= type "id")]
+                        (org-roam-node-id node)))))
+      (if (> count 0)
+          (format "[%d]" count)
+        "")))
+
+  ;; Combined display template
+  (setq org-roam-node-display-template
+        (concat "${directories:10} "
+                "${type:15} "
+                "${title:*} "
+                (propertize "${tags:10}" 'face 'org-tag)
+                " ${backlinkscount:6}")))
+
+(with-eval-after-load 'org-roam
   (setq org-roam-capture-templates
         '(("r" "roam" plain "%?"
            :target (file+head "roam/${slug}.org"
@@ -412,6 +438,10 @@ Prompts for max depth, then collects results level by level."
           ("p" "private" plain "%?"
            :target (file+head "private/${slug}.org"
                     ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n")
+           :unnarrowed t)
+          ("b" "book" plain "%?"
+           :target (file+head "words/library/books/${slug}.org"
+                    ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n#+hugo_layout: book\n#+hugo_custom_front_matter: :toc true :author \n#+hugo_tags: \n#+hugo_auto_set_lastmod: t\n#+toc: headlines 2\n")
            :unnarrowed t))))
 
 ;; Helper for dailies time prefix - shows time only for today's captures
@@ -429,8 +459,10 @@ Prompts for max depth, then collects results level by level."
 
 (defun aj/dailies-track-file ()
   "Track the dailies file being captured to."
-  (when (org-roam-dailies--daily-note-p)
-    (setq aj/--dailies-capture-file (buffer-file-name))))
+  (let ((file (buffer-file-name (org-capture-get :buffer))))
+    (when (and file
+               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file))
+      (setq aj/--dailies-capture-file file))))
 
 (defun aj/dailies-reposition-entry ()
   "In dailies files, move any entries after * Tasks to before it."
@@ -443,10 +475,12 @@ Prompts for max depth, then collects results level by level."
           (when (re-search-forward "^\\* Tasks$" nil t)
             (let ((tasks-beg (line-beginning-position)))
               (goto-char (point-max))
+              ;; Find any heading after Tasks
               (when (and (re-search-backward "^\\* " tasks-beg t)
                          (> (point) tasks-beg))
                 (let* ((entry-beg (point))
                        (entry-end (save-excursion
+                                    (forward-line 1)
                                     (if (re-search-forward "^\\* " nil t)
                                         (line-beginning-position)
                                       (point-max))))
@@ -531,10 +565,10 @@ chronologically previous day, not just the previous existing note."
                    (file-truename (buffer-file-name)))
       (org-refile nil nil (list "Tasks" today-file nil pos)))))
 
-(add-to-list 'org-after-todo-state-change-hook
-             (lambda ()
-               (when (equal org-state "DONE")
-                 (my/org-roam-copy-todo-to-today))))
+(add-hook 'org-after-todo-state-change-hook
+          (lambda ()
+            (when (equal org-state "DONE")
+              (my/org-roam-copy-todo-to-today))))
 
 
 (defun my/insert-week-calendar ()
@@ -564,10 +598,12 @@ chronologically previous day, not just the previous existing note."
       (when (looking-at "\n+")
         (replace-match ""))
 
-      ;; Month title (2 spaces prefix)
-      (insert "  " (string-trim (car lines)) "\n")
-      ;; Header: 5 spaces + day names + 5 spaces + Σ
-      (insert (format "     %s    Σ   %s\n" (nth 1 lines) month-letter))
+      ;; Month title (centered over 31-char width to align with full header)
+      (let* ((title (string-trim (car lines)))
+             (padding (/ (- 31 (length title)) 2)))
+        (insert (make-string padding ?\s) title "\n"))
+      ;; Header: 5 spaces + day names (20 chars) + 6 spaces + Σ
+      (insert (format "     %-20s      Σ   %s\n" (string-trim (nth 1 lines)) month-letter))
 
       ;; Day rows
       (let ((week-counter 1))
@@ -592,6 +628,130 @@ chronologically previous day, not just the previous existing note."
                 (insert (format "     %s     %2d   %d\n" line-20 iso-wk week-counter)))
               (setq week-counter (1+ week-counter)))))))))
 
+(defun my/parse-cal-days (line)
+  "Parse a cal output LINE into a list of 7 day values (nil for empty)."
+  (let ((days '())
+        (padded (concat line "                    ")))
+    (dotimes (i 7)
+      (let* ((start (* i 3))
+             (day-str (string-trim (substring padded start (+ start 2)))))
+        (push (if (string-empty-p day-str) nil (string-to-number day-str)) days)))
+    (nreverse days)))
+
+(defun my/format-day-cal-header (target-dow)
+  "Format day names header with widened column for TARGET-DOW (0=Sun, 6=Sat).
+Widened column: 6 chars (or 5 if last). Column before widened: no trailing space."
+  (let ((day-names ["Su" "Mo" "Tu" "We" "Th" "Fr" "Sa"])
+        (result "   "))
+    (dotimes (dow 7)
+      (let* ((name (aref day-names dow))
+             (is-widened (= dow target-dow))
+             (is-before-widened (and (> target-dow 0) (= dow (1- target-dow))))
+             (is-last (= dow 6)))
+        (setq result
+              (concat result
+                      (cond
+                       ;; Widened column: "  XX  " (6) or "  XX " (5 if last)
+                       (is-widened (if is-last (format "  %s " name) (format "  %s  " name)))
+                       ;; Before widened: no trailing space (absorbed by widened)
+                       (is-before-widened (format "%s" name))
+                       ;; Normal last
+                       (is-last name)
+                       ;; Normal column
+                       (t (format "%s " name)))))))
+    result))
+
+(defun my/format-day-cal-line (days target-day target-dow)
+  "Format calendar data line with widened TARGET-DOW column and bolded TARGET-DAY.
+DAYS is a list of 7 day numbers (nil for empty).
+Widened column: 6 chars (or 5 if last). Column before widened: no trailing space."
+  (let ((result "   "))
+    (dotimes (dow 7)
+      (let* ((day-val (nth dow days))
+             (is-widened (= dow target-dow))
+             (is-before-widened (and (> target-dow 0) (= dow (1- target-dow))))
+             (is-target (and day-val (= day-val target-day)))
+             (is-last (= dow 6)))
+        (setq result
+              (concat result
+                      (cond
+                       ;; Widened column: " *DD* " (6) or " *DD*" (5 if last)
+                       (is-widened
+                        (cond
+                         ((and is-target is-last) (format " *%2d*" day-val))
+                         (is-target (format " *%2d* " day-val))
+                         ((and day-val is-last) (format "  %2d " day-val))
+                         (day-val (format "  %2d  " day-val))
+                         (is-last "     ")
+                         (t "      ")))
+                       ;; Before widened: no trailing space
+                       (is-before-widened
+                        (if day-val (format "%2d" day-val) "  "))
+                       ;; Normal last column
+                       (is-last (if day-val (format "%2d" day-val) "  "))
+                       ;; Normal column
+                       (t (if day-val (format "%2d " day-val) "   ")))))))
+    result))
+
+(defun my/insert-day-calendar ()
+  "Insert formatted calendar for a daily org-roam note.
+Parses date from #+title: YYYY-MM-DD line, widens the day-of-week column,
+and bolds the specific date."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+      (let* ((date-str (match-string 1))
+             (parts (split-string date-str "-"))
+             (year (string-to-number (nth 0 parts)))
+             (month (string-to-number (nth 1 parts)))
+             (day (string-to-number (nth 2 parts)))
+             (date (encode-time 0 0 0 day month year))
+             (dow (string-to-number (format-time-string "%w" date)))
+             (month-greek ["α" "β" "γ" "δ" "ε" "ζ" "η" "θ" "ι" "κ" "λ" "μ"])
+             (month-letter (aref month-greek (1- month)))
+             (cal-output (shell-command-to-string (format "cal %d %d" month year)))
+             (lines (split-string cal-output "\n")))
+
+        ;; Find or create * Calendar heading
+        (goto-char (point-min))
+        (if (re-search-forward "^\\* Calendar$" nil t)
+            ;; Found it - go to end of heading, clear existing content
+            (progn
+              (org-end-of-meta-data t)
+              (delete-horizontal-space)
+              (when (looking-at "\n+")
+                (replace-match "\n")))
+          ;; Not found - create after front matter
+          (goto-char (point-min))
+          (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*\n" nil t)
+              (goto-char (match-end 0))
+            (goto-char (point-max)))
+          (insert "\n* Calendar\n"))
+
+        ;; Title line: centered over 25 chars, then Σ α headers
+        (let* ((title (string-trim (car lines)))
+               (title-len (length title))
+               (center-width 25)
+               (left-pad (/ (- center-width title-len) 2))
+               (right-pad (- center-width left-pad title-len)))
+          (insert (make-string left-pad ?\s) title (make-string right-pad ?\s))
+          (insert (format "     Σ   %s\n" month-letter)))
+
+        ;; Day names header with widened column
+        (insert (my/format-day-cal-header dow) "\n")
+
+        ;; Day rows
+        (let ((week-counter 1))
+          (dolist (line (nthcdr 2 lines))
+            (when (string-match "[0-9]" line)
+              (let* ((days (my/parse-cal-days line))
+                     (last-day (car (last (remq nil days))))
+                     (date-end (encode-time 0 0 0 last-day month year))
+                     (iso-wk (string-to-number (format-time-string "%V" date-end)))
+                     (formatted (my/format-day-cal-line days day dow)))
+                (insert (format "%s     %d   %d\n" formatted iso-wk week-counter))
+                (setq week-counter (1+ week-counter))))))))))
 
 ;;(defun org-roam-node-insert-immediate (arg &rest args)
 ;;  (interactive "P")
