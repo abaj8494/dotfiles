@@ -96,18 +96,96 @@
 
 (setq org-export-coding-system 'utf-8)
 
-(setq org-capture-templates
-      '(("t" "todo list item" entry
-         (file+headline "~/Documents/new-site/static/doc/org/tasks.org" "Tasks")
-         "* TODO %?\n %i\n %a")
-        ("j" "journal entry" entry
-         (file+datetree "~/Documents/new-site/static/doc/org/journal.org")
-         "* %?\nEntered on %U\n %i\n %a")))
+;; Helper functions for recurring template captures
+(defvar aj/templates-base-dir "~/Documents/new-site/content-org/templates/"
+  "Base directory for recurring task templates.")
 
-;; Main org prefix on C-c c
-(define-prefix-command 'my/org-main-map)
-(global-set-key (kbd "C-c c") #'my/org-main-map)
-(define-key my/org-main-map (kbd "c") #'org-capture)
+(defun aj/capture-daily-file ()
+  "Return the daily template file path."
+  (expand-file-name "daily.org" aj/templates-base-dir))
+
+(defun aj/capture-alternating-file ()
+  "Prompt for alternating phase and return the template file path.
+Shows current phase for reference."
+  (let* ((current-phase (aj/alternating-phase))
+         (phases '("a" "b"))
+         (phase (completing-read
+                 (format "Phase (today is '%s'): " current-phase)
+                 phases nil t)))
+    (expand-file-name (concat "alternating/" phase ".org") aj/templates-base-dir)))
+
+(defun aj/capture-weekly-file ()
+  "Prompt for day of week and return the template file path.
+Shows current day for reference."
+  (let* ((current-day (downcase (format-time-string "%A")))
+         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
+         (day (completing-read
+               (format "Day of week (today is %s): " current-day)
+               days nil t)))
+    (expand-file-name (concat "weekly/" day ".org") aj/templates-base-dir)))
+
+(defun aj/capture-biweekly-file ()
+  "Prompt for week parity and day, return the template file path.
+Shows current ISO week and parity for reference."
+  (let* ((current-week (aj/iso-week-number))
+         (current-parity (aj/iso-week-parity))
+         (current-day (downcase (format-time-string "%A")))
+         (parities '("odd" "even"))
+         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
+         (parity (completing-read
+                  (format "Week parity (week %d is %s): " current-week current-parity)
+                  parities nil t))
+         (day (completing-read
+               (format "Day of week (today is %s): " current-day)
+               days nil t)))
+    (expand-file-name (concat "biweekly/" parity "/" day ".org") aj/templates-base-dir)))
+
+(defun aj/capture-monthly-file ()
+  "Prompt for day of month and return the template file path.
+Shows current day for reference."
+  (let* ((current-dom (format-time-string "%d"))
+         (days (mapcar (lambda (n) (format "%02d" n)) (number-sequence 1 31)))
+         (day (completing-read
+               (format "Day of month (today is %s): " current-dom)
+               days nil t)))
+    (expand-file-name (concat "monthly/" day ".org") aj/templates-base-dir)))
+
+(defun aj/capture-yearly-file ()
+  "Prompt for MM-DD and return the template file path.
+Shows current date for reference."
+  (let* ((current-date (format-time-string "%m-%d"))
+         (date (read-string (format "Date MM-DD (today is %s): " current-date))))
+    (expand-file-name (concat "yearly/" date ".org") aj/templates-base-dir)))
+
+(setq org-capture-templates
+      '(("r" "recurring templates")
+        ("rd" "daily (every day)" plain
+         (file aj/capture-daily-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("ra" "alternating (every other day)" plain
+         (file aj/capture-alternating-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rw" "weekly" plain
+         (file aj/capture-weekly-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rb" "biweekly (fortnightly)" plain
+         (file aj/capture-biweekly-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rm" "monthly" plain
+         (file aj/capture-monthly-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("ry" "yearly" plain
+         (file aj/capture-yearly-file)
+         "* TODO %?"
+         :empty-lines 0)))
+
+;; Bind C-c c directly to org-capture
+(global-set-key (kbd "C-c c") #'org-capture)
 
 ;; Org agenda
 (global-set-key (kbd "C-c a") #'org-agenda)

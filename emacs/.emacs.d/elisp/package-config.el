@@ -380,9 +380,13 @@ Prompts for max depth, then collects results level by level."
   (define-key org-roam-dailies-map (kbd "B") #'aj/org-roam-dailies-goto-previous-day)
   ;; V = capture to date (creates note if needed, prompts for date)
   (define-key org-roam-dailies-map (kbd "V") #'org-roam-dailies-capture-date)
+  ;; r = refresh recurring tasks in current daily
+  (define-key org-roam-dailies-map (kbd "r") #'aj/refresh-daily-recurring)
+  ;; C = insert/refresh calendar in current daily
+  (define-key org-roam-dailies-map (kbd "C") #'my/insert-aj-day-calendar)
 
   ;; Dailies capture template with day of week
-  ;; Entries go BEFORE * Tasks heading via post-capture repositioning
+  ;; Recurring tasks and Calendar are inserted by hook (aj/dailies-reposition-entry)
   (setq org-roam-dailies-capture-templates
         '(("d" "default" entry
            "* %(aj/dailies-entry-prefix)%?"
@@ -444,6 +448,119 @@ Prompts for max depth, then collects results level by level."
                     ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n#+hugo_layout: book\n#+hugo_custom_front_matter: :toc true :author \n#+hugo_tags: \n#+hugo_auto_set_lastmod: t\n#+toc: headlines 2\n")
            :unnarrowed t))))
 
+;; Recurring tasks for dailies (daily, alternating, weekly, biweekly, monthly, yearly)
+(defvar aj/daily-templates-dir
+  (expand-file-name "templates" org-roam-directory)
+  "Directory containing recurring task templates.")
+
+(defun aj/read-template-file (subdir filename)
+  "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
+Returns the trimmed file contents, or nil if file doesn't exist."
+  (let ((path (expand-file-name (concat subdir "/" filename) aj/daily-templates-dir)))
+    (when (file-exists-p path)
+      (with-temp-buffer
+        (insert-file-contents path)
+        (string-trim (buffer-string))))))
+
+;; Phase calculation functions
+(defun aj/epoch-day (&optional time)
+  "Return the number of days since Unix epoch for TIME (default: now)."
+  (floor (/ (float-time (or time (current-time))) 86400)))
+
+(defun aj/alternating-phase (&optional time)
+  "Return alternating phase ('a' or 'b') for TIME based on epoch day parity."
+  (if (= 0 (% (aj/epoch-day time) 2)) "a" "b"))
+
+(defun aj/iso-week-parity (&optional time)
+  "Return ISO week parity ('odd' or 'even') for TIME."
+  (let ((week-num (string-to-number (format-time-string "%V" (or time (current-time))))))
+    (if (= 1 (% week-num 2)) "odd" "even")))
+
+(defun aj/iso-week-number (&optional time)
+  "Return ISO week number for TIME."
+  (string-to-number (format-time-string "%V" (or time (current-time)))))
+
+(defun aj/get-recurring-tasks-for-date (time)
+  "Return recurring tasks string for TIME.
+Combines templates from all recurring sources."
+  (let* ((day-name (downcase (format-time-string "%A" time)))
+         (day-of-month (format-time-string "%d" time))
+         (month-day (format-time-string "%m-%d" time))
+         (alt-phase (aj/alternating-phase time))
+         (week-parity (aj/iso-week-parity time))
+         (results (list
+                   (aj/read-template-file "" "daily.org")
+                   (aj/read-template-file "alternating" (concat alt-phase ".org"))
+                   (aj/read-template-file "weekly" (concat day-name ".org"))
+                   (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org"))
+                   (aj/read-template-file "monthly" (concat day-of-month ".org"))
+                   (aj/read-template-file "yearly" (concat month-day ".org")))))
+    (string-join (delq nil (delq "" results)) "\n")))
+
+(defun aj/daily-recurring-tasks ()
+  "Return recurring tasks for the capture date.
+Combines templates from:
+  - daily.org (every day)
+  - alternating/<a|b>.org (every other day, epoch-based)
+  - weekly/<dayname>.org (e.g., wednesday.org)
+  - biweekly/<odd|even>/<dayname>.org (fortnightly)
+  - monthly/<day>.org (e.g., 14.org for 14th of month)
+  - yearly/<mm-dd>.org (e.g., 01-14.org for January 14th)"
+  (let* ((capture-time (org-capture-get :default-time))
+         (combined (aj/get-recurring-tasks-for-date capture-time)))
+    (if (string-empty-p combined)
+        ""
+      (concat "\n" combined "\n"))))
+
+(defun aj/refresh-daily-recurring ()
+  "Refresh recurring tasks in the current daily note.
+Parses date from #+title: line, fetches all recurring templates,
+and inserts/replaces content under * Recurring heading (placed before Calendar)."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+        (let* ((date-str (match-string 1))
+               (parts (split-string date-str "-"))
+               (year (string-to-number (nth 0 parts)))
+               (month (string-to-number (nth 1 parts)))
+               (day (string-to-number (nth 2 parts)))
+               (date-time (encode-time 0 0 0 day month year))
+               (tasks-raw (aj/get-recurring-tasks-for-date date-time))
+               ;; Convert * headings to ** (subheadings under * Recurring)
+               (tasks (replace-regexp-in-string "^\\* " "** " tasks-raw)))
+          (if (string-empty-p tasks)
+              (message "No recurring tasks for %s" date-str)
+            ;; Find or create * Recurring heading
+            (goto-char (point-min))
+            (if (re-search-forward "^\\* Recurring$" nil t)
+                ;; Found - delete existing content under it
+                (let ((heading-end (line-end-position))
+                      (section-end (save-excursion
+                                     (forward-line 1)
+                                     (if (re-search-forward "^\\* " nil t)
+                                         (line-beginning-position)
+                                       (point-max)))))
+                  (delete-region (1+ heading-end) section-end))
+              ;; Not found - create BEFORE Calendar or at end of front matter
+              (goto-char (point-min))
+              (cond
+               ((re-search-forward "^\\* Calendar$" nil t)
+                ;; Insert before Calendar heading
+                (goto-char (line-beginning-position)))
+               ((re-search-forward "^#\\+EXPORT_FILE_NAME:.*\n" nil t)
+                (goto-char (match-end 0))
+                (insert "\n"))
+               (t (goto-char (point-max))))
+              (insert "* Recurring\n\n"))
+            ;; Insert tasks
+            (goto-char (point-min))
+            (re-search-forward "^\\* Recurring$" nil t)
+            (forward-line 1)
+            (insert "\n" tasks "\n")
+            (message "Refreshed recurring tasks for %s" date-str)))
+      (message "Not a daily note (no date in title)"))))
+
 ;; Helper for dailies time prefix - shows time only for today's captures
 (defun aj/dailies-entry-prefix ()
   "Return time prefix for today's captures, empty string otherwise."
@@ -465,7 +582,8 @@ Prompts for max depth, then collects results level by level."
       (setq aj/--dailies-capture-file file))))
 
 (defun aj/dailies-reposition-entry ()
-  "In dailies files, move any entries after * Tasks to before it."
+  "In dailies files, move any entries after * Tasks to before it.
+Also inserts the day calendar if not already present."
   (when aj/--dailies-capture-file
     (let ((file aj/--dailies-capture-file))
       (setq aj/--dailies-capture-file nil)
@@ -488,6 +606,15 @@ Prompts for max depth, then collects results level by level."
                   (delete-region entry-beg entry-end)
                   (goto-char tasks-beg)
                   (insert entry-text))))))
+        ;; Insert recurring and calendar if not present
+        (save-excursion
+          (goto-char (point-min))
+          (unless (re-search-forward "^\\* Recurring$" nil t)
+            (aj/refresh-daily-recurring)))
+        (save-excursion
+          (goto-char (point-min))
+          (unless (re-search-forward "^\\* Calendar$" nil t)
+            (my/insert-aj-day-calendar)))
         (save-buffer)))))
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
@@ -752,6 +879,80 @@ and bolds the specific date."
                      (formatted (my/format-day-cal-line days day dow)))
                 (insert (format "%s     %d   %d\n" formatted iso-wk week-counter))
                 (setq week-counter (1+ week-counter))))))))))
+
+(defun my/format-number-with-commas (n)
+  "Format integer N with comma thousand separators."
+  (let ((s (number-to-string n)))
+    (while (string-match "\\(.*[0-9]\\)\\([0-9]\\{3\\}\\)\\'" s)
+      (setq s (concat (match-string 1 s) "," (match-string 2 s))))
+    s))
+
+(defun my/insert-aj-day-calendar ()
+  "Insert formatted calendar for a daily org-roam note with life stats.
+Parses date from #+title: YYYY-MM-DD line, widens the day-of-week column,
+bolds the specific date.
+Σ column: Day of year (cumulative days elapsed in current year).
+ω column: Days elapsed since December 26, 2001 (AJ's birthday)."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+      (let* ((date-str (match-string 1))
+             (parts (split-string date-str "-"))
+             (year (string-to-number (nth 0 parts)))
+             (month (string-to-number (nth 1 parts)))
+             (day (string-to-number (nth 2 parts)))
+             (date (encode-time 0 0 0 day month year))
+             (dow (string-to-number (format-time-string "%w" date)))
+             ;; Birthday: December 26, 2001
+             (birthday (encode-time 0 0 0 26 12 2001))
+             (cal-output (shell-command-to-string (format "cal %d %d" month year)))
+             (lines (split-string cal-output "\n")))
+
+        ;; Find or create * Calendar heading
+        (goto-char (point-min))
+        (if (re-search-forward "^\\* Calendar$" nil t)
+            ;; Found it - go to end of heading, clear existing content
+            (progn
+              (org-end-of-meta-data t)
+              (delete-horizontal-space)
+              (when (looking-at "\n+")
+                (replace-match "\n")))
+          ;; Not found - create after front matter
+          (goto-char (point-min))
+          (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*\n" nil t)
+              (goto-char (match-end 0))
+            (goto-char (point-max)))
+          (insert "\n* Calendar\n"))
+
+        ;; Title line: centered over 25 chars, then Σ ω headers
+        ;; Σ is 3-char wide (max 366), ω is 6-char wide (e.g., "8,786")
+        (let* ((title (string-trim (car lines)))
+               (title-len (length title))
+               (center-width 25)
+               (left-pad (/ (- center-width title-len) 2))
+               (right-pad (- center-width left-pad title-len)))
+          (insert (make-string left-pad ?\s) title (make-string right-pad ?\s))
+          (insert "   Σ       ω\n"))
+
+        ;; Day names header with widened column
+        (insert (my/format-day-cal-header dow) "\n")
+
+        ;; Day rows
+        (dolist (line (nthcdr 2 lines))
+          (when (string-match "[0-9]" line)
+            (let* ((days (my/parse-cal-days line))
+                   (last-day (car (last (remq nil days))))
+                   (date-end (encode-time 0 0 0 last-day month year))
+                   ;; Day of year for last day in row
+                   (day-of-year (string-to-number (format-time-string "%j" date-end)))
+                   ;; Days alive: difference from birthday to date-end
+                   (days-alive (floor (/ (float-time (time-subtract date-end birthday)) 86400)))
+                   (formatted (my/format-day-cal-line days day dow)))
+              (insert (format "%s %3d  %6s\n"
+                              formatted
+                              day-of-year
+                              (my/format-number-with-commas days-alive))))))))))
 
 ;;(defun org-roam-node-insert-immediate (arg &rest args)
 ;;  (interactive "P")
