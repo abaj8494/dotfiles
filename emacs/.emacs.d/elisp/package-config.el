@@ -805,8 +805,12 @@ Widened column: 6 chars (or 5 if last). Column before widened: no trailing space
                        ;; Widened column: " *DD* " (6) or " *DD*" (5 if last)
                        (is-widened
                         (cond
-                         ((and is-target is-last) (format " *%2d*" day-val))
-                         (is-target (format " *%2d* " day-val))
+                         ;; Bold last: " *7* " (5) or " *12*" (5)
+                         ((and is-target is-last)
+                          (if (< day-val 10) (format " *%d* " day-val) (format " *%d*" day-val)))
+                         ;; Bold non-last: "  *7* " (6) or " *12* " (6)
+                         (is-target
+                          (if (< day-val 10) (format "  *%d* " day-val) (format " *%d* " day-val)))
                          ((and day-val is-last) (format "  %2d " day-val))
                          (day-val (format "  %2d  " day-val))
                          (is-last "     ")
@@ -993,6 +997,11 @@ bolds the specific date.
     :foreground "#73c936"
     :background "#73c936")
   (org-transclusion-font-lock-mode +1))
+
+(use-package org-side-tree
+  :straight (:host github :repo "localauthor/org-side-tree")
+  :after org
+  :bind (("C-c o s" . org-side-tree)))
 
 (use-package org-roam-ui
   :bind (("C-c n r" . org-roam-ui-mode))

@@ -195,9 +195,26 @@ Shows current date for reference."
 ;; ---------------------------------------------------------------------------
 
 (with-eval-after-load 'ox-latex
+  ;; Override default article to support 5 heading levels (paragraph, subparagraph)
+  (add-to-list 'org-latex-classes
+               '("article"
+                 "\\documentclass[11pt]{article}"
+                 ("\\section{%s}" . "\\section*{%s}")
+                 ("\\subsection{%s}" . "\\subsection*{%s}")
+                 ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+                 ("\\paragraph{%s}" . "\\paragraph*{%s}")
+                 ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
   (add-to-list 'org-latex-classes
                '("standalone"
                  "\\documentclass{standalone}"
+                 ("\\section{%s}" . "\\section*{%s}")
+                 ("\\subsection{%s}" . "\\subsection*{%s}")
+                 ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+                 ("\\paragraph{%s}" . "\\paragraph*{%s}")
+                 ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
+  (add-to-list 'org-latex-classes
+               '("scrartcl"
+                 "\\documentclass{scrartcl}"
                  ("\\section{%s}" . "\\section*{%s}")
                  ("\\subsection{%s}" . "\\subsection*{%s}")
                  ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
@@ -602,21 +619,48 @@ Keeps equations, aligns, and inline math while stripping org syntax."
 ;; LaTeX Export Settings
 ;; ---------------------------------------------------------------------------
 
+;; Use latexmk for automatic reference/bibliography resolution
 (setq org-latex-pdf-process
-      '("lualatex -shell-escape -interaction nonstopmode %f"
-        "lualatex -shell-escape -interaction nonstopmode %f"))
+      '("latexmk -lualatex -shell-escape -interaction=nonstopmode %f"))
 
-;; Common LaTeX packages (used for both export and preview)
-(add-to-list 'org-latex-packages-alist '("" "tikz" t))
-(add-to-list 'org-latex-packages-alist '("" "pgfplots" t))
-(add-to-list 'org-latex-packages-alist '("" "luacode" t))
-(add-to-list 'org-latex-packages-alist '("" "xcolor" t))
+;; Configure hyperref options (org already loads hyperref, don't load it again)
+;; Use \hypersetup in org files to customize colors per-file
+(setq org-latex-hyperref-template
+      "\\hypersetup{
+ pdfauthor={%a},
+ pdftitle={%t},
+ pdfkeywords={%k},
+ pdfsubject={%d},
+ pdfcreator={%c},
+ pdflang={%L},
+ colorlinks=true
+}")
 
-;; TikZ libraries for preview (add commonly used ones)
+;; Open exported PDFs in Chrome (new tab in existing window)
+(defun aj/open-pdf-in-chrome (file)
+  "Open FILE in Google Chrome."
+  (start-process "chrome-pdf" nil "open" "-a" "Google Chrome" file))
+
+(defun aj/org-latex-export-and-open-chrome ()
+  "Export Org to PDF and open in Chrome."
+  (interactive)
+  (let ((pdf-file (org-latex-export-to-pdf)))
+    (when pdf-file
+      (aj/open-pdf-in-chrome pdf-file))))
+
+;; Override PDF opening for org-export to use Chrome
+(with-eval-after-load 'org
+  (add-to-list 'org-file-apps '("\\.pdf\\'" . "open -a 'Google Chrome' %s")))
+
+;; LaTeX packages for inline previews only (not exports)
+;; Exports use their own class templates; adding packages globally causes hyperref clashes
 (setq org-format-latex-header
       (concat org-format-latex-header
+              "\n\\usepackage{tikz}"
+              "\n\\usepackage{pgfplots}"
+              "\n\\usepackage{xcolor}"
               "\n\\usetikzlibrary{shapes.geometric, positioning, arrows.meta, calc, decorations.pathreplacing}"
-              "\n\\pgfplotsset{compat=1.16}"))
+              "\n\\pgfplotsset{compat=1.18}"))
 
 ;; AUCTeX settings
 (setq org-latex-compiler "lualatex")
