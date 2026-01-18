@@ -53,12 +53,12 @@
 
 (defvar gruber-themes-dark-transclusion-colors
   '((org-transclusion . (:background "#1c1a22" :extend t))   ; Subtle purple tint
-    (org-transclusion-fringe . (:foreground "#9e95c7" :background "#9e95c7")))
+    (org-transclusion-fringe . (:foreground "#9e95c7" :background unspecified)))
   "Transclusion face colors for gruber-darker theme.")
 
 (defvar gruber-themes-light-transclusion-colors
   '((org-transclusion . (:background "#f5f2f8" :extend t))   ; Subtle purple tint
-    (org-transclusion-fringe . (:foreground "#6a5a8e" :background "#6a5a8e")))
+    (org-transclusion-fringe . (:foreground "#6a5a8e" :background unspecified)))
   "Transclusion face colors for gruber-lighter theme.")
 
 (defun gruber-themes--get-current-variant ()

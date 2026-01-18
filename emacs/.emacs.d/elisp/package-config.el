@@ -388,12 +388,13 @@ Prompts for max depth, then collects results level by level."
   (define-key org-roam-dailies-map (kbd "w") #'aj/insert-week-transclude)
 
   ;; Dailies capture template with day of week
-  ;; Recurring tasks and Calendar are inserted by hook (aj/dailies-reposition-entry)
+  ;; Entries go under * Capture heading; other sections inserted by hook
   (setq org-roam-dailies-capture-templates
         '(("d" "default" entry
-           "* %(aj/dailies-entry-prefix)%?"
-           :target (file+head "%<%Y-%m-%d>.org"
-                              "#+title: %<%Y-%m-%d> | %<%A>\n#+EXPORT_FILE_NAME: %<%Y-%m-%d>\n"))))
+           "** %(aj/dailies-entry-prefix)%?"
+           :target (file+head+olp "%<%Y-%m-%d>.org"
+                                  "#+title: %<%Y-%m-%d> | %<%A>\n#+EXPORT_FILE_NAME: %<%Y-%m-%d>\n"
+                                  ("Capture")))))
 
   ;; If you're using a vertical completion framework, you might want a more informative completion interface
   (org-roam-db-autosync-mode)
@@ -630,30 +631,13 @@ and inserts/replaces content under * Recurring heading (placed before Calendar).
       (setq aj/--dailies-capture-file file))))
 
 (defun aj/dailies-reposition-entry ()
-  "In dailies files, move any entries after * Tasks to before it.
-Also inserts week transclude, recurring tasks, and calendar if not present."
+  "Setup daily file after capture.
+Inserts week transclude, recurring tasks, and calendar if not present.
+Entries are placed under * Capture by the capture template."
   (when aj/--dailies-capture-file
     (let ((file aj/--dailies-capture-file))
       (setq aj/--dailies-capture-file nil)
       (with-current-buffer (find-file-noselect file)
-        (save-excursion
-          (goto-char (point-min))
-          (when (re-search-forward "^\\* Tasks$" nil t)
-            (let ((tasks-beg (line-beginning-position)))
-              (goto-char (point-max))
-              ;; Find any heading after Tasks
-              (when (and (re-search-backward "^\\* " tasks-beg t)
-                         (> (point) tasks-beg))
-                (let* ((entry-beg (point))
-                       (entry-end (save-excursion
-                                    (forward-line 1)
-                                    (if (re-search-forward "^\\* " nil t)
-                                        (line-beginning-position)
-                                      (point-max))))
-                       (entry-text (buffer-substring entry-beg entry-end)))
-                  (delete-region entry-beg entry-end)
-                  (goto-char tasks-beg)
-                  (insert entry-text))))))
         ;; Insert in order: Week transclude → Recurring → Calendar
         ;; 1. Insert week transclude if not present
         (save-excursion
@@ -671,7 +655,8 @@ Also inserts week transclude, recurring tasks, and calendar if not present."
           (unless (re-search-forward "^\\* Calendar$" nil t)
             (my/insert-aj-day-calendar)))
         ;; Activate org-transclusion-mode to render the transclude
-        (unless org-transclusion-mode
+        (when (and (fboundp 'org-transclusion-mode)
+                   (not (bound-and-true-p org-transclusion-mode)))
           (org-transclusion-mode 1))
         (save-buffer)))))
 
@@ -682,7 +667,8 @@ Refreshes recurring tasks and enables transclusion on every open."
     ;; Always refresh recurring tasks when opening a daily file
     (aj/refresh-daily-recurring)
     ;; Enable org-transclusion-mode to render any transcludes
-    (unless org-transclusion-mode
+    (when (and (fboundp 'org-transclusion-mode)
+               (not (bound-and-true-p org-transclusion-mode)))
       (org-transclusion-mode 1))))
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
@@ -1062,7 +1048,7 @@ bolds the specific date.
   ;; Font-lock mode is enabled by default, but we ensure it here
   (require 'org-transclusion-font-lock)
   (org-transclusion-font-lock-mode +1)
-  ;; Thinner fringe bitmap (1 pixel instead of 2)
+  ;; Thin solid fringe bitmap (1 pixel wide)
   (define-fringe-bitmap 'org-transclusion-fringe-bitmap
     [#b10000000
      #b10000000
