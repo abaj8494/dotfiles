@@ -1,0 +1,487 @@
+;; -*- mode: emacs-lisp; lexical-binding:t; coding: utf-8-emacs; -*-
+;; --------------------------------------------------------------------------
+;; Desktop File for Emacs
+;; --------------------------------------------------------------------------
+;; Created Sun Jan 18 19:03:58 2026
+;; Desktop file format version 208
+;; Emacs version 30.2
+
+;; Global section:
+(setq desktop-saved-frameset [frameset 1 (26988 37870 852939 0) (desktop . "208") "aayushbajaj@MacBook-Pro.local" nil nil ((((minibuffer . t) (fontsize . 0) (font . "-*-Menlo-regular-normal-normal-*-18-*-*-*-m-0-iso10646-1") (border-width . 0) (internal-border-width . 2) (child-frame-border-width) (right-divider-width . 0) (bottom-divider-width . 0) (vertical-scroll-bars . right) (horizontal-scroll-bars) (foreground-color . "#e4e4ef") (background-color . "#181818") (line-spacing) (left-fringe . 8) (right-fringe . 8) (no-special-glyphs) (undecorated) (ns-appearance) (ns-transparent-titlebar) (z-group) (no-focus-on-map) (no-accept-focus) (menu-bar-lines . 1) (tab-bar-lines . 1) (tool-bar-lines . 1) (title) (inhibit-double-buffering) (icon-type) (auto-raise) (auto-lower) (cursor-type . box) (scroll-bar-width . 17) (scroll-bar-height . 17) (alpha) (alpha-background) (fullscreen) (scroll-bar-foreground) (scroll-bar-background) (display-type . color) (background-mode . dark) (cursor-color . "#ffdd33") (font-parameter) (environment) (border-color . "#101010") (last-focus-update . t) (tabs (current-tab (name . "*helm-mode-desktop-save*") (explicit-name)) (tab (name . "twenty_twenty_six.org") (explicit-name) (time . 1768722857.891426) (ws ((min-height . 4) (min-width . 10) (min-height-ignore . 2) (min-width-ignore . 5) (min-height-safe . 1) (min-width-safe . 2) (min-pixel-height . 84) (min-pixel-width . 110) (min-pixel-height-ignore . 42) (min-pixel-width-ignore . 55) (min-pixel-height-safe . 21) (min-pixel-width-safe . 22)) leaf (pixel-width . 1463) (pixel-height . 798) (total-width . 133) (total-height . 38) (normal-height . 1.0) (normal-width . 1.0) (parameters (context "twenty_twenty_six.org" (front-context-string . "         January") (rear-context-string . "4A4CA5B21\n:END:\n"))) (buffer "twenty_twenty_six.org" (selected . t) (hscroll . 0) (fringes 8 8 nil nil) (margins nil) (scroll-bars nil 2 t nil 0 t nil) (vscroll . 0) (dedicated) (point . 17223) (start . 16867)) (prev-buffers ("2026-01-18.org" 1 3993) ("twenty_twenty_six.org" 18848 19566) ("daily" 1 1981) ("visual-git.md" 79406 79952) ("visual-git.org" 79537 80094) ("2026-01-16.org" 1 1311) ("*Home*" 1 1) ("*scratch*" 1 147)))) (tab (name . "behavioural_interviews.org") (explicit-name) (time . 1768722728.152393) (ws ((min-height . 4) (min-width . 10) (min-height-ignore . 2) (min-width-ignore . 5) (min-height-safe . 1) (min-width-safe . 2) (min-pixel-height . 84) (min-pixel-width . 110) (min-pixel-height-ignore . 42) (min-pixel-width-ignore . 55) (min-pixel-height-safe . 21) (min-pixel-width-safe . 22)) leaf (pixel-width . 1463) (pixel-height . 798) (total-width . 133) (total-height . 38) (normal-height . 1.0) (normal-width . 1.0) (parameters (context "behavioural_interviews.org" (front-context-string . "\n#+LATEX: \\newpa") (rear-context-string . "TOC: headlines 6"))) (buffer "behavioural_interviews.org" (selected . t) (hscroll . 0) (fringes 8 8 nil nil) (margins nil) (scroll-bars nil 2 t nil 0 t nil) (vscroll . 0) (dedicated) (point . 1071) (start . 1)) (prev-buffers ("2026-01-16.org" 1 1311) ("*Home*" 1 1) ("*scratch*" 1 147)))) (tab (name . "CAPTURE-quotes.org") (explicit-name) (time . 1768722855.398459) (ws ((min-height . 8) (min-width . 10) (min-height-ignore . 5) (min-width-ignore . 5) (min-height-safe . 2) (min-width-safe . 2) (min-pixel-height . 168) (min-pixel-width . 110) (min-pixel-height-ignore . 105) (min-pixel-width-ignore . 55) (min-pixel-height-safe . 42) (min-pixel-width-safe . 22)) vc (pixel-width . 1463) (pixel-height . 798) (total-width . 133) (total-height . 38) (normal-height . 1.0) (normal-width . 1.0) (combination-limit) (leaf (pixel-width . 1463) (pixel-height . 399) (total-width . 133) (total-height . 19) (normal-height . 0.5) (normal-width . 1.0) (parameters (context "behavioural_interviews.org" (front-context-string . "\n#+LATEX: \\newpa") (rear-context-string . "TOC: headlines 6"))) (buffer "behavioural_interviews.org" (selected) (hscroll . 0) (fringes 8 8 nil nil) (margins nil) (scroll-bars nil 2 t nil 0 t nil) (vscroll . 0) (dedicated) (point . 1071) (start . 766)) (prev-buffers ("2026-01-16.org" 1 1311) ("*Home*" 1 1) ("*scratch*" 1 147))) (leaf (last . t) (pixel-width . 1463) (pixel-height . 399) (total-width . 133) (total-height . 19) (normal-height . 0.5) (normal-width . 1.0) (buffer "CAPTURE-quotes.org" (selected . t) (hscroll . 0) (fringes 8 8 nil nil) (margins nil) (scroll-bars nil 2 t nil 0 t nil) (vscroll . 0) (dedicated) (point . 2767) (start . 2704)))))) (frameset--id . "61FC-56FB-18A1-14B0") (frameset--mini t . t) (height . 39) (width . 130) (modeline . t) (unsplittable) (left . 18) (top . 52) (icon-name) (visibility . t) (display . "MacBook-Pro.local") (explicit-name) (tool-bar-position . top)) ((min-height . 4) (min-width . 10) (min-height-ignore . 2) (min-width-ignore . 5) (min-height-safe . 1) (min-width-safe . 2) (min-pixel-height . 84) (min-pixel-width . 110) (min-pixel-height-ignore . 42) (min-pixel-width-ignore . 55) (min-pixel-height-safe . 21) (min-pixel-width-safe . 22)) leaf (pixel-width . 1463) (pixel-height . 798) (total-width . 133) (total-height . 38) (normal-height . 1.0) (normal-width . 1.0) (parameters (context)) (buffer "2026-01-19.org" (selected . t) (hscroll . 0) (fringes 8 8 nil nil) (margins nil) (scroll-bars nil 2 t nil 0 t nil) (vscroll . 0) (dedicated) (point . 225) (start . 1)) (prev-buffers ("2026-01-18.org" 1 175) ("2026-01-17.org" 1 840) ("2026-01-16.org" 1 68) ("*Home*" 1 1) ("*scratch*" 1 147))))])
+(setq desktop-missing-file-warning nil)
+(setq tags-file-name nil)
+(setq tags-table-list nil)
+(setq search-ring nil)
+(setq regexp-search-ring nil)
+(setq register-alist nil)
+(setq file-name-history '("~/dotfiles/emacs/.emacs.d/bookmarks" "~/Documents/new-site/content-org/private/behavioural_interviews.org" "~/Documents/new-site/content-org/daily/2026-01-16.org" "~/Documents/new-site/content-org/private/faang_behavioural_interviews.tex" "/private/var/folders/3w/pdbw3r_1639_hxq_5qyc79zr0000gn/T/jupyterlxwtCi" "~/dotfiles/emacs/.emacs.d/elisp/org-config.el" "~/Documents/new-site/content-org/daily/2026-01-15.org" "~/Documents/new-site/content-org/words/library/books/pro-git.org" "~/Documents/new-site/content-org/wiki/ccs/linux/emacs/index.org" "~/Documents/new-site/content-org/roam/n_vim.org" "~/Documents/new-site/content-org/wiki/ccs/programming/languages/go/_index.org" "~/Documents/new-site/content-org/roam/github.org" "~/Documents/new-site/content-org/roam/typing_telemetry.org" "~/Documents/new-site/content-org/daily/2026-01-07.org" "~/Documents/new-site/content-org/daily/2026-01-12.org" "~/Documents/new-site/content-org/daily/2026-01-03.org" "~/Documents/new-site/content-org/daily/2026-01-06.org" "~/Documents/new-site/content-org/daily/2026-01-14.org" "~/Documents/new-site/content-org/roam/peg_solitaire_rl.org" "~/Documents/new-site/content-org/roam/minesweeper_rl_agent.org"))
+
+;; Buffer section -- buffers listed in same order as in buffer list:
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-19.org"
+  "2026-01-19.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  225
+  '(129 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26988 37870 850897 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring (226 239 1))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/twenty_twenty_six.org"
+  "twenty_twenty_six.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  17078
+  '(17078 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26988 37522 541090 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring (1 17673 17633 17573 17572 1029 17225 17429 17467))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/private/behavioural_interviews.org"
+  "behavioural_interviews.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1071
+  '(1071 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26988 37215 385304 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-18.org"
+  "2026-01-18.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  175
+  '(2150 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26988 36634 982620 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  nil
+  "daily"
+  'dired-mode
+  '(font-lock-mode)
+  1981
+  '(356 nil)
+  t
+  '("/Users/aayushbajaj/Documents/new-site/content-org/daily/")
+  '((buffer-display-time 26988 36583 412362 0))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content/wiki/ccs/vc/visual-git.md"
+  "visual-git.md"
+  'markdown-mode
+  '(font-lock-mode eldoc-mode)
+  79952
+  '(1 nil)
+  nil
+  nil
+  '((tab-width . 4) (buffer-display-time 26988 36582 194693 0) (buffer-file-coding-system . undecided-unix))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-17.org"
+  "2026-01-17.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  840
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26988 36465 156823 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-16.org"
+  "2026-01-16.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  68
+  '(2037 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26988 36426 849331 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring (1311))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/wiki/ccs/vc/visual-git.org"
+  "visual-git.org"
+  'org-mode
+  '(jupyter-org-interaction-mode font-lock-mode auto-revert-mode org-hugo-auto-export-mode org-fragtog-mode)
+  80094
+  '(652 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 34107 659940 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring (80094 246 246))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/wiki/se/architecture-design/smells.org"
+  "smells.org"
+  'org-mode
+  '(jupyter-org-interaction-mode font-lock-mode auto-revert-mode org-hugo-auto-export-mode org-fragtog-mode)
+  16115
+  '(16279 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 33556 693948 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring (16207 16280 3543 1771 228 16479 8707 16115))))
+
+(desktop-create-buffer 208
+  nil
+  "architecture-design"
+  'dired-mode
+  '(font-lock-mode)
+  807
+  '(807 nil)
+  t
+  '("/Users/aayushbajaj/Documents/new-site/content-org/wiki/se/architecture-design/")
+  '((buffer-display-time 26987 33562 706264 0))
+  '((mark-ring (1))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/wiki/se/architecture-design/principles.org"
+  "principles.org"
+  'org-mode
+  '(jupyter-org-interaction-mode font-lock-mode auto-revert-mode org-hugo-auto-export-mode org-fragtog-mode)
+  945
+  '(1 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 33779 99958 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring (1 1091))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/wiki/ccs/vc/visual-git-tikz.org"
+  "visual-git-tikz.org"
+  'org-mode
+  '(font-lock-mode org-hugo-auto-export-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1702
+  '(1702 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 33770 232097 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  nil
+  "vc"
+  'dired-mode
+  '(font-lock-mode)
+  854
+  '(1 nil)
+  t
+  '("/Users/aayushbajaj/Documents/new-site/content-org/wiki/ccs/vc/")
+  '((buffer-display-time 26987 33600 529589 0))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content/wiki/se/architecture-design/principles.md"
+  "principles.md"
+  'markdown-mode
+  '(font-lock-mode eldoc-mode auto-revert-mode)
+  5
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 4) (buffer-display-time 26987 32872 703380 0) (buffer-file-coding-system . undecided-unix))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/words/library/books/axler-measure.org"
+  "axler-measure.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode org-hugo-auto-export-mode jupyter-org-interaction-mode org-fragtog-mode)
+  791
+  '(791 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 32554 952576 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring (791))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/wiki/se/architecture-design/uml.org"
+  "uml.org"
+  'org-mode
+  '(jupyter-org-interaction-mode font-lock-mode auto-revert-mode org-hugo-auto-export-mode org-fragtog-mode)
+  8785
+  '(8780 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 32535 773401 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring (8265 5230 5145 4493 3983 3454 1567 1605 3982 3472 260 1))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/wiki/se/architecture-design/patterns.org"
+  "patterns.org"
+  'org-mode
+  '(jupyter-org-interaction-mode font-lock-mode auto-revert-mode org-hugo-auto-export-mode org-fragtog-mode)
+  23410
+  '(15963 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 32045 793958 0) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring (15959 15958 11580 11512 1 13448 39312 63111 15757 601 1200 594 5349 3602 37091 37091))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/words/library/books/dive-into-design-patterns.org"
+  "dive-into-design-patterns.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode org-hugo-auto-export-mode jupyter-org-interaction-mode org-fragtog-mode)
+  172
+  '(172 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time 26987 29591 14110 0) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring (189 123 103))))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content/wiki/se/architecture-design/smells.md"
+  "smells.md"
+  'markdown-mode
+  '(font-lock-mode eldoc-mode auto-revert-mode)
+  137
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 4) (buffer-display-time 26987 28430 240457 0) (buffer-file-coding-system . utf-8-unix))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-03.org"
+  "2026-01-03.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-05.org"
+  "2026-01-05.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-06.org"
+  "2026-01-06.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-07.org"
+  "2026-01-07.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-08.org"
+  "2026-01-08.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-09.org"
+  "2026-01-09.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-10.org"
+  "2026-01-10.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-11.org"
+  "2026-01-11.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-12.org"
+  "2026-01-12.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-13.org"
+  "2026-01-13.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-14.org"
+  "2026-01-14.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-15.org"
+  "2026-01-15.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-22.org"
+  "2026-01-22.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-23.org"
+  "2026-01-23.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-24.org"
+  "2026-01-24.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-27.org"
+  "2026-01-27.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . undecided-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-01-29.org"
+  "2026-01-29.org"
+  'org-mode
+  '(font-lock-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/daily/2026-11-06.org"
+  "2026-11-06.org"
+  'org-mode
+  '(font-lock-mode jupyter-org-interaction-mode org-fragtog-mode)
+  1
+  '(nil nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+
+(desktop-create-buffer 208
+  "/Users/aayushbajaj/Documents/new-site/content-org/words/quotes.org"
+  "quotes.org"
+  'org-mode
+  '(font-lock-mode auto-revert-mode org-hugo-auto-export-mode jupyter-org-interaction-mode org-fragtog-mode)
+  213
+  '(2814 nil)
+  nil
+  nil
+  '((tab-width . 8) (buffer-display-time) (buffer-file-coding-system . utf-8-unix) (truncate-lines . t))
+  '((mark-ring nil)))
+

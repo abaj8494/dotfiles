@@ -46,6 +46,21 @@
     (outline-8 . (:foreground "#707070")))                   ; Medium gray
   "Ergonomic heading colors for gruber-lighter theme.")
 
+;; ---------------------------------------------------------------------------
+;; Org-transclusion face colors
+;; ---------------------------------------------------------------------------
+;; Subtle background tints to distinguish transcluded content.
+
+(defvar gruber-themes-dark-transclusion-colors
+  '((org-transclusion . (:background "#1c1a22" :extend t))   ; Subtle purple tint
+    (org-transclusion-fringe . (:foreground "#9e95c7" :background "#9e95c7")))
+  "Transclusion face colors for gruber-darker theme.")
+
+(defvar gruber-themes-light-transclusion-colors
+  '((org-transclusion . (:background "#f5f2f8" :extend t))   ; Subtle purple tint
+    (org-transclusion-fringe . (:foreground "#6a5a8e" :background "#6a5a8e")))
+  "Transclusion face colors for gruber-lighter theme.")
+
 (defun gruber-themes--get-current-variant ()
   "Return the current gruber theme variant: 'dark, 'light, or nil."
   (let ((theme (car custom-enabled-themes)))
@@ -93,9 +108,25 @@
       (setq plist (cddr plist)))
     (nreverse result)))
 
+(defun gruber-themes--apply-transclusion ()
+  "Apply transclusion face colors based on current theme variant."
+  (let* ((variant (gruber-themes--get-current-variant))
+         (colors (pcase variant
+                   ('dark gruber-themes-dark-transclusion-colors)
+                   ('light gruber-themes-light-transclusion-colors)
+                   (_ nil))))
+    (when (and colors (featurep 'org-transclusion))
+      (dolist (entry colors)
+        (let ((face (car entry))
+              (spec (cdr entry)))
+          (when (facep face)
+            (apply #'set-face-attribute face nil
+                   (gruber-themes--plist-to-args spec))))))))
+
 (defun gruber-themes--on-theme-change (&optional _theme)
   "Hook function to apply customizations when theme changes."
-  (gruber-themes--apply-headings))
+  (gruber-themes--apply-headings)
+  (gruber-themes--apply-transclusion))
 
 ;;;###autoload
 (defun gruber-toggle ()

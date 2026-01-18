@@ -709,6 +709,14 @@ Keeps equations, aligns, and inline math while stripping org syntax."
   "Face for #+attr_shortcode lines."
   :group 'org-faces)
 
+(defface aj/org-transclude-face
+  '((((background dark))
+     :foreground "#9e95c7" :weight bold :extend t)
+    (((background light))
+     :foreground "#6a5a8e" :weight bold :extend t))
+  "Face for #+transclude: lines (wisteria/purple)."
+  :group 'org-faces)
+
 (defun aj/org-add-shortcode-highlighting ()
   "Add font-lock rules for custom m3prob shortcode blocks."
   (font-lock-add-keywords
@@ -723,7 +731,9 @@ Keeps equations, aligns, and inline math while stripping org syntax."
      ("^[ \t]*\\(#\\+begin_m3subsol\\).*$" 1 'aj/org-m3subsol-face t)
      ("^[ \t]*\\(#\\+end_m3subsol\\).*$" 1 'aj/org-m3subsol-face t)
      ;; attr_shortcode lines - amber italic
-     ("^[ \t]*\\(#\\+attr_shortcode:.*\\)$" 1 'aj/org-attr-shortcode-face t))
+     ("^[ \t]*\\(#\\+attr_shortcode:.*\\)$" 1 'aj/org-attr-shortcode-face t)
+     ;; transclude lines - wisteria/purple
+     ("^[ \t]*\\(#\\+transclude:.*\\)$" 1 'aj/org-transclude-face t))
    t))
 
 (add-hook 'org-mode-hook #'aj/org-add-shortcode-highlighting)
@@ -745,6 +755,24 @@ Keeps equations, aligns, and inline math while stripping org syntax."
 (with-eval-after-load 'org
   (plist-put org-format-latex-options :scale 1.5)
   (plist-put org-format-latex-options :background "Transparent"))
+
+;; ---------------------------------------------------------------------------
+;; Pomodoro Timer
+;; ---------------------------------------------------------------------------
+
+(defvar aj/bell-sound (expand-file-name "sounds/bell.wav" user-emacs-directory)
+  "Path to notification bell sound.")
+
+(setq org-clock-sound aj/bell-sound)
+
+(use-package org-pomodoro
+  :straight t
+  :bind ("C-c o p" . org-pomodoro)
+  :config
+  (setq org-pomodoro-start-sound aj/bell-sound
+        org-pomodoro-finished-sound aj/bell-sound
+        org-pomodoro-short-break-sound aj/bell-sound
+        org-pomodoro-long-break-sound aj/bell-sound))
 
 (provide 'org-config)
 ;;; org-config.el ends here

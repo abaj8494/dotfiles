@@ -384,6 +384,8 @@ Prompts for max depth, then collects results level by level."
   (define-key org-roam-dailies-map (kbd "r") #'aj/refresh-daily-recurring)
   ;; C = insert/refresh calendar in current daily
   (define-key org-roam-dailies-map (kbd "C") #'my/insert-aj-day-calendar)
+  ;; w = insert week transclude in current daily
+  (define-key org-roam-dailies-map (kbd "w") #'aj/insert-week-transclude)
 
   ;; Dailies capture template with day of week
   ;; Recurring tasks and Calendar are inserted by hook (aj/dailies-reposition-entry)
@@ -452,6 +454,52 @@ Prompts for max depth, then collects results level by level."
 (defvar aj/daily-templates-dir
   (expand-file-name "templates" org-roam-directory)
   "Directory containing recurring task templates.")
+
+;; Yearly file configuration for week transclusion
+(defvar aj/yearly-file-ids
+  '((2026 . "51fe6c3d-45e2-4655-bc1c-9358f989d02a"))
+  "Alist mapping years to their yearly org file IDs.")
+
+(defvar aj/yearly-file-names
+  '((2026 . "twenty-twenty-six"))
+  "Alist mapping years to their yearly org file display names.")
+
+(defun aj/daily-date-file-p (&optional file)
+  "Return t if FILE matches YYYY-MM-DD.org pattern (actual daily note).
+Excludes yearly files like twenty_twenty_six.org."
+  (let ((path (or file (buffer-file-name))))
+    (and path
+         (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" path))))
+
+(defun aj/insert-week-transclude ()
+  "Insert transclude directive for the current week based on file date.
+Parses date from filename, calculates ISO week, inserts transclude
+pointing to the correct Week heading in the yearly file."
+  (interactive)
+  (save-excursion
+    (when (and buffer-file-name
+               (string-match "\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\.org$"
+                             buffer-file-name))
+      (let* ((year (string-to-number (match-string 1 buffer-file-name)))
+             (month (string-to-number (match-string 2 buffer-file-name)))
+             (day (string-to-number (match-string 3 buffer-file-name)))
+             (date-time (encode-time 0 0 0 day month year))
+             (week-num (aj/iso-week-number date-time))
+             (file-id (cdr (assoc year aj/yearly-file-ids)))
+             (file-name (cdr (assoc year aj/yearly-file-names))))
+        (when (and file-id file-name)
+          (goto-char (point-min))
+          ;; Find insertion point (after EXPORT_FILE_NAME line)
+          (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*$" nil t)
+              (progn
+                (goto-char (match-end 0))
+                (insert (format "\n\n#+transclude: [[id:%s::* Week %d][%s]] :preserve-whitespace"
+                                file-id week-num file-name)))
+            ;; Fallback: insert at end of front matter
+            (when (re-search-forward "^:END:$" nil t)
+              (forward-line 1)
+              (insert (format "\n#+transclude: [[id:%s::* Week %d][%s]] :preserve-whitespace\n"
+                              file-id week-num file-name)))))))))
 
 (defun aj/read-template-file (subdir filename)
   "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
@@ -583,7 +631,7 @@ and inserts/replaces content under * Recurring heading (placed before Calendar).
 
 (defun aj/dailies-reposition-entry ()
   "In dailies files, move any entries after * Tasks to before it.
-Also inserts the day calendar if not already present."
+Also inserts week transclude, recurring tasks, and calendar if not present."
   (when aj/--dailies-capture-file
     (let ((file aj/--dailies-capture-file))
       (setq aj/--dailies-capture-file nil)
@@ -606,19 +654,41 @@ Also inserts the day calendar if not already present."
                   (delete-region entry-beg entry-end)
                   (goto-char tasks-beg)
                   (insert entry-text))))))
-        ;; Insert recurring and calendar if not present
+        ;; Insert in order: Week transclude → Recurring → Calendar
+        ;; 1. Insert week transclude if not present
+        (save-excursion
+          (goto-char (point-min))
+          (unless (re-search-forward "^#\\+transclude:" nil t)
+            (aj/insert-week-transclude)))
+        ;; 2. Insert recurring if not present
         (save-excursion
           (goto-char (point-min))
           (unless (re-search-forward "^\\* Recurring$" nil t)
             (aj/refresh-daily-recurring)))
+        ;; 3. Insert calendar if not present
         (save-excursion
           (goto-char (point-min))
           (unless (re-search-forward "^\\* Calendar$" nil t)
             (my/insert-aj-day-calendar)))
+        ;; Activate org-transclusion-mode to render the transclude
+        (unless org-transclusion-mode
+          (org-transclusion-mode 1))
         (save-buffer)))))
+
+(defun aj/daily-file-open-hook ()
+  "Hook that runs when opening daily date files (YYYY-MM-DD.org).
+Refreshes recurring tasks and enables transclusion on every open."
+  (when (aj/daily-date-file-p)
+    ;; Always refresh recurring tasks when opening a daily file
+    (aj/refresh-daily-recurring)
+    ;; Enable org-transclusion-mode to render any transcludes
+    (unless org-transclusion-mode
+      (org-transclusion-mode 1))))
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
 (add-hook 'org-capture-after-finalize-hook #'aj/dailies-reposition-entry)
+;; Use org-roam's dailies hook for opening existing files
+(add-hook 'org-roam-dailies-find-file-hook #'aj/daily-file-open-hook)
 
 (defun aj/org-roam-dailies-goto-next-day ()
   "Go to the next day's daily note, creating it if necessary.
@@ -991,12 +1061,21 @@ bolds the specific date.
   :config
   ;; Font-lock mode is enabled by default, but we ensure it here
   (require 'org-transclusion-font-lock)
-  ;; Custom face coloring for transclusion fringe
-  (set-face-attribute
-    'org-transclusion-fringe t
-    :foreground "#73c936"
-    :background "#73c936")
-  (org-transclusion-font-lock-mode +1))
+  (org-transclusion-font-lock-mode +1)
+  ;; Thinner fringe bitmap (1 pixel instead of 2)
+  (define-fringe-bitmap 'org-transclusion-fringe-bitmap
+    [#b10000000
+     #b10000000
+     #b10000000
+     #b10000000
+     #b10000000
+     #b10000000
+     #b10000000
+     #b10000000]
+    nil nil '(center t))
+  ;; Apply theme-aware transclusion colors (defined in gruber-themes.el)
+  (when (fboundp 'gruber-themes--apply-transclusion)
+    (gruber-themes--apply-transclusion)))
 
 (use-package org-side-tree
   :straight (:host github :repo "localauthor/org-side-tree")
