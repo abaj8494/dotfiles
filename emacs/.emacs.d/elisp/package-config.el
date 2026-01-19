@@ -505,7 +505,11 @@ pointing to the correct Week heading in the yearly file."
 (defun aj/read-template-file (subdir filename)
   "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
 Returns the trimmed file contents, or nil if file doesn't exist."
-  (let ((path (expand-file-name (concat subdir "/" filename) aj/daily-templates-dir)))
+  (let ((path (expand-file-name
+               (if (string-empty-p subdir)
+                   filename
+                 (concat subdir "/" filename))
+               aj/daily-templates-dir)))
     (when (file-exists-p path)
       (with-temp-buffer
         (insert-file-contents path)
@@ -561,10 +565,30 @@ Combines templates from:
         ""
       (concat "\n" combined "\n"))))
 
+(defun aj/recurring-heading-exists-p (heading)
+  "Check if HEADING already exists under * Recurring.
+Matches regardless of TODO state (TODO/DONE/WAIT/CANCEL) or priority."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let ((section-end (save-excursion
+                           (if (re-search-forward "^\\* " nil t)
+                               (line-beginning-position)
+                             (point-max)))))
+        (re-search-forward
+         (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                 (regexp-quote heading))
+         section-end t)))))
+
+(defun aj/extract-heading-name (line)
+  "Extract heading name from LINE, stripping TODO keywords and priority."
+  (when (string-match "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
+    (match-string 1 line)))
+
 (defun aj/refresh-daily-recurring ()
   "Refresh recurring tasks in the current daily note.
-Parses date from #+title: line, fetches all recurring templates,
-and inserts/replaces content under * Recurring heading (placed before Calendar)."
+Parses date from #+title: line, fetches all recurring templates.
+Only ADDS new tasks - does not replace or modify existing ones."
   (interactive)
   (save-excursion
     (goto-char (point-min))
@@ -577,38 +601,58 @@ and inserts/replaces content under * Recurring heading (placed before Calendar).
                (date-time (encode-time 0 0 0 day month year))
                (tasks-raw (aj/get-recurring-tasks-for-date date-time))
                ;; Convert * headings to ** (subheadings under * Recurring)
-               (tasks (replace-regexp-in-string "^\\* " "** " tasks-raw)))
+               (tasks (replace-regexp-in-string "^\\* " "** " tasks-raw))
+               (added-count 0))
           (if (string-empty-p tasks)
               (message "No recurring tasks for %s" date-str)
-            ;; Find or create * Recurring heading
-            (goto-char (point-min))
-            (if (re-search-forward "^\\* Recurring$" nil t)
-                ;; Found - delete existing content under it
-                (let ((heading-end (line-end-position))
-                      (section-end (save-excursion
-                                     (forward-line 1)
-                                     (if (re-search-forward "^\\* " nil t)
-                                         (line-beginning-position)
-                                       (point-max)))))
-                  (delete-region (1+ heading-end) section-end))
-              ;; Not found - create BEFORE Calendar or at end of front matter
-              (goto-char (point-min))
-              (cond
-               ((re-search-forward "^\\* Calendar$" nil t)
-                ;; Insert before Calendar heading
-                (goto-char (line-beginning-position)))
-               ((re-search-forward "^#\\+EXPORT_FILE_NAME:.*\n" nil t)
-                (goto-char (match-end 0))
-                (insert "\n"))
-               (t (goto-char (point-max))))
-              (insert "* Recurring\n\n"))
-            ;; Insert tasks
-            (goto-char (point-min))
-            (re-search-forward "^\\* Recurring$" nil t)
-            (forward-line 1)
-            (insert "\n" tasks "\n")
-            (message "Refreshed recurring tasks for %s" date-str)))
+            ;; Ensure Recurring heading exists at correct position
+            (aj/ensure-heading-exists "Recurring")
+            ;; Parse each task block and only add if not already present
+            (let ((task-lines (split-string tasks "\n"))
+                  (current-heading nil)
+                  (current-block nil))
+              ;; Group lines by heading
+              (dolist (line task-lines)
+                (cond
+                 ;; New heading found
+                 ((string-match "^\\*\\* " line)
+                  ;; Process previous block if exists
+                  (when (and current-heading
+                             (not (aj/recurring-heading-exists-p
+                                   (aj/extract-heading-name current-heading))))
+                    (aj/insert-recurring-block current-heading (nreverse current-block))
+                    (setq added-count (1+ added-count)))
+                  (setq current-heading line
+                        current-block nil))
+                 ;; Content line
+                 (t (push line current-block))))
+              ;; Process final block
+              (when (and current-heading
+                         (not (aj/recurring-heading-exists-p
+                               (aj/extract-heading-name current-heading))))
+                (aj/insert-recurring-block current-heading (nreverse current-block))
+                (setq added-count (1+ added-count))))
+            (if (> added-count 0)
+                (message "Added %d recurring task(s) for %s" added-count date-str)
+              (message "All recurring tasks already present for %s" date-str))))
       (message "Not a daily note (no date in title)"))))
+
+(defun aj/insert-recurring-block (heading content-lines)
+  "Insert HEADING and CONTENT-LINES at end of * Recurring section."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let ((section-end (save-excursion
+                           (forward-line 1)
+                           (if (re-search-forward "^\\* " nil t)
+                               (1- (line-beginning-position))
+                             (point-max)))))
+        (goto-char section-end)
+        (unless (bolp) (insert "\n"))
+        (insert "\n" heading "\n")
+        (dolist (line content-lines)
+          (unless (string-empty-p line)
+            (insert line "\n")))))))
 
 ;; Helper for dailies time prefix - shows time only for today's captures
 (defun aj/dailies-entry-prefix ()
@@ -632,44 +676,113 @@ and inserts/replaces content under * Recurring heading (placed before Calendar).
 
 (defun aj/dailies-reposition-entry ()
   "Setup daily file after capture.
-Inserts week transclude, recurring tasks, and calendar if not present.
+Inserts week transclude, ensures heading structure, and populates content.
 Entries are placed under * Capture by the capture template."
   (when aj/--dailies-capture-file
     (let ((file aj/--dailies-capture-file))
       (setq aj/--dailies-capture-file nil)
       (with-current-buffer (find-file-noselect file)
-        ;; Insert in order: Week transclude → Recurring → Calendar
         ;; 1. Insert week transclude if not present
         (save-excursion
           (goto-char (point-min))
           (unless (re-search-forward "^#\\+transclude:" nil t)
             (aj/insert-week-transclude)))
-        ;; 2. Insert recurring if not present
+        ;; 2. Ensure all headings exist in correct order
+        (aj/ensure-daily-structure)
+        ;; 3. Refresh recurring tasks
+        (aj/refresh-daily-recurring)
+        ;; 4. Insert calendar content
         (save-excursion
           (goto-char (point-min))
-          (unless (re-search-forward "^\\* Recurring$" nil t)
-            (aj/refresh-daily-recurring)))
-        ;; 3. Insert calendar if not present
-        (save-excursion
-          (goto-char (point-min))
-          (unless (re-search-forward "^\\* Calendar$" nil t)
-            (my/insert-aj-day-calendar)))
+          ;; Only insert calendar content if heading is empty
+          (when (re-search-forward "^\\* Calendar\\b" nil t)
+            (let ((heading-end (line-end-position))
+                  (next-heading (save-excursion
+                                  (forward-line 1)
+                                  (if (re-search-forward "^\\* " nil t)
+                                      (line-beginning-position)
+                                    (point-max)))))
+              ;; Check if there's no content between Calendar and next heading
+              (when (< (- next-heading heading-end) 5)
+                (my/insert-aj-day-calendar)))))
         ;; Activate org-transclusion-mode to render the transclude
         (when (and (fboundp 'org-transclusion-mode)
                    (not (bound-and-true-p org-transclusion-mode)))
           (org-transclusion-mode 1))
         (save-buffer)))))
 
+;; Desired order of level-1 headings in daily notes
+(defvar aj/daily-heading-order
+  '("Journal" "Recurring" "Calendar" "Capture" "Tasks")
+  "Ordered list of level-1 headings for daily notes.")
+
+(defun aj/find-heading-insert-point (heading)
+  "Find the correct insertion point for HEADING based on `aj/daily-heading-order'.
+Returns the position where the heading should be inserted."
+  (let* ((pos (cl-position heading aj/daily-heading-order :test 'equal))
+         (later-headings (nthcdr (1+ pos) aj/daily-heading-order)))
+    ;; Find the first existing heading that should come after this one
+    (catch 'found
+      (dolist (next-heading later-headings)
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward (format "^\\* %s\\b" (regexp-quote next-heading)) nil t)
+            (throw 'found (line-beginning-position)))))
+      ;; No later heading found, insert at end of buffer
+      nil)))
+
+(defun aj/ensure-heading-exists (heading)
+  "Ensure HEADING exists in the daily note at the correct position.
+Returns t if heading was created, nil if it already existed."
+  (save-excursion
+    (goto-char (point-min))
+    (unless (re-search-forward (format "^\\* %s\\b" (regexp-quote heading)) nil t)
+      (let ((insert-point (aj/find-heading-insert-point heading)))
+        (if insert-point
+            (progn
+              (goto-char insert-point)
+              (insert (format "* %s\n\n" heading)))
+          ;; Insert at end
+          (goto-char (point-max))
+          (unless (bolp) (insert "\n"))
+          (insert (format "\n* %s\n" heading))))
+      t)))
+
+(defun aj/ensure-daily-structure ()
+  "Ensure the daily note has all required headings in the correct order.
+Order: Journal, Recurring, Calendar, Capture, Tasks."
+  (interactive)
+  (when (aj/daily-date-file-p)
+    (save-excursion
+      (dolist (heading aj/daily-heading-order)
+        (aj/ensure-heading-exists heading)))))
+
+(defun aj/fold-week-heading ()
+  "Fold the transcluded Week heading if present."
+  (when (aj/daily-date-file-p)
+    (save-excursion
+      (goto-char (point-min))
+      (when (re-search-forward "^\\* Week [0-9]+" nil t)
+        (goto-char (line-beginning-position))
+        (when (not (org-fold-folded-p (line-end-position)))
+          (org-cycle))))))
+
 (defun aj/daily-file-open-hook ()
   "Hook that runs when opening daily date files (YYYY-MM-DD.org).
-Refreshes recurring tasks and enables transclusion on every open."
+Ensures proper structure, refreshes recurring tasks, and enables transclusion."
   (when (aj/daily-date-file-p)
-    ;; Always refresh recurring tasks when opening a daily file
+    ;; Ensure all headings exist in correct order
+    (aj/ensure-daily-structure)
+    ;; Refresh recurring tasks when opening a daily file
     (aj/refresh-daily-recurring)
     ;; Enable org-transclusion-mode to render any transcludes
     (when (and (fboundp 'org-transclusion-mode)
                (not (bound-and-true-p org-transclusion-mode)))
-      (org-transclusion-mode 1))))
+      (org-transclusion-mode 1))
+    ;; Fold the transcluded content (Week heading)
+    (aj/fold-week-heading)
+    ;; Add local after-save-hook to keep Week folded
+    (add-hook 'after-save-hook #'aj/fold-week-heading nil t)))
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
 (add-hook 'org-capture-after-finalize-hook #'aj/dailies-reposition-entry)
@@ -900,21 +1013,20 @@ and bolds the specific date."
              (cal-output (shell-command-to-string (format "cal %d %d" month year)))
              (lines (split-string cal-output "\n")))
 
-        ;; Find or create * Calendar heading
+        ;; Ensure Calendar heading exists at correct position
+        (aj/ensure-heading-exists "Calendar")
+        ;; Find it and clear existing content
         (goto-char (point-min))
-        (if (re-search-forward "^\\* Calendar$" nil t)
-            ;; Found it - go to end of heading, clear existing content
-            (progn
-              (org-end-of-meta-data t)
-              (delete-horizontal-space)
-              (when (looking-at "\n+")
-                (replace-match "\n")))
-          ;; Not found - create after front matter
-          (goto-char (point-min))
-          (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*\n" nil t)
-              (goto-char (match-end 0))
-            (goto-char (point-max)))
-          (insert "\n* Calendar\n"))
+        (when (re-search-forward "^\\* Calendar\\b" nil t)
+          (let ((heading-end (line-end-position))
+                (section-end (save-excursion
+                               (forward-line 1)
+                               (if (re-search-forward "^\\* " nil t)
+                                   (line-beginning-position)
+                                 (point-max)))))
+            (delete-region (1+ heading-end) section-end))
+          (goto-char (line-end-position))
+          (insert "\n"))
 
         ;; Title line: centered over 25 chars, then Σ α headers
         (let* ((title (string-trim (car lines)))
@@ -969,21 +1081,20 @@ bolds the specific date.
              (cal-output (shell-command-to-string (format "cal %d %d" month year)))
              (lines (split-string cal-output "\n")))
 
-        ;; Find or create * Calendar heading
+        ;; Ensure Calendar heading exists at correct position
+        (aj/ensure-heading-exists "Calendar")
+        ;; Find it and clear existing content
         (goto-char (point-min))
-        (if (re-search-forward "^\\* Calendar$" nil t)
-            ;; Found it - go to end of heading, clear existing content
-            (progn
-              (org-end-of-meta-data t)
-              (delete-horizontal-space)
-              (when (looking-at "\n+")
-                (replace-match "\n")))
-          ;; Not found - create after front matter
-          (goto-char (point-min))
-          (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*\n" nil t)
-              (goto-char (match-end 0))
-            (goto-char (point-max)))
-          (insert "\n* Calendar\n"))
+        (when (re-search-forward "^\\* Calendar\\b" nil t)
+          (let ((heading-end (line-end-position))
+                (section-end (save-excursion
+                               (forward-line 1)
+                               (if (re-search-forward "^\\* " nil t)
+                                   (line-beginning-position)
+                                 (point-max)))))
+            (delete-region (1+ heading-end) section-end))
+          (goto-char (line-end-position))
+          (insert "\n"))
 
         ;; Title line: centered over 25 chars, then Σ ω headers
         ;; Σ is 3-char wide (max 366), ω is 6-char wide (e.g., "8,786")
