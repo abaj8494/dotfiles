@@ -38,6 +38,9 @@
 ;; Core packages via use-package / straight
 ;; ---------------------------------------------------------------------------
 
+;; Enable visual-line-mode in text modes (including org-mode)
+(add-hook 'text-mode-hook #'visual-line-mode)
+
 (use-package htmlize
   :straight t
   :defer nil)      ;; load eagerly so exporters find it
@@ -122,13 +125,14 @@ Interactively prompts for level (default: current heading level) and tag."
     (read-string "Tag: ")))
   (save-excursion
     (let ((beg (region-beginning))
-          (end (region-end))
+          (end (copy-marker (region-end)))
           (count 0))
       (goto-char beg)
       (while (re-search-forward org-heading-regexp end t)
         (when (= (org-current-level) level)
           (org-set-tags (cons tag (org-get-tags nil t)))
           (setq count (1+ count))))
+      (set-marker end nil)
       (message "Tagged %d headings at level %d with :%s:" count level tag))))
 
 ;; Other packages you had in package-selected-packages; keep them available
@@ -771,10 +775,29 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
   "Hook that runs when opening daily date files (YYYY-MM-DD.org).
 Ensures proper structure, refreshes recurring tasks, and enables transclusion."
   (when (aj/daily-date-file-p)
+    ;; Insert week transclude if not present (check both directive and rendered heading)
+    (save-excursion
+      (goto-char (point-min))
+      (unless (or (re-search-forward "^#\\+transclude:" nil t)
+                  (progn (goto-char (point-min))
+                         (re-search-forward "^\\* Week [0-9]+" nil t)))
+        (aj/insert-week-transclude)))
     ;; Ensure all headings exist in correct order
     (aj/ensure-daily-structure)
     ;; Refresh recurring tasks when opening a daily file
     (aj/refresh-daily-recurring)
+    ;; Insert calendar content if Calendar heading is empty
+    (save-excursion
+      (goto-char (point-min))
+      (when (re-search-forward "^\\* Calendar\\b" nil t)
+        (let ((heading-end (line-end-position))
+              (next-heading (save-excursion
+                              (forward-line 1)
+                              (if (re-search-forward "^\\* " nil t)
+                                  (line-beginning-position)
+                                (point-max)))))
+          (when (< (- next-heading heading-end) 5)
+            (my/insert-aj-day-calendar)))))
     ;; Enable org-transclusion-mode to render any transcludes
     (when (and (fboundp 'org-transclusion-mode)
                (not (bound-and-true-p org-transclusion-mode)))
