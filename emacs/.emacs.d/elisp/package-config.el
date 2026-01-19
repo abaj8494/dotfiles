@@ -1177,7 +1177,23 @@ bolds the specific date.
 (use-package org-side-tree
   :straight (:host github :repo "localauthor/org-side-tree")
   :after org
-  :bind (("C-c o s" . org-side-tree)))
+  :bind (("C-c o s" . org-side-tree))
+  :config
+  ;; Suppress errors from timer function when org-transclusion overlays cause issues
+  (defun aj/org-side-tree-timer-ignore-errors (orig-fn &rest args)
+    "Wrap org-side-tree-timer-function to ignore transclusion-related errors."
+    (condition-case nil
+        (apply orig-fn args)
+      (error nil)))
+  (advice-add 'org-side-tree-timer-function :around #'aj/org-side-tree-timer-ignore-errors)
+
+  ;; Also protect org-side-tree-overlays-to-text which causes the actual error
+  (defun aj/org-side-tree-overlays-ignore-errors (orig-fn &rest args)
+    "Wrap org-side-tree-overlays-to-text to ignore invalid search bound errors."
+    (condition-case nil
+        (apply orig-fn args)
+      (error nil)))
+  (advice-add 'org-side-tree-overlays-to-text :around #'aj/org-side-tree-overlays-ignore-errors))
 
 (use-package org-roam-ui
   :bind (("C-c n r" . org-roam-ui-mode))
