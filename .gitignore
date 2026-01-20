@@ -69,3 +69,4 @@ gh/.config/gh/hosts.yml
 # Temporary inquiry/notes files
 # =============================================================================
 inquiry*.txt
+emacs/.emacs.d/savehist

@@ -616,6 +616,63 @@ Keeps equations, aligns, and inline math while stripping org syntax."
   (define-key org-mode-map (kbd "C-c C-x R") #'aj/latex-clear-region-previews))
 
 ;; ---------------------------------------------------------------------------
+;; Headline Export Filtering
+;; ---------------------------------------------------------------------------
+;; Filter to skip headlines deeper than a configurable level during export.
+;; Toggle via #+BIND: my/max-headline-export-level 3 in org files.
+
+(setq org-export-allow-bind-keywords t)
+
+(defvar my/max-headline-export-level nil
+  "If set, exclude headlines deeper than this level from export.")
+
+(defun my/filter-deep-headlines (tree backend info)
+  "Remove headlines deeper than `my/max-headline-export-level'.
+Preserves #+LATEX: snippets from removed headlines by moving them up."
+  (message "DEBUG: filter called, max-level=%s" my/max-headline-export-level)
+  (when my/max-headline-export-level
+    (condition-case err
+        (let ((to-remove nil)
+              (preserved-count 0))
+          ;; Collect headlines to remove (in document order)
+          (org-element-map tree 'headline
+            (lambda (hl)
+              (when (> (org-element-property :level hl) my/max-headline-export-level)
+                (push hl to-remove))))
+          (message "DEBUG: found %d headlines to remove" (length to-remove))
+          ;; Process in reverse order (deepest/last first)
+          (dolist (hl to-remove)
+            ;; Find LATEX keywords in this headline's own section
+            (let ((latex-keywords nil)
+                  (section (org-element-map hl 'section #'identity nil t)))
+              (when section
+                (org-element-map section 'keyword
+                  (lambda (kw)
+                    (when (string= (org-element-property :key kw) "LATEX")
+                      (push (org-element-copy kw) latex-keywords)))
+                  nil nil 'headline))
+              ;; Insert keywords before next sibling or at end of parent
+              (when latex-keywords
+                (let* ((parent (org-element-property :parent hl))
+                       (contents (and parent (org-element-contents parent)))
+                       (hl-pos (and contents (cl-position hl contents :test #'eq)))
+                       (next-sibling (and hl-pos (nth (1+ hl-pos) contents))))
+                  (dolist (kw (nreverse latex-keywords))
+                    (cl-incf preserved-count)
+                    (if next-sibling
+                        (org-element-insert-before kw next-sibling)
+                      (when parent
+                        (org-element-adopt-elements parent kw)))))))
+            ;; Remove the headline
+            (org-element-extract-element hl))
+          (message "Headline filter: removed %d headlines, preserved %d #+LATEX snippets"
+                   (length to-remove) preserved-count))
+      (error (message "ERROR in headline filter: %s" err))))
+  tree)
+
+(add-hook 'org-export-filter-parse-tree-functions #'my/filter-deep-headlines)
+
+;; ---------------------------------------------------------------------------
 ;; LaTeX Export Settings
 ;; ---------------------------------------------------------------------------
 

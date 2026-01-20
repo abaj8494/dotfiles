@@ -45,4 +45,7 @@
 ;; Load ox-hugo keybindings
 (require 'ox-hugo-bindings)
 
+;; Load email configuration (mu4e with mbsync)
+(require 'email-config)
+
 ;;; init.el ends here

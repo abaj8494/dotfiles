@@ -160,3 +160,5 @@ export PATH=/opt/homebrew/opt/llvm/bin:$PATH
 
 export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
 
+
+export SASL_PATH=~/.sasl2:/usr/lib/sasl2
