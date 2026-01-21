@@ -773,7 +773,7 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
 
 (defun aj/daily-file-open-hook ()
   "Hook that runs when opening daily date files (YYYY-MM-DD.org).
-Ensures proper structure, refreshes recurring tasks, and enables transclusion."
+Ensures proper structure and enables transclusion."
   (when (aj/daily-date-file-p)
     ;; Insert week transclude if not present (check both directive and rendered heading)
     (save-excursion
@@ -784,8 +784,6 @@ Ensures proper structure, refreshes recurring tasks, and enables transclusion."
         (aj/insert-week-transclude)))
     ;; Ensure all headings exist in correct order
     (aj/ensure-daily-structure)
-    ;; Refresh recurring tasks when opening a daily file
-    (aj/refresh-daily-recurring)
     ;; Insert calendar content if Calendar heading is empty
     (save-excursion
       (goto-char (point-min))

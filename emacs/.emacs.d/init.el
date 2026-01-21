@@ -48,4 +48,9 @@
 ;; Load email configuration (mu4e with mbsync)
 (require 'email-config)
 
+;; Start Emacs server (for emacsclient) if not already running
+(require 'server)
+(unless (server-running-p)
+  (server-start))
+
 ;;; init.el ends here
