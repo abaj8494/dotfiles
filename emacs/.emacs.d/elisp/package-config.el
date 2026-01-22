@@ -537,6 +537,11 @@ Returns the trimmed file contents, or nil if file doesn't exist."
   "Return ISO week number for TIME."
   (string-to-number (format-time-string "%V" (or time (current-time)))))
 
+(defun aj/is-weekday-p (time)
+  "Return t if TIME is a weekday (Monday-Friday), nil otherwise."
+  (let ((dow (string-to-number (format-time-string "%u" time))))
+    (<= dow 5)))
+
 (defun aj/get-recurring-tasks-for-date (time)
   "Return recurring tasks string for TIME.
 Combines templates from all recurring sources."
@@ -547,6 +552,8 @@ Combines templates from all recurring sources."
          (week-parity (aj/iso-week-parity time))
          (results (list
                    (aj/read-template-file "" "daily.org")
+                   (when (aj/is-weekday-p time)
+                     (aj/read-template-file "" "weekdays.org"))
                    (aj/read-template-file "alternating" (concat alt-phase ".org"))
                    (aj/read-template-file "weekly" (concat day-name ".org"))
                    (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org"))

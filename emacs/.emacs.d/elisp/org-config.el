@@ -104,6 +104,10 @@
   "Return the daily template file path."
   (expand-file-name "daily.org" aj/templates-base-dir))
 
+(defun aj/capture-weekdays-file ()
+  "Return the weekdays template file path (Mon-Fri)."
+  (expand-file-name "weekdays.org" aj/templates-base-dir))
+
 (defun aj/capture-alternating-file ()
   "Prompt for alternating phase and return the template file path.
 Shows current phase for reference."
@@ -161,6 +165,10 @@ Shows current date for reference."
       '(("r" "recurring templates")
         ("rd" "daily (every day)" plain
          (file aj/capture-daily-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rk" "weekdays (Mon-Fri)" plain
+         (file aj/capture-weekdays-file)
          "* TODO %?"
          :empty-lines 0)
         ("ra" "alternating (every other day)" plain
