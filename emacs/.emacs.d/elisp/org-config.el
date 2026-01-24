@@ -23,6 +23,10 @@
 ;; Org Babel Configuration
 ;; ---------------------------------------------------------------------------
 
+(use-package go-mode)
+
+(use-package ob-go
+  :straight (:host github :repo "pope/ob-go"))
 (org-babel-do-load-languages
  'org-babel-load-languages
  '((shell   . t)
@@ -31,7 +35,8 @@
    (jupyter . t)
    (latex   . t)
    (C       . t)
-   (java    . t)))
+   (java    . t)
+   (go      . t)))
 
 ;; Python settings
 (setq custom-tab-width 4)
@@ -265,9 +270,9 @@ Shows current date for reference."
                :image-converter
                ("convert -density %D -trim -antialias %f -quality 100 %O")))
 
-;; Default to SVG
+;; Default to PNG (raster, scalable)
 
-(setq org-preview-latex-default-process 'ajlua)
+(setq org-preview-latex-default-process 'luamagick)
 (setq org-preview-latex-image-directory "ltximg/")
 (setq org-startup-with-inline-images t)
 

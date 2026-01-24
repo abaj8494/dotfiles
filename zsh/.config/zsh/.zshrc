@@ -162,3 +162,6 @@ export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
 
 
 export SASL_PATH=~/.sasl2:/usr/lib/sasl2
+export PATH=~/.bun/bin:$PATH
+export PATH=$PATH:/opt/homebrew/share/android-commandlinetools/platform-tools
+

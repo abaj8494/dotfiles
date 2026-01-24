@@ -13,6 +13,8 @@ return {
 		event = { "BufReadPost" },
 		cmd = { "LspInfo", "LspInstall", "LspUninstall", "Mason" },
 		dependencies = {
+			-- Per-project LSP settings (must load before lspconfig)
+			"folke/neoconf.nvim",
 			-- LSP installer plugins
 			"williamboman/mason.nvim",
 			"williamboman/mason-lspconfig.nvim",

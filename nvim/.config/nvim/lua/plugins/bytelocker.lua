@@ -1,5 +1,5 @@
 return {
-	"abaj8494/bytelocker",
+	"abaj8494/bytelocker.nvim",
 	config = function()
 		require("bytelocker").setup({
 			setup_keymaps = true, -- Optional: set up default keymaps

@@ -27,7 +27,7 @@ return {
 			default_format_opts = {
 				async = true,
 				timeout_ms = 500,
-				lsp_format = "fallback",
+				lsp_format = "never",
 			},
 			format_after_save = function(buffer_number)
 				if vim.g.disable_autoformat or vim.b[buffer_number].disable_autoformat then
@@ -36,7 +36,7 @@ return {
 				return {
 					async = true,
 					timeout_ms = 500,
-					lsp_format = "fallback",
+					lsp_format = "never",
 				}
 			end,
 			formatters_by_ft = {

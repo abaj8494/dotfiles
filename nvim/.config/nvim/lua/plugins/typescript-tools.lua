@@ -10,6 +10,10 @@ return {
 		config = function()
 			require("typescript-tools").setup({
 				on_attach = function(client, buffer_number)
+					-- Disable formatting - let conform.nvim handle it
+					client.server_capabilities.documentFormattingProvider = false
+					client.server_capabilities.documentRangeFormattingProvider = false
+
 					require("twoslash-queries").attach(client, buffer_number)
 				end,
 				settings = {
