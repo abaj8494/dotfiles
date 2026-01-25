@@ -554,10 +554,26 @@ Excludes yearly files like twenty_twenty_six.org."
     (and path
          (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" path))))
 
+(defun aj/get-week-heading-info (week-num year)
+  "Get the ID and title of Week WEEK-NUM heading tagged with YEAR.
+Returns (id . title) or nil if not found."
+  (let* ((year-tag (number-to-string year))
+         (title-pattern (format "Week %d%%" week-num))
+         (result (org-roam-db-query
+                  [:select [nodes:id nodes:title]
+                   :from nodes
+                   :left-join tags :on (= nodes:id tags:node-id)
+                   :where (and (like nodes:title $s1)
+                               (= tags:tag $s2))]
+                  title-pattern year-tag)))
+    (when result
+      (let ((row (car result)))
+        (cons (car row) (cadr row))))))
+
 (defun aj/insert-week-transclude ()
-  "Insert transclude directive for the current week based on file date.
-Parses date from filename, calculates ISO week, inserts transclude
-pointing to the correct Week heading in the yearly file."
+  "Insert linked week heading and transclude directive.
+Parses date from filename, calculates ISO week, inserts a heading
+linking to the week node followed by transclude directive."
   (interactive)
   (save-excursion
     (when (and buffer-file-name
@@ -572,20 +588,31 @@ pointing to the correct Week heading in the yearly file."
              (date-time (encode-time 0 0 0 day month year))
              (week-num (aj/iso-week-number date-time))
              (file-id (cdr (assoc year aj/yearly-file-ids)))
-             (file-name (cdr (assoc year aj/yearly-file-names))))
+             (file-name (cdr (assoc year aj/yearly-file-names)))
+             (week-info (aj/get-week-heading-info week-num year))
+             (week-id (car week-info))
+             (week-title (cdr week-info)))
         (when (and file-id file-name)
           (goto-char (point-min))
           ;; Find insertion point (after EXPORT_FILE_NAME line)
           (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*$" nil t)
               (progn
                 (goto-char (match-end 0))
-                (insert (format "\n\n#+transclude: [[id:%s::* Week %d][%s]] :preserve-whitespace"
-                                file-id week-num file-name)))
+                (if (and week-id week-title)
+                    ;; New format with linked heading
+                    (insert (format "\n\n* [[id:%s][%s]]\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                    week-id week-title file-id week-num file-name))
+                  ;; Fallback without week heading ID (shouldn't happen normally)
+                  (insert (format "\n\n* Week %d\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                  week-num file-id week-num file-name))))
             ;; Fallback: insert at end of front matter
             (when (re-search-forward "^:END:$" nil t)
               (forward-line 1)
-              (insert (format "\n#+transclude: [[id:%s::* Week %d][%s]] :preserve-whitespace\n"
-                              file-id week-num file-name)))))))))
+              (if (and week-id week-title)
+                  (insert (format "\n* [[id:%s][%s]]\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                  week-id week-title file-id week-num file-name))
+                (insert (format "\n* Week %d\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                week-num file-id week-num file-name))))))))))
 
 (defun aj/read-template-file (subdir filename)
   "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
@@ -780,7 +807,7 @@ Entries are placed under * Capture by the capture template."
           (goto-char (point-min))
           (unless (or (re-search-forward "^#\\+transclude:" nil t)
                       (progn (goto-char (point-min))
-                             (re-search-forward "^\\* Week [0-9]+" nil t)))
+                             (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
             (aj/insert-week-transclude)))
         ;; 2. Ensure all headings exist in correct order
         (aj/ensure-daily-structure)
@@ -855,11 +882,13 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
         (aj/ensure-heading-exists heading)))))
 
 (defun aj/fold-week-heading ()
-  "Fold the transcluded Week heading if present."
+  "Fold the Week heading if present.
+Matches both linked format (* [[id:...][Week N ...]]) and plain format (* Week N)."
   (when (aj/daily-date-file-p)
     (save-excursion
       (goto-char (point-min))
-      (when (re-search-forward "^\\* Week [0-9]+" nil t)
+      ;; Match either: * [[id:...][Week N...]] or * Week N
+      (when (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)
         (goto-char (line-beginning-position))
         (when (not (org-fold-folded-p (line-end-position)))
           (org-cycle))))))
@@ -1017,7 +1046,7 @@ Weather is now part of the Calendar section - use C-c d r c to refresh."
     (goto-char (point-min))
     (unless (or (re-search-forward "^#\\+transclude:" nil t)
                 (progn (goto-char (point-min))
-                       (re-search-forward "^\\* Week [0-9]+" nil t)))
+                       (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
       (aj/insert-week-transclude)))
   ;; Ensure transclusion is active
   (when (and (fboundp 'org-transclusion-mode)
@@ -1042,7 +1071,7 @@ Inserts transclude, ensures headings, populates recurring and calendar."
     (goto-char (point-min))
     (unless (or (re-search-forward "^#\\+transclude:" nil t)
                 (progn (goto-char (point-min))
-                       (re-search-forward "^\\* Week [0-9]+" nil t)))
+                       (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
       (aj/insert-week-transclude)))
   ;; 2. Ensure all headings exist in correct order
   (aj/ensure-daily-structure)
@@ -1077,8 +1106,6 @@ For all files: enables transclusion and folds Week heading."
       (org-transclusion-mode 1))
     ;; Fold the transcluded Week heading
     (aj/fold-week-heading)
-    ;; Keep Week folded after saves
-    (add-hook 'after-save-hook #'aj/fold-week-heading nil t)
     ;; Save if we did setup
     (when (buffer-modified-p)
       (save-buffer))))
@@ -1369,10 +1396,61 @@ and bolds the specific date."
       (setq s (concat (match-string 1 s) "," (match-string 2 s))))
     s))
 
+(defun aj/ensure-daily-id (date-str)
+  "Ensure daily note exists for DATE-STR (YYYY-MM-DD). Returns org-roam ID.
+Creates a minimal file with just ID and title if it doesn't exist.
+Does not run hooks or add headings - those are added when the file is opened."
+  (require 'org-roam)
+  (require 'org-id)
+  (let* ((parts (split-string date-str "-"))
+         (year (string-to-number (nth 0 parts)))
+         (month (string-to-number (nth 1 parts)))
+         (day (string-to-number (nth 2 parts)))
+         (date-time (encode-time 0 0 0 day month year))
+         (day-name (format-time-string "%A" date-time))
+         (daily-dir (expand-file-name
+                     (or org-roam-dailies-directory "daily")
+                     org-roam-directory))
+         (file-path (expand-file-name (concat date-str ".org") daily-dir)))
+    ;; Create minimal file if it doesn't exist
+    (unless (file-exists-p file-path)
+      (let ((id (org-id-uuid)))
+        (make-directory daily-dir t)
+        (with-temp-file file-path
+          ;; Naked file: just properties and title, no headings
+          (insert (format ":PROPERTIES:\n:ID:       %s\n:END:\n#+title: %s | %s\n#+EXPORT_FILE_NAME: %s\n"
+                          id date-str day-name date-str)))
+        ;; Update org-roam database for new file
+        (org-roam-db-update-file file-path)))
+    ;; Get ID from org-roam database
+    (caar (org-roam-db-query
+           [:select id :from nodes :where (= file $s1)]
+           file-path))))
+
+(defun my/format-day-cell (day-num target-day year month)
+  "Format a calendar day cell for org table with ID links.
+DAY-NUM is the day number (or nil for empty).
+TARGET-DAY is the current day (bolded, no link).
+YEAR and MONTH are used to build the ID link."
+  (if (null day-num)
+      "   "
+    (if (= day-num target-day)
+        ;; Current day: bold, no link
+        (if (< day-num 10)
+            (format "*%d*  " day-num)
+          (format "*%d* " day-num))
+      ;; Other days: get/create daily and link by ID
+      (let* ((date-str (format "%04d-%02d-%02d" year month day-num))
+             (id (aj/ensure-daily-id date-str))
+             (link (format "[[id:%s][%d]]" id day-num)))
+        (if (< day-num 10)
+            (format "%s  " link)
+          (format "%s " link))))))
+
 (defun my/insert-aj-day-calendar ()
   "Insert formatted calendar for a daily org-roam note with life stats.
-Parses date from #+title: YYYY-MM-DD line, widens the day-of-week column,
-bolds the specific date.
+Parses date from #+title: YYYY-MM-DD line.
+Outputs an org table with links to daily files.
 Σ column: Day of year (cumulative days elapsed in current year).
 ω column: Days elapsed since December 26, 2001 (AJ's birthday)."
   (interactive)
@@ -1385,7 +1463,6 @@ bolds the specific date.
              (month (string-to-number (nth 1 parts)))
              (day (string-to-number (nth 2 parts)))
              (date (encode-time 0 0 0 day month year))
-             (dow (string-to-number (format-time-string "%w" date)))
              ;; Birthday: December 26, 2001
              (birthday (encode-time 0 0 0 26 12 2001))
              (cal-output (shell-command-to-string (format "cal %d %d" month year)))
@@ -1406,136 +1483,289 @@ bolds the specific date.
           (goto-char (line-end-position))
           (insert "\n\n"))
 
-        ;; Title line: centered over 25 chars, then Σ ω headers
-        ;; Σ is 3-char wide (max 366), ω is 6-char wide (e.g., "8,786")
-        (let* ((title (string-trim (car lines)))
-               (title-len (length title))
-               (center-width 25)
-               (left-pad (/ (- center-width title-len) 2))
-               (right-pad (- center-width left-pad title-len)))
-          (insert (make-string left-pad ?\s) title (make-string right-pad ?\s))
-          (insert "   Σ       ω\n"))
+        ;; Caption with month name
+        (let ((month-name (format-time-string "%B %Y" date)))
+          (insert (format "#+CAPTION: %s\n" month-name)))
 
-        ;; Day names header with widened column
-        (insert (my/format-day-cal-header dow) "\n")
+        ;; Table header
+        (insert "| Su | Mo | Tu | We | Th | Fr | Sa | Σ(wk) | ω(dol) |\n")
+        (insert "|----+----+----+----+----+----+----+-------+--------|\n")
 
         ;; Day rows
-        (dolist (line (nthcdr 2 lines))
-          (when (string-match "[0-9]" line)
-            (let* ((days (my/parse-cal-days line))
-                   (last-day (car (last (remq nil days))))
-                   (date-end (encode-time 0 0 0 last-day month year))
-                   ;; Day of year for last day in row
-                   (day-of-year (string-to-number (format-time-string "%j" date-end)))
-                   ;; Days alive: difference from birthday to date-end
-                   (days-alive (floor (/ (float-time (time-subtract date-end birthday)) 86400)))
-                   (formatted (my/format-day-cal-line days day dow)))
-              (insert (format "%s %3d  %6s\n"
-                              formatted
-                              day-of-year
-                              (my/format-number-with-commas days-alive))))))
+        (let ((week-num 0))
+          (dolist (line (nthcdr 2 lines))
+            (when (string-match "[0-9]" line)
+              (setq week-num (1+ week-num))
+              (let* ((days (my/parse-cal-days line))
+                     (last-day (car (last (remq nil days))))
+                     (date-end (encode-time 0 0 0 last-day month year))
+                     ;; Days alive: difference from birthday to date-end
+                     (days-alive (floor (/ (float-time (time-subtract date-end birthday)) 86400))))
+                ;; Build table row with linked days
+                (insert "|")
+                (dotimes (dow 7)
+                  (insert " " (my/format-day-cell (nth dow days) day year month) "|"))
+                (insert (format " %5d | %s |\n" week-num (my/format-number-with-commas days-alive)))))))
+
+        ;; Align the table
+        (org-table-align)
 
         ;; Fetch weather asynchronously and insert when ready
         (aj/fetch-calendar-weather-async date-str (current-buffer))))))
 
+;; ---------------------------------------------------------------------------
+;; OpenWeatherMap for Calendar (uses API key from authinfo.gpg)
+;; ---------------------------------------------------------------------------
+
+(defvar aj/openweather-city "Sydney"
+  "City for OpenWeatherMap queries.")
+
+(defvar aj/weather-archive-remote "root@abaj.ai:/var/weather-archive/"
+  "Remote path to weather archive on server.")
+
+(defvar aj/weather-archive-local (expand-file-name "~/.cache/weather-archive/")
+  "Local cache directory for weather archive.")
+
+(defun aj/sync-weather-archive ()
+  "Sync weather archive from remote server."
+  (interactive)
+  (make-directory aj/weather-archive-local t)
+  (let ((proc (start-process "weather-sync" nil
+                             "rsync" "-az"
+                             aj/weather-archive-remote
+                             aj/weather-archive-local)))
+    (set-process-sentinel proc
+                          (lambda (p e)
+                            (when (string-match-p "finished" e)
+                              (message "Weather archive synced"))))))
+
+(defun aj/get-week-bounds (date-str)
+  "Return (start-date . end-date) for the week containing DATE-STR.
+Week runs Sunday to Saturday."
+  (let* ((parts (split-string date-str "-"))
+         (year (string-to-number (nth 0 parts)))
+         (month (string-to-number (nth 1 parts)))
+         (day (string-to-number (nth 2 parts)))
+         (date (encode-time 0 0 0 day month year))
+         (dow (string-to-number (format-time-string "%w" date)))
+         (week-start (time-subtract date (days-to-time dow)))
+         (week-end (time-add week-start (days-to-time 6))))
+    (cons (format-time-string "%Y-%m-%d" week-start)
+          (format-time-string "%Y-%m-%d" week-end))))
+
+(defun aj/read-archive-weather (date-str)
+  "Read archived weather for DATE-STR from local cache. Returns alist or nil."
+  (let ((file (expand-file-name (concat date-str ".json") aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist)
+              (json-array-type 'list))
+          (condition-case nil
+              (json-read)
+            (error nil)))))))
+
+(defun aj/get-openweather-api-key ()
+  "Get OpenWeatherMap API key from authinfo.gpg."
+  (require 'auth-source)
+  (let ((auth (car (auth-source-search :host "api.openweathermap.org"
+                                       :require '(:secret)))))
+    (when auth
+      (let ((secret (plist-get auth :secret)))
+        (if (functionp secret)
+            (funcall secret)
+          secret)))))
+
+(defun aj/openweather-icon (condition)
+  "Map OpenWeatherMap weather condition to emoji."
+  (pcase condition
+    ("Clear" "☀️")
+    ("Clouds" "☁️")
+    ("Rain" "🌧️")
+    ("Drizzle" "🌦️")
+    ("Thunderstorm" "⛈️")
+    ("Snow" "❄️")
+    ((or "Mist" "Fog" "Haze" "Smoke" "Dust" "Sand" "Ash" "Squall" "Tornado") "🌫️")
+    (_ "🌡️")))
+
+(defun aj/calculate-moon-phase (year month day)
+  "Calculate moon phase for given date. Returns string with emoji and name."
+  (let* ((y (if (<= month 2) (1- year) year))
+         (m (if (<= month 2) (+ month 12) month))
+         (c (/ y 100))
+         (e (+ (- 2 c) (/ c 4)))
+         (jd (+ (floor (* 365.25 (+ y 4716)))
+                (floor (* 30.6001 (+ m 1)))
+                day e -1524.5))
+         (phase-raw (mod (- jd 2451550.1) 29.530588853))
+         (phase-idx (floor (* (/ phase-raw 29.530588853) 8))))
+    (pcase phase-idx
+      (0 "🌑 New Moon")
+      (1 "🌒 Waxing Crescent")
+      (2 "🌓 First Quarter")
+      (3 "🌔 Waxing Gibbous")
+      (4 "🌕 Full Moon")
+      (5 "🌖 Waning Gibbous")
+      (6 "🌗 Last Quarter")
+      (7 "🌘 Waning Crescent")
+      (_ "🌑 New Moon"))))
+
+(defun aj/format-unix-time (unix-time format-string)
+  "Format UNIX-TIME timestamp using FORMAT-STRING."
+  (format-time-string format-string (seconds-to-time unix-time)))
+
+(defun aj/parse-weather-week-from-cache (target-date)
+  "Parse weather for the full week (Sun-Sat) containing TARGET-DATE.
+Reads from local cache files synced from server."
+  (let* ((bounds (aj/get-week-bounds target-date))
+         (week-start (car bounds))
+         (lines '())
+         (current-date week-start))
+    ;; Iterate through each day of the week (Sun-Sat)
+    (dotimes (_ 7)
+      (let* ((d-parts (split-string current-date "-"))
+             (d-year (string-to-number (nth 0 d-parts)))
+             (d-month (string-to-number (nth 1 d-parts)))
+             (d-day (string-to-number (nth 2 d-parts)))
+             (date-time (encode-time 0 0 0 d-day d-month d-year))
+             (day-name (format-time-string "%a" date-time))
+             ;; Read from cache (server provides both historical and forecast)
+             (archive (aj/read-archive-weather current-date))
+             weather-info)
+        (when archive
+          (setq weather-info (list :temp (alist-get 'temp archive)
+                                  :min (alist-get 'temp_min archive)
+                                  :max (alist-get 'temp_max archive)
+                                  :cond (alist-get 'condition archive))))
+        ;; Format the line
+        (if weather-info
+            (let ((emoji (aj/openweather-icon (plist-get weather-info :cond))))
+              (push (format "  %s %d: %s %d°C (%d-%d°C)"
+                            day-name d-day emoji
+                            (floor (plist-get weather-info :temp))
+                            (floor (plist-get weather-info :min))
+                            (floor (plist-get weather-info :max)))
+                    lines))
+          ;; No data available
+          (push (format "  %s %d: —" day-name d-day) lines))
+        ;; Move to next day
+        (setq current-date
+              (format-time-string "%Y-%m-%d"
+                                 (time-add date-time (days-to-time 1))))))
+    (string-join (nreverse lines) "\n")))
+
+(defun aj/read-forecast-latest ()
+  "Read the forecast-latest.json from local cache. Returns alist or nil."
+  (let ((file (expand-file-name "forecast-latest.json" aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist)
+              (json-array-type 'list))
+          (condition-case nil
+              (json-read)
+            (error nil)))))))
+
+(defun aj/insert-weather-from-cache (buffer date-str)
+  "Insert weather content into BUFFER's Calendar section from local cache.
+Weather is relative to DATE-STR (the file's date), not today's date."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-min))
+        (when (re-search-forward "^\\* Calendar\\b" nil t)
+          (let ((section-end (save-excursion
+                               (forward-line 1)
+                               (if (re-search-forward "^\\* " nil t)
+                                   (1- (line-beginning-position))
+                                 (point-max)))))
+            ;; Remove existing weather lines
+            (save-excursion
+              (goto-char (point-min))
+              (when (re-search-forward "^\\* Calendar\\b" nil t)
+                (while (re-search-forward "^\\(forecast:\\|today:\\|sun:\\|moon:\\)" section-end t)
+                  (let ((line-start (line-beginning-position)))
+                    (forward-line 1)
+                    (when (string-match-p "^forecast:" (match-string 0))
+                      (while (and (< (point) section-end)
+                                  (looking-at "^  "))
+                        (forward-line 1)))
+                    (delete-region line-start (point))))))
+            ;; Go to end of section
+            (goto-char section-end)
+            ;; Read from cache
+            (let* ((today-str (format-time-string "%Y-%m-%d"))
+                   (is-today (string= date-str today-str))
+                   (forecast-latest (aj/read-forecast-latest))
+                   ;; Date parts for moon phase
+                   (d-parts (split-string date-str "-"))
+                   (year (string-to-number (nth 0 d-parts)))
+                   (month (string-to-number (nth 1 d-parts)))
+                   (day (string-to-number (nth 2 d-parts)))
+                   (moon (aj/calculate-moon-phase year month day))
+                   ;; Forecast from individual day files
+                   (forecast-str (aj/parse-weather-week-from-cache date-str)))
+              ;; Insert weather content
+              (unless (bolp) (insert "\n"))
+              (insert "\nforecast:\n" forecast-str "\n")
+              ;; Day's conditions: from forecast-latest if today, otherwise from archive
+              (if is-today
+                  ;; Today: use current conditions from forecast-latest
+                  (let ((current (alist-get 'current forecast-latest)))
+                    (when current
+                      (let* ((temp (floor (alist-get 'temp current)))
+                             (feels (floor (alist-get 'feels_like current)))
+                             (humidity (alist-get 'humidity current))
+                             (weather (car (alist-get 'weather current)))
+                             (condition (alist-get 'main weather))
+                             (description (alist-get 'description weather))
+                             (emoji (aj/openweather-icon condition))
+                             (sunrise (alist-get 'sunrise current))
+                             (sunset (alist-get 'sunset current)))
+                        (insert (format "\ntoday: %s %s, %d°C (feels %d°C), %d%% humidity\n"
+                                        emoji description temp feels humidity))
+                        (when (and sunrise sunset)
+                          (insert (format "\nsun: ↑ %s  ↓ %s\n"
+                                          (aj/format-unix-time sunrise "%H:%M")
+                                          (aj/format-unix-time sunset "%H:%M")))))))
+                ;; Past/future date: use archived weather for that specific date
+                (let ((archive (aj/read-archive-weather date-str)))
+                  (if archive
+                      (let* ((temp (alist-get 'temp archive))
+                             (min-temp (alist-get 'temp_min archive))
+                             (max-temp (alist-get 'temp_max archive))
+                             (condition (alist-get 'condition archive))
+                             (description (or (alist-get 'description archive) condition))
+                             (emoji (aj/openweather-icon condition))
+                             (sunrise (alist-get 'sunrise archive))
+                             (sunset (alist-get 'sunset archive)))
+                        (insert (format "\ntoday: %s %s, %d°C (%d-%d°C)\n"
+                                        emoji (downcase description)
+                                        (floor temp) (floor min-temp) (floor max-temp)))
+                        (when (and sunrise sunset)
+                          (insert (format "\nsun: ↑ %s  ↓ %s\n"
+                                          (aj/format-unix-time sunrise "%H:%M")
+                                          (aj/format-unix-time sunset "%H:%M")))))
+                    ;; No archive data for this date
+                    (insert "\ntoday: — (no weather data)\n"))))
+              (insert (format "moon: %s\n" moon)))))))))
+
 (defun aj/fetch-calendar-weather-async (date-str buffer)
-  "Fetch weather for DATE-STR asynchronously and insert into BUFFER's Calendar section.
-Shows forecast starting from DATE-STR, and always shows today's current conditions."
-  (let ((url (format "https://wttr.in/%s?format=j1"
-                     (url-hexify-string aj/wttr-location))))
-    (url-retrieve
-     url
-     (lambda (status date-str buffer)
-       (unwind-protect
-           (when (and (not (plist-get status :error))
-                      (buffer-live-p buffer))
-             (goto-char (point-min))
-             (when (re-search-forward "\n\n" nil t)
-               (condition-case nil
-                   (let* ((json-object-type 'alist)
-                          (json-array-type 'list)
-                          (data (json-read))
-                          ;; Forecast starting from file's date
-                          (week-weather (aj/parse-wttr-week-data data date-str))
-                          ;; Always show today's current conditions
-                          (today-weather (aj/parse-wttr-current-data data)))
-                     (with-current-buffer buffer
-                       (save-excursion
-                         (goto-char (point-min))
-                         (when (re-search-forward "^\\* Calendar\\b" nil t)
-                           ;; Find end of Calendar section (before next heading or end)
-                           (let ((section-end (save-excursion
-                                                (forward-line 1)
-                                                (if (re-search-forward "^\\* " nil t)
-                                                    (1- (line-beginning-position))
-                                                  (point-max)))))
-                             (goto-char section-end)
-                             ;; Remove any existing weather lines
-                             (save-excursion
-                               (goto-char (point-min))
-                               (when (re-search-forward "^\\* Calendar\\b" nil t)
-                                 (let ((start (point)))
-                                   (while (re-search-forward "^\\(forecast:\\|today:\\)" section-end t)
-                                     (let ((line-start (line-beginning-position)))
-                                       (forward-line 1)
-                                       ;; Delete forecast block (multiple lines) or today line
-                                       (if (string-match-p "^forecast:" (match-string 0))
-                                           (while (and (< (point) section-end)
-                                                       (looking-at "^  "))
-                                             (forward-line 1)))
-                                       (delete-region line-start (point)))))))
-                             ;; Insert new weather at end of section with proper spacing
-                             (goto-char section-end)
-                             (when week-weather
-                               (unless (bolp) (insert "\n"))
-                               (insert "\nforecast:\n" week-weather "\n"))
-                             (when today-weather
-                               (insert "\ntoday: " today-weather "\n")))))))
-                 (error nil))))
-         (kill-buffer)))
-     (list date-str buffer)
-     t t)))
-
-(defun aj/parse-wttr-week-data (data target-date)
-  "Parse wttr.in DATA and return formatted week forecast starting from TARGET-DATE."
-  (let ((weather-days (alist-get 'weather data))
-        (lines '())
-        (found-target nil))
-    (dolist (day weather-days)
-      (let ((date-str (alist-get 'date day)))
-        (when (or found-target (string= date-str target-date)
-                  (string> date-str target-date))
-          (setq found-target t)
-          (let* ((date-parts (split-string date-str "-"))
-                 (month (string-to-number (nth 1 date-parts)))
-                 (day-num (string-to-number (nth 2 date-parts)))
-                 (date-time (encode-time 0 0 0 day-num month
-                                         (string-to-number (nth 0 date-parts))))
-                 (day-name (format-time-string "%a" date-time))
-                 (max-temp (alist-get 'maxtempC day))
-                 (min-temp (alist-get 'mintempC day))
-                 (hourly (alist-get 'hourly day))
-                 (midday (or (nth 4 hourly) (nth 2 hourly) (car hourly)))
-                 (desc (alist-get 'weatherDesc midday))
-                 (weather-desc (alist-get 'value (car desc)))
-                 (icon (aj/wttr-icon weather-desc)))
-            (push (format "  %s %02d: %s %s°C (%s-%s°C)"
-                          day-name day-num icon max-temp min-temp max-temp)
-                  lines)))))
-    (when lines
-      (string-join (nreverse lines) "\n"))))
-
-(defun aj/parse-wttr-current-data (data)
-  "Parse wttr.in DATA and return formatted current conditions string."
-  (let* ((current (car (alist-get 'current_condition data)))
-         (temp (alist-get 'temp_C current))
-         (feels (alist-get 'FeelsLikeC current))
-         (humidity (alist-get 'humidity current))
-         (desc (alist-get 'weatherDesc current))
-         (weather-desc (alist-get 'value (car desc)))
-         (icon (aj/wttr-icon weather-desc)))
-    (format "%s %s, %s°C (feels %s°C), %s%% humidity"
-            icon weather-desc temp feels humidity)))
+  "Fetch weather from server cache and insert into BUFFER's Calendar section.
+Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
+  ;; Sync archive from server
+  (make-directory aj/weather-archive-local t)
+  (let ((proc (start-process "weather-sync" nil
+                             "rsync" "-az"
+                             aj/weather-archive-remote
+                             aj/weather-archive-local)))
+    (set-process-sentinel
+     proc
+     (lambda (p e)
+       (when (and (string-match-p "finished" e)
+                  (buffer-live-p buffer))
+         (aj/insert-weather-from-cache buffer date-str)
+         (message "Weather updated from server cache"))))))
 
 ;;(defun org-roam-node-insert-immediate (arg &rest args)
 ;;  (interactive "P")
