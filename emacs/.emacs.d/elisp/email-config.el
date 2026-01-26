@@ -171,12 +171,16 @@
 
   (define-key notmuch-search-mode-map (kbd "u")
     (lambda ()
-      "Toggle unread"
+      "Undelete if trashed, otherwise toggle unread"
       (interactive)
-      (notmuch-search-tag
-       (if (member "unread" (notmuch-search-get-tags))
-           '("-unread")
-         '("+unread")))))
+      (if (member "trash" (notmuch-search-get-tags))
+          (progn
+            (notmuch-search-tag '("-trash" "+inbox"))
+            (message "Restored from trash"))
+        (notmuch-search-tag
+         (if (member "unread" (notmuch-search-get-tags))
+             '("-unread")
+           '("+unread"))))))
 
   (define-key notmuch-search-mode-map (kbd "f")
     (lambda ()
@@ -287,12 +291,16 @@
 
   (define-key notmuch-show-mode-map (kbd "u")
     (lambda ()
-      "Toggle unread"
+      "Undelete if trashed, otherwise toggle unread"
       (interactive)
-      (notmuch-show-tag
-       (if (member "unread" (notmuch-show-get-tags))
-           '("-unread")
-         '("+unread")))))
+      (if (member "trash" (notmuch-show-get-tags))
+          (progn
+            (notmuch-show-tag '("-trash" "+inbox"))
+            (message "Restored from trash"))
+        (notmuch-show-tag
+         (if (member "unread" (notmuch-show-get-tags))
+             '("-unread")
+           '("+unread"))))))
 
   (define-key notmuch-show-mode-map (kbd "f")
     (lambda ()
