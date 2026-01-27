@@ -201,7 +201,7 @@ Shows current date for reference."
 (global-set-key (kbd "C-c c") #'org-capture)
 
 ;; Org agenda
-(global-set-key (kbd "C-c a") #'org-agenda)
+(global-set-key (kbd "C-c A") #'org-agenda)
 
 ;; ---------------------------------------------------------------------------
 ;; LaTeX Document Classes

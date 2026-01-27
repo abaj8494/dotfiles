@@ -435,7 +435,8 @@ Prompts for max depth, then collects results level by level."
   :ensure t
   :custom
   (org-roam-directory (file-truename "~/Documents/new-site/content-org/"))
-  :bind (("C-c n l" . org-roam-buffer-toggle)
+  :bind (("C-c a" . org-agenda)
+         ("C-c n l" . org-roam-buffer-toggle)
          ("C-c n f" . org-roam-node-find)
          ("C-c n g" . org-roam-graph)
          ("C-c n i" . org-roam-node-insert)
@@ -526,11 +527,11 @@ Prompts for max depth, then collects results level by level."
            :unnarrowed t)
           ("p" "private" plain "%?"
            :target (file+head "private/${slug}.org"
-                    ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n")
+                              ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n")
            :unnarrowed t)
           ("b" "book" plain "%?"
            :target (file+head "words/library/books/${slug}.org"
-                    ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n#+hugo_layout: book\n#+hugo_custom_front_matter: :toc true :author \n#+hugo_tags: \n#+hugo_auto_set_lastmod: t\n#+toc: headlines 2\n")
+                              ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n#+hugo_layout: book\n#+hugo_custom_front_matter: :toc true :author \n#+hugo_tags: \n#+hugo_auto_set_lastmod: t\n#+toc: headlines 2\n")
            :unnarrowed t))))
 
 ;; Recurring tasks for dailies (daily, alternating, weekly, biweekly, monthly, yearly)
@@ -614,8 +615,9 @@ linking to the week node followed by transclude directive."
                 (insert (format "\n* Week %d\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
                                 week-num file-id week-num file-name))))))))))
 
-(defun aj/read-template-file (subdir filename)
+(defun aj/read-template-file (subdir filename &optional time)
   "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
+TIME is used to replace <TODAY ...> placeholders with actual dates.
 Returns the trimmed file contents, or nil if file doesn't exist."
   (let ((path (expand-file-name
                (if (string-empty-p subdir)
@@ -625,7 +627,26 @@ Returns the trimmed file contents, or nil if file doesn't exist."
     (when (file-exists-p path)
       (with-temp-buffer
         (insert-file-contents path)
-        (string-trim (buffer-string))))))
+        (let ((content (string-trim (buffer-string))))
+          (if time
+              (aj/replace-date-placeholders content time)
+            content))))))
+
+(defun aj/replace-date-placeholders (content time)
+  "Replace <TODAY ...> placeholders in CONTENT with actual org timestamps for TIME."
+  (let ((date-str (format-time-string "%Y-%m-%d %a" time)))
+    ;; Replace <TODAY HH:MM> with <YYYY-MM-DD Day HH:MM>
+    (setq content (replace-regexp-in-string
+                   "<TODAY \\([0-9]\\{2\\}:[0-9]\\{2\\}\\)>"
+                   (lambda (match)
+                     (format "<%s %s>" date-str (match-string 1 match)))
+                   content))
+    ;; Replace bare <TODAY> with <YYYY-MM-DD Day>
+    (setq content (replace-regexp-in-string
+                   "<TODAY>"
+                   (format "<%s>" date-str)
+                   content))
+    content))
 
 ;; Phase calculation functions
 (defun aj/epoch-day (&optional time)
@@ -659,14 +680,14 @@ Combines templates from all recurring sources."
          (alt-phase (aj/alternating-phase time))
          (week-parity (aj/iso-week-parity time))
          (results (list
-                   (aj/read-template-file "" "daily.org")
+                   (aj/read-template-file "" "daily.org" time)
                    (when (aj/is-weekday-p time)
-                     (aj/read-template-file "" "weekdays.org"))
-                   (aj/read-template-file "alternating" (concat alt-phase ".org"))
-                   (aj/read-template-file "weekly" (concat day-name ".org"))
-                   (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org"))
-                   (aj/read-template-file "monthly" (concat day-of-month ".org"))
-                   (aj/read-template-file "yearly" (concat month-day ".org")))))
+                     (aj/read-template-file "" "weekdays.org" time))
+                   (aj/read-template-file "alternating" (concat alt-phase ".org") time)
+                   (aj/read-template-file "weekly" (concat day-name ".org") time)
+                   (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org") time)
+                   (aj/read-template-file "monthly" (concat day-of-month ".org") time)
+                   (aj/read-template-file "yearly" (concat month-day ".org") time))))
     (string-join (delq nil (delq "" results)) "\n")))
 
 (defun aj/daily-recurring-tasks ()
@@ -1851,6 +1872,81 @@ Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
           org-roam-ui-follow t
           org-roam-ui-update-on-save t
           org-roam-ui-open-on-start t))
+
+;; ---------------------------------------------------------------------------
+;; Org-modern - modern styling for org-mode
+;; ---------------------------------------------------------------------------
+
+(use-package org-modern
+  :after org
+  :hook ((org-mode . org-modern-mode)
+         (org-agenda-finalize . org-modern-agenda))
+  :config
+  (setq org-modern-star '("◉" "○" "●" "○" "●" "○" "●")
+        org-modern-list '((43 . "➤") (45 . "–") (42 . "•"))
+        org-modern-checkbox '((?X . "☑") (?- . "◐") (?\s . "☐"))
+        org-modern-table-vertical 1
+        org-modern-table-horizontal 0.2
+        org-modern-block-fringe nil
+        org-modern-tag t
+        org-modern-priority t
+        org-modern-todo t
+        org-modern-timestamp t))
+
+;; ---------------------------------------------------------------------------
+;; Org-download - drag and drop images into org
+;; ---------------------------------------------------------------------------
+
+(use-package org-download
+  :after org
+  :bind (:map org-mode-map
+              ("C-c d y" . org-download-yank)
+              ("C-c d s" . org-download-screenshot)
+              ("C-c d c" . org-download-clipboard))
+  :config
+  (setq org-download-method 'directory
+        org-download-image-dir "images"
+        org-download-heading-lvl nil
+        org-download-timestamp "%Y%m%d-%H%M%S_"))
+
+;; ---------------------------------------------------------------------------
+;; Org-super-agenda - group and filter agenda items
+;; ---------------------------------------------------------------------------
+
+(use-package org-super-agenda
+  :after org-agenda
+  :hook (org-agenda-mode . org-super-agenda-mode)
+  :config
+  (setq org-super-agenda-groups
+        '((:name "Overdue"
+           :deadline past
+           :scheduled past
+           :face (:foreground "red"))
+          (:name "Today"
+           :time-grid t
+           :date today
+           :scheduled today
+           :deadline today)
+          (:name "Important"
+           :priority "A")
+          (:name "Habits"
+           :habit t)
+          (:name "Upcoming"
+           :deadline future
+           :scheduled future))))
+
+;; ---------------------------------------------------------------------------
+;; Org-timeblock - visual time blocking
+;; ---------------------------------------------------------------------------
+
+(use-package org-timeblock
+  :straight (:host github :repo "ichernyshovvv/org-timeblock")
+  :after org
+  :bind (("C-c o t" . org-timeblock))
+  :config
+  (setq org-timeblock-inbox-file (expand-file-name "inbox.org" org-directory)
+        org-timeblock-show-future-repeats t
+        org-timeblock-span 1))
 
 ;; ---------------------------------------------------------------------------
 ;; GPTel - LLM integration with Claude
