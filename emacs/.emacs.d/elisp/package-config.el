@@ -1640,6 +1640,7 @@ Week runs Sunday to Saturday."
 Reads from local cache files synced from server."
   (let* ((bounds (aj/get-week-bounds target-date))
          (week-start (car bounds))
+         (today-str (format-time-string "%Y-%m-%d"))
          (lines '())
          (current-date week-start))
     ;; Iterate through each day of the week (Sun-Sat)
@@ -1650,6 +1651,7 @@ Reads from local cache files synced from server."
              (d-day (string-to-number (nth 2 d-parts)))
              (date-time (encode-time 0 0 0 d-day d-month d-year))
              (day-name (format-time-string "%a" date-time))
+             (is-today (string= current-date today-str))
              ;; Read from cache (server provides both historical and forecast)
              (archive (aj/read-archive-weather current-date))
              weather-info)
@@ -1660,15 +1662,17 @@ Reads from local cache files synced from server."
                                   :cond (alist-get 'condition archive))))
         ;; Format the line
         (if weather-info
-            (let ((emoji (aj/openweather-icon (plist-get weather-info :cond))))
-              (push (format "  %s %d: %s %d°C (%d-%d°C)"
+            (let ((emoji (aj/openweather-icon (plist-get weather-info :cond)))
+                  (today-marker (if is-today " <-- today" "")))
+              (push (format "  %s %d: %s %d°C (%d-%d°C)%s"
                             day-name d-day emoji
                             (floor (plist-get weather-info :temp))
                             (floor (plist-get weather-info :min))
-                            (floor (plist-get weather-info :max)))
+                            (floor (plist-get weather-info :max))
+                            today-marker)
                     lines))
           ;; No data available
-          (push (format "  %s %d: —" day-name d-day) lines))
+          (push (format "  %s %d: —%s" day-name d-day (if is-today " <-- today" "")) lines))
         ;; Move to next day
         (setq current-date
               (format-time-string "%Y-%m-%d"
@@ -1900,9 +1904,9 @@ Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
 (use-package org-download
   :after org
   :bind (:map org-mode-map
-              ("C-c d y" . org-download-yank)
-              ("C-c d s" . org-download-screenshot)
-              ("C-c d c" . org-download-clipboard))
+              ("C-c D y" . org-download-yank)
+              ("C-c D s" . org-download-screenshot)
+              ("C-c D c" . org-download-clipboard))
   :config
   (setq org-download-method 'directory
         org-download-image-dir "images"
@@ -1975,6 +1979,18 @@ Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
   :straight (:type git :host github :repo "abaj8494/bytelocker.el")
   :config
   (bytelocker-setup))
+
+;; ---------------------------------------------------------------------------
+;; org-shop - shopping list management with price tracking
+;; ---------------------------------------------------------------------------
+(use-package org-shop
+  :straight (:type git :host github :repo "abaj8494/org-shop")
+  :after org
+  :init
+  (setq org-shop-keymap-prefix "C-c S")
+  :config
+  (setq org-shop-directory "~/Documents/new-site/content-org/private/shops/")
+  (org-shop-setup))
 
 
 (provide 'package-config)

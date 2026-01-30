@@ -165,3 +165,7 @@ export SASL_PATH=~/.sasl2:/usr/lib/sasl2
 export PATH=~/.bun/bin:$PATH
 export PATH=$PATH:/opt/homebrew/share/android-commandlinetools/platform-tools
 
+# JobSync Email Sync Configuration
+export JOBSYNC_API_KEY="***REMOVED***"
+export JOBSYNC_API_URL="http://localhost:3000/api/email-sync"
+
