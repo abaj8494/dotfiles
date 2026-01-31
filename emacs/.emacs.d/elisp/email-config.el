@@ -436,31 +436,46 @@ for part in msg.walk():
                        0)))
       (nth next-idx my/jobsync-classifications)))
 
+  (defun my/jobsync-has-was-tag (tags)
+    "Check if TAGS already contains a jobsync-was/* tag."
+    (cl-some (lambda (tag) (string-prefix-p "jobsync-was/" tag)) tags))
+
   (defun my/jobsync-rotate-classification-search ()
-    "Rotate JobSync classification for current thread in search mode."
+    "Rotate JobSync classification for current thread in search mode.
+Only adds jobsync-was/<original> on the FIRST rotation to track the original classification."
     (interactive)
     (let* ((tags (notmuch-search-get-tags))
            (current (my/jobsync-get-current-classification tags)))
       (if (not current)
           (message "No jobsync classification on this email")
         (let* ((next (my/jobsync-next-classification current))
-               (tag-changes (list (concat "-jobsync/" current)
-                                  (concat "+jobsync/" next)
-                                  (concat "+jobsync-was/" current))))
+               (has-was (my/jobsync-has-was-tag tags))
+               ;; Only add was tag on first rotation (when no was tag exists)
+               (tag-changes (if has-was
+                                (list (concat "-jobsync/" current)
+                                      (concat "+jobsync/" next))
+                              (list (concat "-jobsync/" current)
+                                    (concat "+jobsync/" next)
+                                    (concat "+jobsync-was/" current)))))
           (notmuch-search-tag tag-changes)
           (message "JobSync: %s -> %s" current next)))))
 
   (defun my/jobsync-rotate-classification-show ()
-    "Rotate JobSync classification for current message in show mode."
+    "Rotate JobSync classification for current message in show mode.
+Only adds jobsync-was/<original> on the FIRST rotation to track the original classification."
     (interactive)
     (let* ((tags (notmuch-show-get-tags))
            (current (my/jobsync-get-current-classification tags)))
       (if (not current)
           (message "No jobsync classification on this email")
         (let* ((next (my/jobsync-next-classification current))
-               (tag-changes (list (concat "-jobsync/" current)
-                                  (concat "+jobsync/" next)
-                                  (concat "+jobsync-was/" current))))
+               (has-was (my/jobsync-has-was-tag tags))
+               (tag-changes (if has-was
+                                (list (concat "-jobsync/" current)
+                                      (concat "+jobsync/" next))
+                              (list (concat "-jobsync/" current)
+                                    (concat "+jobsync/" next)
+                                    (concat "+jobsync-was/" current)))))
           (notmuch-show-tag tag-changes)
           (message "JobSync: %s -> %s" current next)))))
 
@@ -491,16 +506,21 @@ for part in msg.walk():
       (email-sync-all)))
 
   (defun my/jobsync-rotate-classification-tree ()
-    "Rotate JobSync classification for current message in tree mode."
+    "Rotate JobSync classification for current message in tree mode.
+Only adds jobsync-was/<original> on the FIRST rotation to track the original classification."
     (interactive)
     (let* ((tags (notmuch-tree-get-tags))
            (current (my/jobsync-get-current-classification tags)))
       (if (not current)
           (message "No jobsync classification on this email")
         (let* ((next (my/jobsync-next-classification current))
-               (tag-changes (list (concat "-jobsync/" current)
-                                  (concat "+jobsync/" next)
-                                  (concat "+jobsync-was/" current))))
+               (has-was (my/jobsync-has-was-tag tags))
+               (tag-changes (if has-was
+                                (list (concat "-jobsync/" current)
+                                      (concat "+jobsync/" next))
+                              (list (concat "-jobsync/" current)
+                                    (concat "+jobsync/" next)
+                                    (concat "+jobsync-was/" current)))))
           (notmuch-tree-tag tag-changes)
           (message "JobSync: %s -> %s" current next)))))
 
@@ -660,10 +680,12 @@ If QUIET is non-nil, don't show messages."
   (force-mode-line-update t)
   (let ((old-unread (my/email-total-unread))
         (needs-push my/notmuch-pending-changes))
-    ;; Build command: push first if needed, then pull
-    (let ((cmd (if needs-push
-                   "cd ~/Maildir/gmail-lieer && gmi push && gmi pull && SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a && notmuch new"
-                 "cd ~/Maildir/gmail-lieer && gmi pull && SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a && notmuch new")))
+    ;; Build command: push first if needed, then pull, then run jobsync corrections scanner
+    (let* ((base-cmd (if needs-push
+                         "cd ~/Maildir/gmail-lieer && gmi push && gmi pull && SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a && notmuch new"
+                       "cd ~/Maildir/gmail-lieer && gmi pull && SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a && notmuch new"))
+           ;; Add jobsync corrections scanner (source config for API key)
+           (cmd (concat base-cmd " && source ~/.jobsync/config && node ~/Documents/code-private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
       (setq my/notmuch-pending-changes nil)
       (unless quiet (message (if needs-push "Syncing (pushing changes)..." "Syncing...")))
       (setq my/email-sync-process

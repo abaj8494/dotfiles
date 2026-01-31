@@ -1,0 +1,471 @@
+% Created 2026-01-31 Sat 14:39
+% Intended LaTeX compiler: lualatex
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fontspec}
+\setmonofont{Menlo}[Scale=0.9]
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{capt-of}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{hyperref}
+
+\usepackage[dvipsnames]{xcolor}
+\usepackage{amssymb}
+\definecolor{DeepNavy}{HTML}{00007B}
+\hypersetup{colorlinks=true,linkcolor=DeepNavy}
+\author{Aayush Bajaj}
+\date{2025-01-31}
+\title{Emacs Configuration Notes \& Refactoring Plan}
+\definecolor{DeepNavy}{HTML}{00007B}
+\hypersetup{
+ pdfauthor={Aayush Bajaj},
+ pdftitle={Emacs Configuration Notes \& Refactoring Plan},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 30.2 (Org mode 9.7.11)},
+ pdflang={English},
+ colorlinks=true,
+ linkcolor=DeepNavy,
+ urlcolor=RedViolet
+}\begin{document}
+
+\maketitle
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+\section{Distrotube's Emacs Configuration Analysis}
+\label{sec:org82e4876}
+
+\subsection{Overview}
+\label{sec:org396c1b6}
+
+Derek Taylor's (DistroTube) Emacs configuration is a literate programming setup using org-babel.
+The entire configuration lives in a single \texttt{config.org} file (\textasciitilde{}1,161 lines) that tangles to \texttt{config.el}.
+
+Repository: \url{https://gitlab.com/dwt1/dotfiles} (\texttt{.config/emacs/})
+\subsection{File Structure}
+\label{sec:org81f6738}
+
+\begin{verbatim}
+.config/emacs/
+├── init.el                 # 4 lines - just loads config.org
+├── early-init.el           # Disables package.el
+├── config.org              # Main literate config (1,161 lines)
+├── config.el               # Auto-generated from config.org
+├── start.org               # Help/reference document
+├── scripts/                # Modular elisp helpers
+│   ├── elpaca-setup.el     # Package manager bootstrap
+│   ├── app-launchers.el    # dmenu-like launcher
+│   ├── buffer-move.el      # Window movement utilities
+│   └── eshell-prompt.el    # Custom eshell prompt with git
+├── themes/
+│   └── dtmacs-theme.el     # Custom theme
+├── eshell/
+│   ├── aliases             # Shell aliases
+│   └── profile             # Startup commands
+└── images/
+    └── dtmacs-logo.png     # Dashboard logo
+\end{verbatim}
+\subsection{Org-Babel Tangling Pattern}
+\label{sec:org7da1ad3}
+
+\subsubsection{The init.el Loader}
+\label{sec:orgebefe98}
+
+The entire \texttt{init.el} is just:
+
+\begin{verbatim}
+(org-babel-load-file
+ (expand-file-name "config.org" user-emacs-directory))
+\end{verbatim}
+\subsubsection{config.org Header}
+\label{sec:orgd861def}
+
+\begin{verbatim}
+#+TITLE: DT's GNU Emacs Config
+#+AUTHOR: Derek Taylor (DT)
+#+STARTUP: showeverything
+#+OPTIONS: toc:2
+\end{verbatim}
+\subsubsection{Code Block Pattern}
+\label{sec:orge3849a6}
+
+Each section contains prose documentation followed by code:
+
+\begin{verbatim}
+* SECTION NAME
+Description of what this section does and why.
+
+#+begin_src emacs-lisp
+;; Actual elisp code here
+#+end_src
+\end{verbatim}
+\subsubsection{Scripts Directory Pattern}
+\label{sec:org16114f0}
+
+Large standalone utilities go in \texttt{scripts/} and are loaded via:
+
+\begin{verbatim}
+(add-to-list 'load-path "~/.config/emacs/scripts/")
+(require 'elpaca-setup)
+(require 'buffer-move)
+(require 'app-launchers)
+\end{verbatim}
+\subsection{Key Packages}
+\label{sec:org218f059}
+
+\begin{center}
+\begin{tabular}{lll}
+Category & Packages & Notes\\
+\hline
+Package Manager & Elpaca & Async, modern (you use straight.el)\\
+Keybindings & Evil, general & Vim-style with SPC leader\\
+Completion & Ivy, Counsel & (you use Helm)\\
+UI & dashboard, doom-modeline, doom-themes & Rich startup\\
+Git & Magit, Forge, git-timemachine & Full git workflow\\
+Org & org-bullets, toc-org, ox-hugo & Similar to yours\\
+File Tree & Neotree & Sidebar browser\\
+Workspaces & Perspective & Named buffer groups\\
+AI & Ellama & Local LLM via Ollama\\
+Media & Elfeed (RSS), Eradio (radio) & Entertainment\\
+\end{tabular}
+\end{center}
+\subsection{Config.org Section Breakdown}
+\label{sec:orged856c3}
+
+\begin{center}
+\begin{tabular}{lrl}
+Section & Lines & Purpose\\
+\hline
+Important Programs & 14 & Load scripts\\
+All The Icons & 10 & Icon setup\\
+Backup & 6 & Trash-based backups\\
+Company & 19 & Completion\\
+Dashboard & 32 & Startup screen\\
+Evil & 31 & Vim keybindings\\
+Fonts & 52 & JetBrains Mono + Ubuntu\\
+General Keybindings & 228 & SPC leader map\\
+Git Programs & 41 & Magit/Forge\\
+Ivy & 39 & Completion framework\\
+Org Mode & 88 & Core org settings\\
+Shells/Terminals & 85 & Eshell, Vterm\\
+Theme & 14 & doom-one\\
+Which-key & 19 & Keybinding hints\\
+\end{tabular}
+\end{center}
+\section{Features of Interest}
+\label{sec:org5071b90}
+
+\subsection{Dashboard (Startup Screen)}
+\label{sec:org6e0d1ed}
+
+The \texttt{dashboard} package provides a rich startup buffer with quick access to:
+\begin{itemize}
+\item Recent files
+\item Agenda items
+\item Bookmarks
+\item Projects
+\end{itemize}
+\subsubsection{Installation}
+\label{sec:org4678e92}
+
+\begin{verbatim}
+(use-package dashboard
+  :straight t
+  :init
+  (setq initial-buffer-choice 'dashboard-open
+        dashboard-set-heading-icons t
+        dashboard-set-file-icons t
+        dashboard-banner-logo-title "Welcome, Aayush!"
+        dashboard-startup-banner 'logo  ; or path to image
+        dashboard-center-content nil
+        dashboard-items '((recents   . 5)
+                          (agenda    . 5)
+                          (bookmarks . 3)
+                          (projects  . 3)))
+  :config
+  (dashboard-setup-startup-hook))
+\end{verbatim}
+\subsubsection{Comparison with my-home.el}
+\label{sec:org17f63ff}
+
+\begin{center}
+\begin{tabular}{lll}
+Feature & Dashboard & my-home.el\\
+\hline
+Recent files & Built-in & Built-in\\
+Agenda & Built-in & Not present\\
+Bookmarks & Built-in & Not present\\
+Projects & Built-in (projectile) & Not present\\
+Custom logo & Supported & Not present\\
+Customization & Extensive options & Full control\\
+\end{tabular}
+\end{center}
+
+\textbf{Decision:} You already have \texttt{my-home.el} with custom navigation. Could enhance it with agenda/bookmarks, or switch to dashboard for consistency with distrotube pattern.
+\subsection{Perspective (Workspaces)}
+\label{sec:org0812d00}
+
+The \texttt{perspective} package provides named workspaces with isolated buffer lists.
+\subsubsection{Key Features}
+\label{sec:org3cfa988}
+\begin{itemize}
+\item Each perspective has its own buffer list
+\item Switch between perspectives by name
+\item Sessions persist across restarts
+\item Integrates with ibuffer for filtering
+\end{itemize}
+\subsubsection{Installation}
+\label{sec:orgd0c1300}
+
+\begin{verbatim}
+(use-package perspective
+  :straight t
+  :custom
+  (persp-mode-prefix-key (kbd "C-c M-p"))
+  :init
+  (persp-mode)
+  :config
+  (setq persp-state-default-file
+        (expand-file-name "sessions" user-emacs-directory)))
+\end{verbatim}
+\subsubsection{Distrotube's Keybindings}
+\label{sec:org6e95af6}
+
+\begin{center}
+\begin{tabular}{lll}
+Key & Command & Description\\
+\hline
+\texttt{C-c M-p s} & persp-switch & Switch/create perspective\\
+\texttt{C-c M-p k} & persp-remove-buffer & Remove buffer from perspective\\
+\texttt{C-c M-p c} & persp-kill & Kill a perspective\\
+\texttt{C-c M-p r} & persp-rename & Rename perspective\\
+\texttt{C-c M-p a} & persp-add-buffer & Add buffer to perspective\\
+\texttt{C-c M-p A} & persp-set-buffer & Set buffer to only this perspective\\
+\texttt{C-c M-p b} & persp-switch-to-buffer & Switch buffer within perspective\\
+\texttt{C-c M-p i} & persp-import & Import buffers from another perspective\\
+\texttt{C-c M-p n/p} & persp-next/prev & Cycle perspectives\\
+\end{tabular}
+\end{center}
+\subsubsection{Use Cases}
+\label{sec:orgde4a99a}
+\begin{itemize}
+\item Separate workspaces for: email, coding, writing, org-roam
+\item Quick context switching without buffer clutter
+\item Save/restore workspace layouts
+\end{itemize}
+\section{Your Current Configuration Summary}
+\label{sec:org2584a10}
+
+\subsection{File Structure (15 modules, \textasciitilde{}5,648 lines)}
+\label{sec:org17af647}
+
+\begin{verbatim}
+~/.emacs.d/
+├── init.el                     # Orchestrator
+├── early-init.el               # GC + native-comp (macOS ARM)
+├── elisp/
+│   ├── bootstrap.el            # straight.el setup
+│   ├── package-config.el       # 2,191 lines - Core packages
+│   ├── org-config.el           # 1,338 lines - Org + LaTeX
+│   ├── email-config.el         # 748 lines - notmuch
+│   ├── anki-config.el          # 236 lines - Anki-editor
+│   ├── my-home.el              # 234 lines - Custom startup
+│   ├── gruber-themes.el        # 168 lines - Theme toggle
+│   ├── java-lsp.el             # 131 lines - Java LSP
+│   ├── auto-save-config.el     # 80 lines - Auto-save
+│   ├── ui-config.el            # 79 lines - Theme/fonts
+│   ├── custom-vars.el          # 59 lines - Customize
+│   ├── ox-hugo-bindings.el     # 49 lines - Hugo export
+│   ├── magit-bindings.el       # 27 lines - Git keys
+│   ├── ink.el                  # 236 lines - Inkscape
+│   └── ob-markdown.el          # 32 lines - Pandoc babel
+├── custom-themes/              # Gruber theme variants
+├── straight/                   # Package manager data
+└── backups/, auto-save/        # Runtime directories
+\end{verbatim}
+\subsection{Key Differences from Distrotube}
+\label{sec:orgdf9f73d}
+
+\begin{center}
+\begin{tabular}{lll}
+Aspect & Your Config & Distrotube\\
+\hline
+Structure & 15 modular .el files & 1 config.org file\\
+Lines & \textasciitilde{}5,648 & \textasciitilde{}1,161\\
+Package Manager & straight.el & Elpaca\\
+Completion & Helm & Ivy/Counsel\\
+Keybindings & Emacs-style + custom & Evil (Vim) + general.el\\
+Email & notmuch (3 accounts) & Not configured\\
+\LaTeX{} & Advanced parallel preview & Basic\\
+Org-roam & Extensive dailies system & Not configured\\
+Anki & Full integration & Not present\\
+Hugo & Bidirectional org/md & Basic ox-hugo\\
+Startup & Custom my-home buffer & Dashboard\\
+\end{tabular}
+\end{center}
+\subsection{Unique Features in Your Config}
+\label{sec:org25531eb}
+
+\begin{enumerate}
+\item \textbf{Parallel \LaTeX{} Preview} - 4 concurrent processes, SVG/PNG toggle
+\item \textbf{Advanced Org-roam Dailies} - Recurring templates (daily, weekly, biweekly, monthly, yearly)
+\item \textbf{Multi-account Email} - Gmail, UNSW, Abaj via notmuch/lieer/mbsync
+\item \textbf{Anki Integration} - Direct flashcard creation from org
+\item \textbf{Inkscape Figures} - \LaTeX{}-style figure insertion
+\item \textbf{Hugo Blog Workflow} - org-to-markdown with custom ID handling
+\item \textbf{Java LSP} - Performance-tuned jdtls
+\end{enumerate}
+\section{Refactoring Roadmap}
+\label{sec:org920cf4c}
+
+\subsection{Goal}
+\label{sec:orgb65b1fb}
+
+Convert modular \texttt{elisp/*.el} structure to single \texttt{config.org} with org-babel tangling.
+\subsection{Phase 1: Infrastructure}
+\label{sec:orgdc9fe9c}
+
+\subsubsection{Create New Directory Structure}
+\label{sec:orgc699da8}
+
+\begin{verbatim}
+~/.emacs.d/
+├── init.el              # Simplified to 3 lines
+├── early-init.el        # Keep as-is
+├── config.org           # New main config
+├── scripts/             # Move standalone modules
+│   ├── ob-markdown.el   # Pandoc integration
+│   ├── ink.el           # Inkscape (has XML template)
+│   ├── gruber-themes.el # Theme utilities
+│   └── my-home.el       # Custom startup
+└── elisp/
+    └── custom-vars.el   # Keep for customize system
+\end{verbatim}
+\subsubsection{New init.el}
+\label{sec:org3316fec}
+
+\begin{verbatim}
+;;; init.el -*- lexical-binding: t; -*-
+(setq custom-file (expand-file-name "elisp/custom-vars.el" user-emacs-directory))
+(org-babel-load-file (expand-file-name "config.org" user-emacs-directory))
+(when (file-exists-p custom-file) (load custom-file))
+\end{verbatim}
+\subsection{Phase 2: Section-by-Section Migration}
+\label{sec:orgca3a9aa}
+
+Migrate in this order (low risk to high risk):
+
+\begin{center}
+\begin{tabular}{rlll}
+Order & Section & Source & Risk\\
+\hline
+1 & Bootstrap & bootstrap.el & Low\\
+2 & Core packages & package-config.el (partial) & Low\\
+3 & UI \& Appearance & ui-config.el & Low\\
+4 & Auto-save & auto-save-config.el & Low\\
+5 & Magit & magit-bindings.el & Low\\
+6 & Helm & package-config.el (partial) & Medium\\
+7 & Org Core & org-config.el (partial) & Medium\\
+8 & Org Babel & org-config.el (partial) & Medium\\
+9 & Org \LaTeX{} Preview & org-config.el (partial) & High\\
+10 & Org-roam \& Dailies & package-config.el (partial) & High\\
+11 & Email & email-config.el & Medium\\
+12 & Java LSP & java-lsp.el & Low\\
+13 & Anki & anki-config.el & Medium\\
+14 & Hugo & ox-hugo-bindings.el & Low\\
+\end{tabular}
+\end{center}
+\subsection{Phase 3: Testing Checklist}
+\label{sec:org0d6e237}
+
+After migration, verify:
+
+\begin{itemize}
+\item[{$\square$}] Emacs starts without errors
+\item[{$\square$}] Helm M-x works with fuzzy matching
+\item[{$\square$}] \texttt{org-roam-node-find} works
+\item[{$\square$}] Daily capture creates proper structure
+\item[{$\square$}] \LaTeX{} preview generates images (both SVG and PNG)
+\item[{$\square$}] TikZ preview in export blocks works
+\item[{$\square$}] notmuch opens and syncs all accounts
+\item[{$\square$}] Theme toggle (\texttt{C-c T t}) works
+\item[{$\square$}] Anki push creates cards
+\item[{$\square$}] Hugo export generates correct markdown
+\item[{$\square$}] Java files get LSP support
+\end{itemize}
+\subsection{Key Decisions}
+\label{sec:org7805b20}
+
+\begin{center}
+\begin{tabular}{lll}
+Decision & Choice & Rationale\\
+\hline
+Package Manager & Keep straight.el & Already works, no benefit to Elpaca\\
+Tangle Output & Single config.el & Simpler than multiple files\\
+Large Modules & Move to scripts/ & Keep config.org manageable\\
+custom-vars.el & Keep separate & Customize system expects it\\
+\end{tabular}
+\end{center}
+\subsection{Estimated Result}
+\label{sec:orgd5ed24d}
+
+\begin{center}
+\begin{tabular}{ll}
+Component & Est. Lines\\
+\hline
+config.org & \textasciitilde{}6,500 (with prose)\\
+scripts/*.el & \textasciitilde{}670 (unchanged)\\
+init.el & 3\\
+early-init.el & 67 (unchanged)\\
+\textbf{Total} & \textasciitilde{}7,240\\
+\end{tabular}
+\end{center}
+\section{Quick Reference: Org-Babel Tangle Syntax}
+\label{sec:orgd03293d}
+
+\subsection{Default Tangle Header}
+\label{sec:org121a1dc}
+
+Put in config.org header to tangle all blocks to config.el:
+
+\begin{verbatim}
+#+PROPERTY: header-args:emacs-lisp :tangle config.el :results silent
+\end{verbatim}
+\subsection{Per-Block Override}
+\label{sec:orgf0c8481}
+
+Don't tangle a specific block:
+
+\begin{verbatim}
+#+begin_src emacs-lisp :tangle no
+;; This code won't be tangled
+#+end_src
+\end{verbatim}
+
+Tangle to a different file:
+
+\begin{verbatim}
+#+begin_src emacs-lisp :tangle "scripts/custom.el"
+;; Goes to scripts/custom.el
+#+end_src
+\end{verbatim}
+\subsection{Useful Org-Babel Settings}
+\label{sec:org36ba729}
+
+\begin{verbatim}
+;; Preserve indentation when tangling
+(setq org-src-preserve-indentation t)
+
+;; Don't ask for confirmation when evaluating
+(setq org-confirm-babel-evaluate nil)
+
+;; org-tempo for quick block insertion (<s TAB)
+(require 'org-tempo)
+\end{verbatim}
+\end{document}

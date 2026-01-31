@@ -50,6 +50,9 @@
   ;; Speed up flyspell
   (setq flyspell-issue-message-flag nil))
 
+;; Enable flyspell by default for text modes
+(add-hook 'text-mode-hook #'flyspell-mode)
+
 (global-set-key (kbd "C-c e i") (lambda () (interactive) (find-file "~/.emacs.d/init.el")))
 (global-set-key (kbd "C-c e d") (lambda () (interactive) (find-file "~/.emacs.d/elisp/")))
 

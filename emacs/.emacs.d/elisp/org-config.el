@@ -209,9 +209,23 @@ Shows current date for reference."
 
 (with-eval-after-load 'ox-latex
   ;; Override default article to support 5 heading levels (paragraph, subparagraph)
+  ;; Use Menlo for monospace to support Unicode box-drawing characters
   (add-to-list 'org-latex-classes
                '("article"
-                 "\\documentclass[11pt]{article}"
+                 "\\documentclass[11pt]{article}
+[NO-DEFAULT-PACKAGES]
+\\usepackage{amsmath}
+\\usepackage{amssymb}
+\\usepackage{fontspec}
+\\setmonofont{Menlo}[Scale=0.9]
+\\usepackage{graphicx}
+\\usepackage{longtable}
+\\usepackage{wrapfig}
+\\usepackage{rotating}
+\\usepackage[normalem]{ulem}
+\\usepackage{capt-of}
+\\usepackage[dvipsnames]{xcolor}
+\\usepackage{hyperref}"
                  ("\\section{%s}" . "\\section*{%s}")
                  ("\\subsection{%s}" . "\\subsection*{%s}")
                  ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
@@ -1141,17 +1155,22 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
 (setq org-latex-pdf-process
       '("latexmk -lualatex -shell-escape -interaction=nonstopmode %f"))
 
-;; Configure hyperref options (org already loads hyperref, don't load it again)
-;; Use \hypersetup in org files to customize colors per-file
+;; Note: xcolor, amssymb, and fontspec are loaded in the article class definition
+;; to ensure proper ordering and Unicode monospace font support (Menlo)
+
+;; Configure hyperref options with custom DeepNavy link color
 (setq org-latex-hyperref-template
-      "\\hypersetup{
+      "\\definecolor{DeepNavy}{HTML}{00007B}
+\\hypersetup{
  pdfauthor={%a},
  pdftitle={%t},
  pdfkeywords={%k},
  pdfsubject={%d},
  pdfcreator={%c},
  pdflang={%L},
- colorlinks=true
+ colorlinks=true,
+ linkcolor=DeepNavy,
+ urlcolor=RedViolet
 }")
 
 ;; Open exported PDFs in Chrome (new tab in existing window)
