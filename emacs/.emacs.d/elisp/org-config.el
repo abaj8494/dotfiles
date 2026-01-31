@@ -402,46 +402,210 @@ Processes multiple fragments concurrently for faster completion."
   (org-latex-preview '(64)))  ; C-u C-u prefix clears all
 
 ;; ---------------------------------------------------------------------------
-;; TikZ Preview at Point (works inside export blocks)
+;; LaTeX Preview at Point (works inside export blocks)
 ;; ---------------------------------------------------------------------------
+;; Supports tikzpicture, algorithm, and other environments inside Hugo shortcodes.
 
-(defun aj/tikz-preview-at-point ()
-  "Preview tikzpicture at point, even inside export blocks.
-Extracts the tikzpicture environment and renders it, ignoring
-surrounding document structure like \\begin{document}."
-  (interactive)
+(defvar aj/latex-preview-environments
+  '(("tikzpicture" . (:packages ("\\usepackage{tikz}"
+                                  "\\usepackage{pgfplots}"
+                                  "\\pgfplotsset{compat=1.16}"
+                                  "\\usetikzlibrary{shapes.geometric,shapes.multipart,positioning,arrows,arrows.meta,calc,chains,decorations.pathreplacing,backgrounds}")
+                      :docclass "\\documentclass[tikz,border=2pt]{standalone}"))
+    ("algorithm" . (:packages ("\\usepackage[ruled,lined]{algorithm2e}")
+                    :docclass "\\documentclass[border=2pt]{standalone}")))
+  "Alist of LaTeX environments to preview.
+Each entry is (ENV-NAME . (:packages LIST :docclass STRING)).")
+
+(defun aj/latex--extract-balanced-braces (start)
+  "Extract content from START to matching closing brace, handling nesting."
   (save-excursion
-    (let ((case-fold-search nil)
-          beg end tikz-content)
-      ;; Find \begin{tikzpicture}
-      (if (not (re-search-backward "\\\\begin{tikzpicture}" nil t))
-          (message "No tikzpicture found before point")
-        (setq beg (point))
-        ;; Find matching \end{tikzpicture}
-        (if (not (re-search-forward "\\\\end{tikzpicture}" nil t))
-            (message "No matching \\end{tikzpicture} found")
-          (setq end (point))
-          (setq tikz-content (buffer-substring-no-properties beg end))
-          ;; Generate preview
-          (aj/tikz--render-preview tikz-content beg end))))))
+    (goto-char start)
+    (when (looking-at "{")
+      (let ((depth 1)
+            (end nil))
+        (forward-char 1)
+        (while (and (> depth 0) (not (eobp)))
+          (cond
+           ((looking-at "{") (setq depth (1+ depth)))
+           ((looking-at "}") (setq depth (1- depth))))
+          (forward-char 1))
+        (when (= depth 0)
+          (buffer-substring-no-properties start (point)))))))
 
-(defun aj/tikz--render-preview (tikz-content beg end)
-  "Render TIKZ-CONTENT as a preview overlay between BEG and END."
-  (let* ((temporary-file-directory (expand-file-name "ltximg/" default-directory))
-         (tex-file (make-temp-file "tikz-" nil ".tex"))
+(defun aj/latex--extract-preamble-commands (start-limit env-beg)
+  "Extract preamble commands between START-LIMIT and ENV-BEG.
+Extracts: \\usetikzlibrary, \\tikzstyle, \\tikzset, \\newcommand, \\def, \\renewcommand."
+  (let ((commands ""))
+    (save-excursion
+      (goto-char start-limit)
+      ;; Extract \usetikzlibrary{...}
+      (while (re-search-forward "\\\\usetikzlibrary{[^}]+}" env-beg t)
+        (setq commands (concat commands (match-string 0) "\n")))
+      (goto-char start-limit)
+      ;; Extract \tikzstyle{...}=... or \tikzstyle{...} ... (up to newline or next command)
+      (while (re-search-forward "\\\\tikzstyle{[^}]+}\\s-*=\\s-*\\[[^]]*\\]" env-beg t)
+        (setq commands (concat commands (match-string 0) "\n")))
+      (goto-char start-limit)
+      ;; Extract \tikzset{...} with balanced braces (handles nested braces)
+      (while (re-search-forward "\\\\tikzset" env-beg t)
+        (skip-chars-forward " \t\n")
+        (when (looking-at "{")
+          (let ((braces (aj/latex--extract-balanced-braces (point))))
+            (when braces
+              (setq commands (concat commands "\\tikzset" braces "\n"))))))
+      (goto-char start-limit)
+      ;; Extract \newcommand{\name}... and \newcommand*{\name}...
+      (while (re-search-forward "\\\\\\(re\\)?newcommand\\*?" env-beg t)
+        (let ((cmd-start (match-beginning 0))
+              (cmd-name (match-string 0)))
+          (skip-chars-forward " \t\n")
+          (when (looking-at "{")
+            ;; Get the command name braces
+            (let ((name-braces (aj/latex--extract-balanced-braces (point))))
+              (when name-braces
+                (goto-char (+ (point) (length name-braces)))
+                (skip-chars-forward " \t\n")
+                ;; Optional argument count [n]
+                (when (looking-at "\\[")
+                  (re-search-forward "\\]" env-beg t)
+                  (skip-chars-forward " \t\n"))
+                ;; Optional default value [default]
+                (when (looking-at "\\[")
+                  (re-search-forward "\\]" env-beg t)
+                  (skip-chars-forward " \t\n"))
+                ;; The definition body
+                (when (looking-at "{")
+                  (let ((body-braces (aj/latex--extract-balanced-braces (point))))
+                    (when body-braces
+                      (setq commands (concat commands
+                                             (buffer-substring-no-properties cmd-start (point))
+                                             body-braces "\n"))))))))))
+      (goto-char start-limit)
+      ;; Extract \def\name... (simpler syntax, goes to end of line or next \def/\newcommand)
+      (while (re-search-forward "\\\\def\\\\[a-zA-Z@]+" env-beg t)
+        (let ((def-start (match-beginning 0)))
+          ;; Find the definition body - could be {braces} or just tokens until newline
+          (skip-chars-forward " \t#0-9")
+          (if (looking-at "{")
+              (let ((braces (aj/latex--extract-balanced-braces (point))))
+                (when braces
+                  (setq commands (concat commands
+                                         (buffer-substring-no-properties def-start (point))
+                                         braces "\n"))))
+            ;; No braces - take until end of line
+            (end-of-line)
+            (setq commands (concat commands
+                                   (buffer-substring-no-properties def-start (point)) "\n"))))))
+    commands))
+
+(defun aj/latex--find-block-start ()
+  "Find the start of the enclosing export block, special block, or shortcode region."
+  (save-excursion
+    (or (and (re-search-backward "^#\\+BEGIN_EXPORT\\|^#\\+begin_" nil t) (point))
+        (and (re-search-backward "{{<" nil t) (point))
+        (point-min))))
+
+(defun aj/latex--find-environment-at-point ()
+  "Find which LaTeX environment point is inside.
+Returns (ENV-NAME BEG END) or nil."
+  (save-excursion
+    (let ((pos (point))
+          (case-fold-search nil)
+          result)
+      (dolist (env-spec aj/latex-preview-environments)
+        (let ((env-name (car env-spec)))
+          (save-excursion
+            (goto-char pos)
+            (when (re-search-backward (format "\\\\begin{%s}" env-name) nil t)
+              (let ((beg (match-beginning 0)))
+                (when (re-search-forward (format "\\\\end{%s}" env-name) nil t)
+                  (let ((end (point)))
+                    (when (and (<= beg pos) (<= pos end))
+                      ;; Found it - check if it's closer than previous match
+                      (when (or (null result) (> beg (nth 1 result)))
+                        (setq result (list env-name beg end)))))))))))
+      result)))
+
+(defun aj/latex-preview-at-point ()
+  "Preview LaTeX environment at point, even inside export blocks.
+Supports tikzpicture, algorithm, and other configured environments.
+Extracts the environment and renders it, ignoring surrounding document structure."
+  (interactive)
+  (let ((env-info (aj/latex--find-environment-at-point)))
+    (if (not env-info)
+        (message "No supported LaTeX environment found at point")
+      (let* ((env-name (nth 0 env-info))
+             (beg (nth 1 env-info))
+             (end (nth 2 env-info))
+             (block-start (save-excursion
+                            (goto-char beg)
+                            (aj/latex--find-block-start)))
+             (extra-preamble (aj/latex--extract-preamble-commands block-start beg))
+             (content (buffer-substring-no-properties beg end)))
+        (aj/latex--render-preview env-name content beg end extra-preamble)))))
+
+;; Keep old name as alias for compatibility
+(defalias 'aj/tikz-preview-at-point 'aj/latex-preview-at-point)
+
+(defvar aj/latex-preview-log-buffer "*Org LaTeX Preview Output*"
+  "Buffer name for LaTeX preview compilation output.")
+
+(defun aj/latex--show-error (tex-file log-file env-name)
+  "Show LaTeX compilation error for TEX-FILE in a buffer.
+LOG-FILE is the .log file, ENV-NAME is the environment type."
+  (let ((log-content (when (file-exists-p log-file)
+                       (with-temp-buffer
+                         (insert-file-contents log-file)
+                         (buffer-string))))
+        (tex-content (when (file-exists-p tex-file)
+                       (with-temp-buffer
+                         (insert-file-contents tex-file)
+                         (buffer-string)))))
+    (with-current-buffer (get-buffer-create aj/latex-preview-log-buffer)
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (insert (format "\n%s\n" (make-string 70 ?=)))
+        (insert (format "LaTeX compilation FAILED for %s\n" env-name))
+        (insert (format "Time: %s\n" (current-time-string)))
+        (insert (format "%s\n\n" (make-string 70 ?=)))
+        (insert "=== TeX Source ===\n")
+        (insert (or tex-content "(no tex file)"))
+        (insert "\n\n=== Error Log ===\n")
+        ;; Extract just the error portion from the log
+        (if log-content
+            (let ((error-start (string-match "^!" log-content)))
+              (if error-start
+                  (insert (substring log-content error-start
+                                     (min (+ error-start 2000) (length log-content))))
+                (insert (substring log-content
+                                   (max 0 (- (length log-content) 2000))))))
+          (insert "(no log file)"))
+        (insert "\n")))
+    (display-buffer aj/latex-preview-log-buffer)))
+
+(defun aj/latex--render-preview (env-name content beg end &optional extra-preamble)
+  "Render LaTeX CONTENT of environment ENV-NAME as preview overlay between BEG and END.
+EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
+  (let* ((env-config (cdr (assoc env-name aj/latex-preview-environments)))
+         (docclass (or (plist-get env-config :docclass)
+                       "\\documentclass[border=2pt]{standalone}"))
+         (packages (or (plist-get env-config :packages) '()))
+         (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (tex-file (make-temp-file "latex-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
+         (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
                            (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
          (preamble (concat
-                    "\\documentclass[tikz,border=2pt]{standalone}\n"
-                    "\\usepackage{tikz}\n"
-                    "\\usepackage{pgfplots}\n"
-                    "\\pgfplotsset{compat=1.16}\n"
-                    "\\usetikzlibrary{shapes.geometric,positioning,arrows.meta,calc,decorations.pathreplacing}\n"
+                    docclass "\n"
+                    (mapconcat #'identity packages "\n") "\n"
                     "\\usepackage{xcolor}\n"
+                    ;; Include any extra preamble commands from the block
+                    (or extra-preamble "")
                     "\\begin{document}\n"))
          (postamble "\n\\end{document}\n")
-         (full-content (concat preamble tikz-content postamble)))
+         (full-content (concat preamble content postamble)))
     ;; Ensure directory exists
     (unless (file-directory-p temporary-file-directory)
       (make-directory temporary-file-directory t))
@@ -449,9 +613,9 @@ surrounding document structure like \\begin{document}."
     (with-temp-file tex-file
       (insert full-content))
     ;; Compile asynchronously
-    (message "Rendering tikzpicture...")
+    (message "Rendering %s..." env-name)
     (let* ((default-directory temporary-file-directory)
-           (process-name "tikz-preview")
+           (process-name "latex-preview")
            (latex-cmd (format "lualatex -interaction=nonstopmode -output-directory=%s %s"
                               (shell-quote-argument temporary-file-directory)
                               (shell-quote-argument tex-file)))
@@ -468,43 +632,224 @@ surrounding document structure like \\begin{document}."
        (lambda (proc _event)
          (when (eq (process-status proc) 'exit)
            (if (not (= (process-exit-status proc) 0))
-               (message "LaTeX compilation failed for tikzpicture")
+               (progn
+                 (message "LaTeX compilation failed for %s - see %s"
+                          env-name aj/latex-preview-log-buffer)
+                 (aj/latex--show-error tex-file log-file env-name))
              ;; Convert PDF to image
              (set-process-sentinel
-              (start-process-shell-command "tikz-convert" nil convert-cmd)
+              (start-process-shell-command "latex-convert" nil convert-cmd)
               (lambda (proc2 _event2)
                 (when (eq (process-status proc2) 'exit)
                   (if (not (= (process-exit-status proc2) 0))
-                      (message "Image conversion failed for tikzpicture")
+                      (message "Image conversion failed for %s" env-name)
                     ;; Create overlay with image
                     (when (and (file-exists-p img-file) (buffer-live-p buf))
                       (with-current-buffer buf
-                        (aj/tikz--create-overlay beg end img-file))
-                      (message "TikZ preview complete")))))))))))))
+                        (aj/latex--create-overlay beg end img-file))
+                      (message "%s preview complete" env-name)))))))))))))
 
-(defun aj/tikz--create-overlay (beg end img-file)
+(defun aj/latex--create-overlay (beg end img-file)
   "Create an overlay from BEG to END displaying IMG-FILE."
   ;; Remove existing overlays in region
   (dolist (ov (overlays-in beg end))
-    (when (overlay-get ov 'aj-tikz-preview)
+    (when (overlay-get ov 'aj-latex-preview)
       (delete-overlay ov)))
   ;; Create new overlay
-  (let ((ov (make-overlay beg end)))
-    (overlay-put ov 'aj-tikz-preview t)
+  (let* ((img-type (if (string-suffix-p ".svg" img-file) 'svg nil))
+         (ov (make-overlay beg end)))
+    (overlay-put ov 'aj-latex-preview t)
     (overlay-put ov 'display
-                 (create-image img-file nil nil
+                 (create-image img-file img-type nil
                                :ascent 'center
                                :scale 1.0))
     (overlay-put ov 'face 'default)
     (overlay-put ov 'evaporate t)))
 
-(defun aj/tikz-clear-previews ()
-  "Clear all tikz preview overlays in buffer."
+(defun aj/latex-clear-previews ()
+  "Clear all LaTeX environment preview overlays in buffer."
   (interactive)
   (dolist (ov (overlays-in (point-min) (point-max)))
-    (when (overlay-get ov 'aj-tikz-preview)
+    (when (overlay-get ov 'aj-latex-preview)
       (delete-overlay ov)))
-  (message "TikZ previews cleared"))
+  (message "LaTeX previews cleared"))
+
+;; Keep old name as alias for compatibility
+(defalias 'aj/tikz-clear-previews 'aj/latex-clear-previews)
+
+;; ---------------------------------------------------------------------------
+;; Comprehensive LaTeX Preview (standard fragments + export block environments)
+;; ---------------------------------------------------------------------------
+
+(defvar aj/latex-env-preview--queue nil
+  "Queue of environments waiting to be rendered.")
+
+(defvar aj/latex-env-preview--active 0
+  "Number of currently active environment preview processes.")
+
+(defvar aj/latex-env-preview--total 0
+  "Total environments to process in current batch.")
+
+(defvar aj/latex-env-preview--completed 0
+  "Environments completed in current batch.")
+
+(defvar aj/latex-env-preview--buffer nil
+  "Buffer being processed for environment previews.")
+
+(defun aj/latex--find-all-environments-in-buffer ()
+  "Find all LaTeX environments in export blocks throughout the buffer.
+Returns a list of (ENV-NAME BEG END) for each environment found."
+  (let ((envs nil)
+        (case-fold-search nil))
+    (save-excursion
+      (goto-char (point-min))
+      ;; Find all export blocks and special blocks
+      (while (re-search-forward "^#\\+BEGIN_EXPORT\\|^#\\+begin_" nil t)
+        (let ((block-start (point))
+              (block-end (save-excursion
+                           (when (re-search-forward "^#\\+END_EXPORT\\|^#\\+end_" nil t)
+                             (match-beginning 0)))))
+          (when block-end
+            ;; Search within this block for environments
+            (dolist (env-spec aj/latex-preview-environments)
+              (let ((env-name (car env-spec)))
+                (save-excursion
+                  (goto-char block-start)
+                  (while (re-search-forward
+                          (format "\\\\begin{%s}" (regexp-quote env-name))
+                          block-end t)
+                    (let ((beg (match-beginning 0)))
+                      (when (re-search-forward
+                             (format "\\\\end{%s}" (regexp-quote env-name))
+                             block-end t)
+                        (push (list env-name beg (point)) envs)))))))
+            (goto-char block-end)))))
+    (nreverse envs)))
+
+(defun aj/latex-env-preview--update-status ()
+  "Update minibuffer with environment preview progress."
+  (if (= aj/latex-env-preview--completed aj/latex-env-preview--total)
+      (message "Rendering complete: %d/%d environments done"
+               aj/latex-env-preview--completed
+               aj/latex-env-preview--total)
+    (message "Rendering tikzpictures: %d/%d done, %d active"
+             aj/latex-env-preview--completed
+             aj/latex-env-preview--total
+             aj/latex-env-preview--active)))
+
+(defun aj/latex-env-preview--process-next ()
+  "Process next environment from queue if slots available."
+  (while (and aj/latex-env-preview--queue
+              (< aj/latex-env-preview--active aj/latex-preview-parallel-jobs))
+    (let* ((env-info (pop aj/latex-env-preview--queue))
+           (env-name (nth 0 env-info))
+           (beg (nth 1 env-info))
+           (end (nth 2 env-info)))
+      (when (and beg end (buffer-live-p aj/latex-env-preview--buffer))
+        (cl-incf aj/latex-env-preview--active)
+        (with-current-buffer aj/latex-env-preview--buffer
+          (let* ((block-start (save-excursion
+                                (goto-char beg)
+                                (aj/latex--find-block-start)))
+                 (extra-preamble (aj/latex--extract-preamble-commands block-start beg))
+                 (content (buffer-substring-no-properties beg end)))
+            ;; Skip if already has overlay
+            (if (cl-some (lambda (ov) (overlay-get ov 'aj-latex-preview))
+                         (overlays-in beg end))
+                (progn
+                  (cl-decf aj/latex-env-preview--active)
+                  (cl-incf aj/latex-env-preview--completed)
+                  (aj/latex-env-preview--process-next))
+              (aj/latex--render-preview-queued
+               env-name content beg end extra-preamble))))))))
+
+(defun aj/latex--render-preview-queued (env-name content beg end &optional extra-preamble)
+  "Like `aj/latex--render-preview' but updates queue on completion."
+  (let* ((env-config (cdr (assoc env-name aj/latex-preview-environments)))
+         (docclass (or (plist-get env-config :docclass)
+                       "\\documentclass[border=2pt]{standalone}"))
+         (packages (or (plist-get env-config :packages) '()))
+         (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (tex-file (make-temp-file "latex-" nil ".tex"))
+         (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
+         (log-file (concat (file-name-sans-extension tex-file) ".log"))
+         (img-file (concat (file-name-sans-extension tex-file)
+                           (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
+         (preamble (concat
+                    docclass "\n"
+                    (mapconcat #'identity packages "\n") "\n"
+                    "\\usepackage{xcolor}\n"
+                    (or extra-preamble "")
+                    "\\begin{document}\n"))
+         (postamble "\n\\end{document}\n")
+         (full-content (concat preamble content postamble))
+         (buf aj/latex-env-preview--buffer))
+    (unless (file-directory-p temporary-file-directory)
+      (make-directory temporary-file-directory t))
+    (with-temp-file tex-file
+      (insert full-content))
+    (let* ((default-directory temporary-file-directory)
+           (latex-cmd (format "lualatex -interaction=nonstopmode -output-directory=%s %s"
+                              (shell-quote-argument temporary-file-directory)
+                              (shell-quote-argument tex-file)))
+           (convert-cmd (if (eq org-preview-latex-default-process 'ajlua)
+                            (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
+                                    (shell-quote-argument img-file)
+                                    (shell-quote-argument pdf-file))
+                          (format "convert -density 300 -trim -antialias %s -quality 100 %s"
+                                  (shell-quote-argument pdf-file)
+                                  (shell-quote-argument img-file)))))
+      (set-process-sentinel
+       (start-process-shell-command "latex-preview-q" nil latex-cmd)
+       (lambda (proc _event)
+         (when (eq (process-status proc) 'exit)
+           (if (not (= (process-exit-status proc) 0))
+               (progn
+                 (aj/latex--show-error tex-file log-file env-name)
+                 (cl-decf aj/latex-env-preview--active)
+                 (cl-incf aj/latex-env-preview--completed)
+                 (aj/latex-env-preview--update-status)
+                 (aj/latex-env-preview--process-next))
+             (set-process-sentinel
+              (start-process-shell-command "latex-convert-q" nil convert-cmd)
+              (lambda (proc2 _event2)
+                (when (eq (process-status proc2) 'exit)
+                  (when (and (= (process-exit-status proc2) 0)
+                             (file-exists-p img-file)
+                             (buffer-live-p buf))
+                    (with-current-buffer buf
+                      (aj/latex--create-overlay beg end img-file)))
+                  (cl-decf aj/latex-env-preview--active)
+                  (cl-incf aj/latex-env-preview--completed)
+                  (aj/latex-env-preview--update-status)
+                  (aj/latex-env-preview--process-next)))))))))))
+
+(defun aj/latex-preview-buffer ()
+  "Preview all LaTeX in buffer: standard org fragments AND environments in export blocks.
+This is a comprehensive replacement for `org-latex-preview' that also handles
+tikzpicture, algorithm, and other environments inside Hugo shortcodes.
+Processes environments asynchronously with max `aj/latex-preview-parallel-jobs' concurrent."
+  (interactive)
+  (message "Generating LaTeX previews...")
+  ;; First, preview standard org LaTeX fragments
+  (org-latex-preview '(16))  ; C-u prefix = preview buffer
+  ;; Then, find and preview all environments in export blocks (queued)
+  (let ((envs (aj/latex--find-all-environments-in-buffer)))
+    (if (null envs)
+        (message "Standard LaTeX previews done. No environments in export blocks found.")
+      (setq aj/latex-env-preview--queue envs
+            aj/latex-env-preview--active 0
+            aj/latex-env-preview--total (length envs)
+            aj/latex-env-preview--completed 0
+            aj/latex-env-preview--buffer (current-buffer))
+      (message "Rendering %d tikzpictures (max %d parallel)..."
+               aj/latex-env-preview--total
+               aj/latex-preview-parallel-jobs)
+      (aj/latex-env-preview--process-next))))
+
+;; Override C-c C-x C-l to use our comprehensive preview
+(with-eval-after-load 'org
+  (define-key org-mode-map (kbd "C-c C-x C-l") #'aj/latex-preview-buffer))
 
 ;; ---------------------------------------------------------------------------
 ;; Region LaTeX Preview (compiles region as single document - refs work!)
@@ -605,7 +950,7 @@ Keeps equations, aligns, and inline math while stripping org syntax."
     (overlay-put ov 'display
                  (create-image img-file nil nil
                                :ascent 'center
-                               :scale 1.0))
+                               :scale 3.0))
     (overlay-put ov 'face 'default)
     (overlay-put ov 'evaporate t)))
 
@@ -617,13 +962,116 @@ Keeps equations, aligns, and inline math while stripping org syntax."
       (delete-overlay ov)))
   (message "Region previews cleared"))
 
+;; ---------------------------------------------------------------------------
+;; tikzjax Preview (uses WebAssembly TeX - same as Hugo site)
+;; ---------------------------------------------------------------------------
+;; Provides fidelity with the Hugo site's tikzjax rendering.
+;; Outputs SVG only. Use C-c C-x j for tikzjax preview at point.
+
+(defvar aj/tikzjax-cli-path
+  (expand-file-name "~/Documents/new-site/static/code/tikzjax/cli.js")
+  "Path to the tikzjax CLI script.")
+
+(defvar aj/tikzjax-node-path "node"
+  "Path to the node executable.")
+
+(defun aj/tikzjax--extract-block-content ()
+  "Extract the content between shortcode tags for tikzjax rendering.
+Returns (CONTENT BEG END) where BEG/END span the entire export block."
+  (save-excursion
+    (let ((case-fold-search t)
+          block-beg block-end content)
+      ;; Find the enclosing export block or special block
+      (when (re-search-backward "^#\\+BEGIN_EXPORT\\|^#\\+begin_" nil t)
+        (setq block-beg (point))
+        (when (re-search-forward "^#\\+END_EXPORT\\|^#\\+end_" nil t)
+          (setq block-end (point))
+          ;; Get raw content of the block (excluding the #+BEGIN/END lines)
+          (goto-char block-beg)
+          (forward-line 1)
+          (let* ((content-start (point))
+                 (content-end (save-excursion
+                                (goto-char block-end)
+                                (forward-line 0)
+                                (point)))
+                 (raw-content (buffer-substring-no-properties content-start content-end)))
+            ;; Remove Hugo shortcode markers like {{< tikztwo >}} and {{< /tikztwo >}}
+            (setq raw-content (replace-regexp-in-string "{{<[^>]*>}}" "" raw-content))
+            ;; Remove any blank lines at start/end
+            (setq raw-content (string-trim raw-content))
+            ;; Check if content has \begin{document}, if not wrap it
+            (if (string-match-p "\\\\begin{document}" raw-content)
+                (setq content raw-content)
+              ;; Wrap in document if not present
+              (setq content (concat "\\begin{document}\n" raw-content "\n\\end{document}\n"))))))
+      ;; Return result if we have content
+      (when (and content (not (string-empty-p content)))
+        (list content block-beg block-end)))))
+
+(defun aj/tikzjax-preview-at-point ()
+  "Preview tikzpicture at point using tikzjax (WebAssembly TeX).
+Uses the same renderer as the Hugo site for guaranteed fidelity.
+Output is always SVG."
+  (interactive)
+  (let ((block-info (aj/tikzjax--extract-block-content)))
+    (if (not block-info)
+        (message "No export block found at point")
+      (let* ((content (nth 0 block-info))
+             (beg (nth 1 block-info))
+             (end (nth 2 block-info))
+             (output-dir (expand-file-name "ltximg/tikzjax/" default-directory))
+             (svg-file (expand-file-name
+                        (format "tikzjax-%s.svg" (md5 content))
+                        output-dir))
+             (buf (current-buffer)))
+        ;; Ensure output directory exists
+        (unless (file-directory-p output-dir)
+          (make-directory output-dir t))
+        ;; Clear output buffer and show what we're sending
+        (with-current-buffer (get-buffer-create "*tikzjax-output*")
+          (erase-buffer)
+          (insert "=== INPUT SENT TO TIKZJAX ===\n")
+          (insert content)
+          (insert "\n=== END INPUT ===\n\n"))
+        ;; Run tikzjax CLI
+        (message "Rendering with tikzjax...")
+        (let ((process (make-process
+                        :name "tikzjax-preview"
+                        :buffer "*tikzjax-output*"
+                        :command (list aj/tikzjax-node-path aj/tikzjax-cli-path)
+                        :coding '(utf-8-unix . utf-8-unix)
+                        :connection-type 'pipe
+                        :sentinel (lambda (proc event)
+                                    (when (eq (process-status proc) 'exit)
+                                      (if (not (= (process-exit-status proc) 0))
+                                          (progn
+                                            (message "tikzjax rendering failed - see *tikzjax-output*")
+                                            (display-buffer "*tikzjax-output*"))
+                                        ;; Save SVG and create overlay
+                                        (with-current-buffer "*tikzjax-output*"
+                                          ;; Find the SVG in the output - extract only <svg>...</svg>
+                                          (goto-char (point-min))
+                                          (when (re-search-forward "<svg[^>]*>" nil t)
+                                            (let ((svg-start (match-beginning 0)))
+                                              (when (re-search-forward "</svg>" nil t)
+                                                (write-region svg-start (point) svg-file nil 'silent)))))
+                                        (when (and (file-exists-p svg-file) (buffer-live-p buf))
+                                          (with-current-buffer buf
+                                            (aj/latex--create-overlay beg end svg-file))
+                                          (message "tikzjax preview complete"))))))))
+          ;; Send content to process stdin
+          (process-send-string process content)
+          (process-send-eof process))))))
+
 ;; Keybindings
 (with-eval-after-load 'org
   (define-key org-mode-map (kbd "C-c C-x C-S-l") #'aj/latex-preview-async)
   (define-key org-mode-map (kbd "C-c C-x L") #'aj/latex-preview-async)
-  ;; TikZ preview at point
+  ;; TikZ preview at point (lualatex)
   (define-key org-mode-map (kbd "C-c C-x t") #'aj/tikz-preview-at-point)
   (define-key org-mode-map (kbd "C-c C-x T") #'aj/tikz-clear-previews)
+  ;; tikzjax preview at point (WebAssembly - site fidelity)
+  (define-key org-mode-map (kbd "C-c C-x j") #'aj/tikzjax-preview-at-point)
   ;; Region preview (refs work!) - select region then press this
   (define-key org-mode-map (kbd "C-c C-x r") #'aj/latex-preview-region)
   (define-key org-mode-map (kbd "C-c C-x R") #'aj/latex-clear-region-previews))
@@ -820,6 +1268,48 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
   :config
   ;; Preview triggers when cursor leaves the fragment
   (setq org-fragtog-preview-delay 0.2))
+
+;; ---------------------------------------------------------------------------
+;; Extend org-fragtog to handle LaTeX environments inside export blocks
+;; ---------------------------------------------------------------------------
+
+(defvar-local aj/latex-fragtog--last-env nil
+  "Tracks the last LaTeX environment point was in (buffer-local).
+Value is (ENV-NAME BEG END) or nil.")
+
+(defun aj/latex-fragtog-hook ()
+  "Toggle LaTeX environment preview when cursor enters/leaves.
+Called from `post-command-hook'. Works with all environments in
+`aj/latex-preview-environments'."
+  (when (derived-mode-p 'org-mode)
+    (let ((current-env (aj/latex--find-environment-at-point)))
+      (cond
+       ;; Entered an environment: clear its preview to show source
+       ((and current-env (not aj/latex-fragtog--last-env))
+        (let ((beg (nth 1 current-env))
+              (end (nth 2 current-env)))
+          (dolist (ov (overlays-in beg end))
+            (when (overlay-get ov 'aj-latex-preview)
+              (delete-overlay ov)))))
+       ;; Left an environment: render preview after delay
+       ((and aj/latex-fragtog--last-env (not current-env))
+        (let ((env aj/latex-fragtog--last-env)
+              (buf (current-buffer)))
+          (run-with-timer
+           org-fragtog-preview-delay nil
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (save-excursion
+                   (goto-char (nth 1 env))
+                   ;; Only render if we're still outside the environment
+                   (unless (aj/latex--find-environment-at-point)
+                     (aj/latex-preview-at-point))))))))))
+      (setq aj/latex-fragtog--last-env current-env))))
+
+(add-hook 'org-mode-hook
+          (lambda ()
+            (add-hook 'post-command-hook #'aj/latex-fragtog-hook nil t)))
 
 ;; Make LaTeX previews larger and higher quality
 (with-eval-after-load 'org

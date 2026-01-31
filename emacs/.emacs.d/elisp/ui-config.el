@@ -26,8 +26,29 @@
 ;; Load default theme
 (load-theme 'gruber-darker t)
 
-;; Keybinding for theme toggle (similar to modus-themes)
-(global-set-key (kbd "C-c T") #'gruber-toggle)
+;; ---------------------------------------------------------------------------
+;; Toggle keymap (C-c T)
+;; ---------------------------------------------------------------------------
+
+(defvar aj/toggle-map (make-sparse-keymap)
+  "Keymap for toggle commands under C-c T.")
+
+(global-set-key (kbd "C-c T") aj/toggle-map)
+
+;; t = theme toggle
+(define-key aj/toggle-map (kbd "t") #'gruber-toggle)
+
+;; s = spell toggle (flyspell-mode)
+(define-key aj/toggle-map (kbd "s") #'flyspell-mode)
+
+;; Flyspell configuration - uses same backend as ispell
+(with-eval-after-load 'flyspell
+  ;; Use aspell if available (better suggestions than ispell)
+  (when (executable-find "aspell")
+    (setq ispell-program-name "aspell")
+    (setq ispell-extra-args '("--sug-mode=ultra" "--lang=en_US")))
+  ;; Speed up flyspell
+  (setq flyspell-issue-message-flag nil))
 
 (global-set-key (kbd "C-c e i") (lambda () (interactive) (find-file "~/.emacs.d/init.el")))
 (global-set-key (kbd "C-c e d") (lambda () (interactive) (find-file "~/.emacs.d/elisp/")))

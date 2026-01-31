@@ -51,15 +51,15 @@
    `(border ((t (:background ,gruber-lighter-bg+2 :foreground ,gruber-lighter-bg+4))))
    `(cursor ((t (:background ,gruber-lighter-yellow))))
    `(default ((t (:foreground ,gruber-lighter-fg :background ,gruber-lighter-bg))))
-   `(fringe ((t (:background nil :foreground ,gruber-lighter-bg+4))))
+   `(fringe ((t (:background unspecified :foreground ,gruber-lighter-bg+4))))
    `(vertical-border ((t (:foreground ,gruber-lighter-bg+3))))
    `(link ((t (:foreground ,gruber-lighter-niagara :underline t))))
    `(link-visited ((t (:foreground ,gruber-lighter-wisteria :underline t))))
    `(match ((t (:background ,gruber-lighter-bg+2))))
    `(shadow ((t (:foreground ,gruber-lighter-bg+4))))
    `(minibuffer-prompt ((t (:foreground ,gruber-lighter-niagara :weight bold))))
-   `(region ((t (:background ,gruber-lighter-bg+2 :foreground nil))))
-   `(secondary-selection ((t (:background ,gruber-lighter-bg+3 :foreground nil))))
+   `(region ((t (:background ,gruber-lighter-bg+2 :foreground unspecified))))
+   `(secondary-selection ((t (:background ,gruber-lighter-bg+3 :foreground unspecified))))
    `(trailing-whitespace ((t (:foreground ,gruber-lighter-white :background ,gruber-lighter-red))))
    `(tooltip ((t (:background ,gruber-lighter-bg+1 :foreground ,gruber-lighter-fg))))
 
@@ -77,8 +77,8 @@
    `(custom-state ((t (:foreground ,gruber-lighter-green))))
 
    ;; Diff
-   `(diff-removed ((t (:foreground ,gruber-lighter-red :background nil))))
-   `(diff-added ((t (:foreground ,gruber-lighter-green :background nil))))
+   `(diff-removed ((t (:foreground ,gruber-lighter-red :background unspecified))))
+   `(diff-added ((t (:foreground ,gruber-lighter-green :background unspecified))))
 
    ;; Dired
    `(dired-directory ((t (:foreground ,gruber-lighter-niagara :weight bold))))
@@ -149,8 +149,8 @@
    `(info-visited ((t (:foreground ,gruber-lighter-wisteria))))
 
    ;; Line Highlighting
-   `(highlight ((t (:background ,gruber-lighter-bg+1 :foreground nil))))
-   `(highlight-current-line-face ((t (:background ,gruber-lighter-bg+1 :foreground nil))))
+   `(highlight ((t (:background ,gruber-lighter-bg+1 :foreground unspecified))))
+   `(highlight-current-line-face ((t (:background ,gruber-lighter-bg+1 :foreground unspecified))))
 
    ;; Line numbers
    `(line-number ((t (:inherit default :foreground ,gruber-lighter-bg+4))))
@@ -226,8 +226,8 @@
 
    ;; tab-bar
    `(tab-bar ((t (:background ,gruber-lighter-bg+1 :foreground ,gruber-lighter-bg+4))))
-   `(tab-bar-tab ((t (:background nil :foreground ,gruber-lighter-yellow :weight bold))))
-   `(tab-bar-tab-inactive ((t (:background nil))))
+   `(tab-bar-tab ((t (:background unspecified :foreground ,gruber-lighter-yellow :weight bold))))
+   `(tab-bar-tab-inactive ((t (:background unspecified))))
 
    ;; vterm / ansi-term
    `(term-color-black ((t (:foreground ,gruber-lighter-bg+3 :background ,gruber-lighter-bg+4))))

@@ -416,6 +416,58 @@ for part in msg.walk():
             (my/notmuch-move-to-folder folder))))))
 
   ;; ---------------------------------------------------------------------------
+  ;; JobSync classification rotation
+  ;; ---------------------------------------------------------------------------
+  (defvar my/jobsync-classifications
+    '("job_application" "job_response" "interview" "rejection" "offer" "follow_up" "other")
+    "List of JobSync classification types in rotation order.")
+
+  (defun my/jobsync-get-current-classification (tags)
+    "Extract current jobsync/* classification from TAGS list."
+    (cl-loop for tag in tags
+             when (string-prefix-p "jobsync/" tag)
+             return (substring tag 8)))  ; Remove "jobsync/" prefix
+
+  (defun my/jobsync-next-classification (current)
+    "Get next classification after CURRENT in rotation."
+    (let* ((idx (cl-position current my/jobsync-classifications :test #'string=))
+           (next-idx (if idx
+                         (mod (1+ idx) (length my/jobsync-classifications))
+                       0)))
+      (nth next-idx my/jobsync-classifications)))
+
+  (defun my/jobsync-rotate-classification-search ()
+    "Rotate JobSync classification for current thread in search mode."
+    (interactive)
+    (let* ((tags (notmuch-search-get-tags))
+           (current (my/jobsync-get-current-classification tags)))
+      (if (not current)
+          (message "No jobsync classification on this email")
+        (let* ((next (my/jobsync-next-classification current))
+               (tag-changes (list (concat "-jobsync/" current)
+                                  (concat "+jobsync/" next)
+                                  (concat "+jobsync-was/" current))))
+          (notmuch-search-tag tag-changes)
+          (message "JobSync: %s -> %s" current next)))))
+
+  (defun my/jobsync-rotate-classification-show ()
+    "Rotate JobSync classification for current message in show mode."
+    (interactive)
+    (let* ((tags (notmuch-show-get-tags))
+           (current (my/jobsync-get-current-classification tags)))
+      (if (not current)
+          (message "No jobsync classification on this email")
+        (let* ((next (my/jobsync-next-classification current))
+               (tag-changes (list (concat "-jobsync/" current)
+                                  (concat "+jobsync/" next)
+                                  (concat "+jobsync-was/" current))))
+          (notmuch-show-tag tag-changes)
+          (message "JobSync: %s -> %s" current next)))))
+
+  (define-key notmuch-search-mode-map (kbd "J") 'my/jobsync-rotate-classification-search)
+  (define-key notmuch-show-mode-map (kbd "J") 'my/jobsync-rotate-classification-show)
+
+  ;; ---------------------------------------------------------------------------
   ;; Keybindings for tree mode
   ;; ---------------------------------------------------------------------------
   (define-key notmuch-tree-mode-map (kbd "d")
@@ -436,7 +488,23 @@ for part in msg.walk():
     (lambda ()
       "Sync all email"
       (interactive)
-      (email-sync-all))))
+      (email-sync-all)))
+
+  (defun my/jobsync-rotate-classification-tree ()
+    "Rotate JobSync classification for current message in tree mode."
+    (interactive)
+    (let* ((tags (notmuch-tree-get-tags))
+           (current (my/jobsync-get-current-classification tags)))
+      (if (not current)
+          (message "No jobsync classification on this email")
+        (let* ((next (my/jobsync-next-classification current))
+               (tag-changes (list (concat "-jobsync/" current)
+                                  (concat "+jobsync/" next)
+                                  (concat "+jobsync-was/" current))))
+          (notmuch-tree-tag tag-changes)
+          (message "JobSync: %s -> %s" current next)))))
+
+  (define-key notmuch-tree-mode-map (kbd "J") 'my/jobsync-rotate-classification-tree))
 
 ;; =============================================================================
 ;; SMTP - Per-account sending
@@ -580,9 +648,13 @@ for part in msg.walk():
 If QUIET is non-nil, don't show messages."
   (interactive)
   ;; Don't start new sync if one is running
-  (when (and my/email-sync-process (process-live-p my/email-sync-process))
-    (unless quiet (message "Sync already in progress"))
-    (cl-return-from email-sync-all))
+  (if (and my/email-sync-process (process-live-p my/email-sync-process))
+      (unless quiet (message "Sync already in progress"))
+    ;; Proceed with sync
+    (email-sync-all--do-sync quiet)))
+
+(defun email-sync-all--do-sync (&optional quiet)
+  "Internal function to perform the actual sync."
   (setq my/email-syncing t)
   (setq my/email-last-sync-time (current-time))
   (force-mode-line-update t)

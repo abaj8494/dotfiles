@@ -830,11 +830,16 @@ Entries are placed under * Capture by the capture template."
                       (progn (goto-char (point-min))
                              (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
             (aj/insert-week-transclude)))
-        ;; 2. Ensure all headings exist in correct order
+        ;; 2. Ensure all headings exist in correct order (with statistics cookies)
         (aj/ensure-daily-structure)
-        ;; 3. Refresh recurring tasks
+        ;; 3. Update statistics cookies on Capture heading after capture
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^\\* Capture\\b" nil t)
+            (org-update-statistics-cookies nil)))
+        ;; 4. Refresh recurring tasks
         (aj/refresh-daily-recurring)
-        ;; 4. Insert calendar content
+        ;; 5. Insert calendar content
         (save-excursion
           (goto-char (point-min))
           ;; Only insert calendar content if heading is empty
@@ -848,7 +853,7 @@ Entries are placed under * Capture by the capture template."
               ;; Check if there's no content between Calendar and next heading
               (when (< (- next-heading heading-end) 5)
                 (my/insert-aj-day-calendar)))))
-        ;; Activate org-transclusion-mode to render the transclude
+        ;; 6. Activate org-transclusion-mode to render the transclude
         (when (and (fboundp 'org-transclusion-mode)
                    (not (bound-and-true-p org-transclusion-mode)))
           (org-transclusion-mode 1))
@@ -870,28 +875,51 @@ Returns the position where the heading should be inserted."
     (catch 'found
       (dolist (next-heading later-headings)
         (save-excursion
-          (goto-char (point-min))
-          (when (re-search-forward (format "^\\* %s\\b" (regexp-quote next-heading)) nil t)
-            (throw 'found (line-beginning-position)))))
+          (save-restriction
+            (widen)
+            (goto-char (point-min))
+            (when (re-search-forward (format "^\\* %s\\b" (regexp-quote next-heading)) nil t)
+              (throw 'found (line-beginning-position))))))
       ;; No later heading found, insert at end of buffer
       nil)))
+
+(defvar aj/headings-with-statistics '("Capture" "Tasks")
+  "Headings that should have [/] statistics cookies.")
 
 (defun aj/ensure-heading-exists (heading)
   "Ensure HEADING exists in the daily note at the correct position.
 Returns t if heading was created, nil if it already existed."
   (save-excursion
-    (goto-char (point-min))
-    (unless (re-search-forward (format "^\\* %s\\b" (regexp-quote heading)) nil t)
-      (let ((insert-point (aj/find-heading-insert-point heading)))
-        (if insert-point
-            (progn
-              (goto-char insert-point)
-              (insert (format "* %s\n\n" heading)))
-          ;; Insert at end
-          (goto-char (point-max))
-          (unless (bolp) (insert "\n"))
-          (insert (format "\n* %s\n" heading))))
-      t)))
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (unless (re-search-forward (format "^\\* %s\\b" (regexp-quote heading)) nil t)
+        (let ((insert-point (aj/find-heading-insert-point heading))
+              (heading-text (if (member heading aj/headings-with-statistics)
+                                (format "* %s [/]\n\n" heading)
+                              (format "* %s\n\n" heading))))
+          (if insert-point
+              (progn
+                (goto-char insert-point)
+                (insert heading-text))
+            ;; Insert at end
+            (goto-char (point-max))
+            (unless (bolp) (insert "\n"))
+            (insert (concat "\n" heading-text))))
+        t))))
+
+(defun aj/ensure-heading-has-statistics-cookie (heading)
+  "Ensure HEADING has a [/] statistics cookie if it should have one.
+Only modifies headings listed in `aj/headings-with-statistics'."
+  (when (member heading aj/headings-with-statistics)
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (point-min))
+        (when (re-search-forward (format "^\\(\\* %s\\)\\([ \t]*\\)$" (regexp-quote heading)) nil t)
+          ;; Heading exists without cookie - add it
+          (goto-char (match-end 1))
+          (insert " [/]"))))))
 
 (defun aj/ensure-daily-structure ()
   "Ensure the daily note has all required headings in the correct order.
@@ -900,7 +928,10 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
   (when (aj/daily-date-file-p)
     (save-excursion
       (dolist (heading aj/daily-heading-order)
-        (aj/ensure-heading-exists heading)))))
+        (aj/ensure-heading-exists heading))
+      ;; Ensure statistics cookies on headings that need them
+      (dolist (heading aj/headings-with-statistics)
+        (aj/ensure-heading-has-statistics-cookie heading)))))
 
 (defun aj/fold-week-heading ()
   "Fold the Week heading if present.
@@ -1081,8 +1112,10 @@ Weather is now part of the Calendar section - use C-c d r c to refresh."
   "Return t if current daily file needs full setup.
 Checks if the file is missing the Journal heading (indicates bare template)."
   (save-excursion
-    (goto-char (point-min))
-    (not (re-search-forward "^\\* Journal\\b" nil t))))
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (not (re-search-forward "^\\* Journal\\b" nil t)))))
 
 (defun aj/setup-daily-file ()
   "Run full setup for a daily file.
@@ -1094,11 +1127,17 @@ Inserts transclude, ensures headings, populates recurring and calendar."
                 (progn (goto-char (point-min))
                        (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
       (aj/insert-week-transclude)))
-  ;; 2. Ensure all headings exist in correct order
+  ;; 2. Ensure all headings exist in correct order (with statistics cookies)
   (aj/ensure-daily-structure)
   ;; 3. Refresh recurring tasks
   (aj/refresh-daily-recurring)
-  ;; 4. Insert calendar content
+  ;; 4. Update statistics cookies
+  (save-excursion
+    (dolist (heading aj/headings-with-statistics)
+      (goto-char (point-min))
+      (when (re-search-forward (format "^\\* %s\\b" (regexp-quote heading)) nil t)
+        (org-update-statistics-cookies nil))))
+  ;; 5. Insert calendar content
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^\\* Calendar\\b" nil t)
@@ -1196,20 +1235,29 @@ Preserves transclusion state in current buffer."
       (setq today-file (buffer-file-name))
       ;; Create "Tasks" heading if it doesn't exist (for older dailies)
       (goto-char (point-min))
-      (unless (re-search-forward "^\\* Tasks$" nil t)
+      (unless (re-search-forward "^\\* Tasks\\b" nil t)
         (goto-char (point-max))
         (unless (bolp) (insert "\n"))
-        (insert "* Tasks\n"))
+        (insert "* Tasks [/]\n"))
+      ;; Ensure cookie exists on Tasks heading
+      (aj/ensure-heading-has-statistics-cookie "Tasks")
       ;; Get position of Tasks heading
       (goto-char (point-min))
-      (re-search-forward "^\\* Tasks$" nil t)
+      (re-search-forward "^\\* Tasks\\b" nil t)
       (setq pos (point))
       (save-buffer))
 
     ;; Only refile if the target file is different than the current file
     (unless (equal (file-truename today-file)
                    (file-truename (buffer-file-name)))
-      (org-refile nil nil (list "Tasks" today-file nil pos)))
+      (org-refile nil nil (list "Tasks" today-file nil pos))
+      ;; Update statistics cookie in target file
+      (with-current-buffer (find-file-noselect today-file)
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^\\* Tasks\\b" nil t)
+            (org-update-statistics-cookies nil)))
+        (save-buffer)))
 
     ;; Restore transclusion mode in source buffer if it was active
     (when (and source-transclusion-active
@@ -1508,7 +1556,8 @@ Outputs an org table with links to daily files.
         (let ((month-name (format-time-string "%B %Y" date)))
           (insert (format "#+CAPTION: %s\n" month-name)))
 
-        ;; Table header
+        ;; Table header with top border
+        (insert "|----+----+----+----+----+----+----+-------+--------|\n")
         (insert "| Su | Mo | Tu | We | Th | Fr | Sa | Σ(wk) | ω(dol) |\n")
         (insert "|----+----+----+----+----+----+----+-------+--------|\n")
 
@@ -1528,7 +1577,11 @@ Outputs an org table with links to daily files.
                   (insert " " (my/format-day-cell (nth dow days) day year month) "|"))
                 (insert (format " %5d | %s |\n" week-num (my/format-number-with-commas days-alive)))))))
 
-        ;; Align the table
+        ;; Bottom border
+        (insert "|----+----+----+----+----+----+----+-------+--------|\n")
+
+        ;; Align the table - must be inside table, not on border
+        (forward-line -2)
         (org-table-align)
 
         ;; Fetch weather asynchronously and insert when ready
@@ -1637,10 +1690,10 @@ Week runs Sunday to Saturday."
 
 (defun aj/parse-weather-week-from-cache (target-date)
   "Parse weather for the full week (Sun-Sat) containing TARGET-DATE.
-Reads from local cache files synced from server."
+Reads from local cache files synced from server.
+The '<-- today' marker indicates TARGET-DATE (the file's date), not actual today."
   (let* ((bounds (aj/get-week-bounds target-date))
          (week-start (car bounds))
-         (today-str (format-time-string "%Y-%m-%d"))
          (lines '())
          (current-date week-start))
     ;; Iterate through each day of the week (Sun-Sat)
@@ -1651,7 +1704,8 @@ Reads from local cache files synced from server."
              (d-day (string-to-number (nth 2 d-parts)))
              (date-time (encode-time 0 0 0 d-day d-month d-year))
              (day-name (format-time-string "%a" date-time))
-             (is-today (string= current-date today-str))
+             ;; Mark the file's date, not actual today
+             (is-file-date (string= current-date target-date))
              ;; Read from cache (server provides both historical and forecast)
              (archive (aj/read-archive-weather current-date))
              weather-info)
@@ -1663,7 +1717,7 @@ Reads from local cache files synced from server."
         ;; Format the line
         (if weather-info
             (let ((emoji (aj/openweather-icon (plist-get weather-info :cond)))
-                  (today-marker (if is-today " <-- today" "")))
+                  (today-marker (if is-file-date " <-- today" "")))
               (push (format "  %s %d: %s %d°C (%d-%d°C)%s"
                             day-name d-day emoji
                             (floor (plist-get weather-info :temp))
@@ -1672,7 +1726,7 @@ Reads from local cache files synced from server."
                             today-marker)
                     lines))
           ;; No data available
-          (push (format "  %s %d: —%s" day-name d-day (if is-today " <-- today" "")) lines))
+          (push (format "  %s %d: —%s" day-name d-day (if is-file-date " <-- today" "")) lines))
         ;; Move to next day
         (setq current-date
               (format-time-string "%Y-%m-%d"
@@ -1718,62 +1772,10 @@ Weather is relative to DATE-STR (the file's date), not today's date."
                     (delete-region line-start (point))))))
             ;; Go to end of section
             (goto-char section-end)
-            ;; Read from cache
-            (let* ((today-str (format-time-string "%Y-%m-%d"))
-                   (is-today (string= date-str today-str))
-                   (forecast-latest (aj/read-forecast-latest))
-                   ;; Date parts for moon phase
-                   (d-parts (split-string date-str "-"))
-                   (year (string-to-number (nth 0 d-parts)))
-                   (month (string-to-number (nth 1 d-parts)))
-                   (day (string-to-number (nth 2 d-parts)))
-                   (moon (aj/calculate-moon-phase year month day))
-                   ;; Forecast from individual day files
-                   (forecast-str (aj/parse-weather-week-from-cache date-str)))
-              ;; Insert weather content
+            ;; Read from cache - only insert forecast (sun/moon/conditions now in hourly table)
+            (let ((forecast-str (aj/parse-weather-week-from-cache date-str)))
               (unless (bolp) (insert "\n"))
-              (insert "\nforecast:\n" forecast-str "\n")
-              ;; Day's conditions: from forecast-latest if today, otherwise from archive
-              (if is-today
-                  ;; Today: use current conditions from forecast-latest
-                  (let ((current (alist-get 'current forecast-latest)))
-                    (when current
-                      (let* ((temp (floor (alist-get 'temp current)))
-                             (feels (floor (alist-get 'feels_like current)))
-                             (humidity (alist-get 'humidity current))
-                             (weather (car (alist-get 'weather current)))
-                             (condition (alist-get 'main weather))
-                             (description (alist-get 'description weather))
-                             (emoji (aj/openweather-icon condition))
-                             (sunrise (alist-get 'sunrise current))
-                             (sunset (alist-get 'sunset current)))
-                        (insert (format "\ntoday: %s %s, %d°C (feels %d°C), %d%% humidity\n"
-                                        emoji description temp feels humidity))
-                        (when (and sunrise sunset)
-                          (insert (format "\nsun: ↑ %s  ↓ %s\n"
-                                          (aj/format-unix-time sunrise "%H:%M")
-                                          (aj/format-unix-time sunset "%H:%M")))))))
-                ;; Past/future date: use archived weather for that specific date
-                (let ((archive (aj/read-archive-weather date-str)))
-                  (if archive
-                      (let* ((temp (alist-get 'temp archive))
-                             (min-temp (alist-get 'temp_min archive))
-                             (max-temp (alist-get 'temp_max archive))
-                             (condition (alist-get 'condition archive))
-                             (description (or (alist-get 'description archive) condition))
-                             (emoji (aj/openweather-icon condition))
-                             (sunrise (alist-get 'sunrise archive))
-                             (sunset (alist-get 'sunset archive)))
-                        (insert (format "\ntoday: %s %s, %d°C (%d-%d°C)\n"
-                                        emoji (downcase description)
-                                        (floor temp) (floor min-temp) (floor max-temp)))
-                        (when (and sunrise sunset)
-                          (insert (format "\nsun: ↑ %s  ↓ %s\n"
-                                          (aj/format-unix-time sunrise "%H:%M")
-                                          (aj/format-unix-time sunset "%H:%M")))))
-                    ;; No archive data for this date
-                    (insert "\ntoday: — (no weather data)\n"))))
-              (insert (format "moon: %s\n" moon)))))))))
+              (insert "\nforecast:\n" forecast-str "\n"))))))))
 
 (defun aj/fetch-calendar-weather-async (date-str buffer)
   "Fetch weather from server cache and insert into BUFFER's Calendar section.
@@ -1790,7 +1792,198 @@ Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
        (when (and (string-match-p "finished" e)
                   (buffer-live-p buffer))
          (aj/insert-weather-from-cache buffer date-str)
+         ;; Insert hourly table if today (reads from synced cache)
+         (aj/insert-hourly-weather-table buffer date-str)
          (message "Weather updated from server cache"))))))
+
+;; ---------------------------------------------------------------------------
+;; Hourly Weather Table (only for today's daily)
+;; ---------------------------------------------------------------------------
+
+(defun aj/read-hourly-weather (date-str)
+  "Read hourly weather for DATE-STR from local cache. Returns alist or nil."
+  (let ((file (expand-file-name (concat "hourly-" date-str ".json") aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist)
+              (json-array-type 'list))
+          (condition-case nil
+              (json-read)
+            (error nil)))))))
+
+(defun aj/insert-hourly-weather-table (buffer date-str)
+  "Insert hourly weather table and conditions table into BUFFER's Calendar section.
+Works for today and tomorrow (since we have 48 hours of forecast data)."
+  (let* ((today-str (format-time-string "%Y-%m-%d"))
+         (tomorrow-str (format-time-string "%Y-%m-%d" (time-add nil (* 24 60 60))))
+         (is-today (string= date-str today-str))
+         (is-tomorrow (string= date-str tomorrow-str))
+         (data (when (or is-today is-tomorrow) (aj/read-hourly-weather today-str)))
+         (forecast-file (expand-file-name "forecast-latest.json" aj/weather-archive-local))
+         (forecast-data (when (file-exists-p forecast-file)
+                          (condition-case nil
+                              (json-read-file forecast-file)
+                            (error nil)))))
+    (when (and (or is-today is-tomorrow) data)
+      (let ((hourly (alist-get 'hourly data))
+            (tz-offset (or (alist-get 'timezone_offset data) 39600)))
+        (when hourly
+          (with-current-buffer buffer
+            (save-excursion
+              (goto-char (point-min))
+              (when (re-search-forward "^\\* Calendar\\b" nil t)
+                (let ((section-end (save-excursion
+                                     (forward-line 1)
+                                     (if (re-search-forward "^\\* " nil t)
+                                         (1- (line-beginning-position))
+                                       (point-max)))))
+                  ;; Remove existing hourly table and conditions table
+                  (save-excursion
+                    (goto-char (point-min))
+                    (when (re-search-forward "^hourly:" section-end t)
+                      (let ((start (line-beginning-position)))
+                        (forward-line 1)
+                        (while (and (< (point) section-end)
+                                    (or (looking-at "^|") (looking-at "^$")))
+                          (forward-line 1))
+                        (delete-region start (point)))))
+                  ;; Remove old sun:/moon:/today: lines
+                  (save-excursion
+                    (goto-char (point-min))
+                    (re-search-forward "^\\* Calendar\\b" nil t)
+                    (while (re-search-forward "^\\(sun:\\|moon:\\|today:\\)" section-end t)
+                      (delete-region (line-beginning-position) (1+ (line-end-position)))))
+                  ;; Find insertion point after forecast block
+                  (goto-char (point-min))
+                  (re-search-forward "^\\* Calendar\\b" nil t)
+                  (let ((insert-point
+                         (or (save-excursion
+                               (when (re-search-forward "^forecast:" section-end t)
+                                 (forward-line 1)
+                                 (while (and (< (point) section-end)
+                                             (not (looking-at "^\\* \\|^hourly:\\|^$")))
+                                   (forward-line 1))
+                                 (point)))
+                             section-end)))
+                    (goto-char insert-point)
+                    (unless (bolp) (insert "\n"))
+                    ;; Build hourly data and collect daily stats
+                    (let ((am-emoji (make-vector 12 nil))
+                          (am-temp (make-vector 12 nil))
+                          (pm-emoji (make-vector 12 nil))
+                          (pm-temp (make-vector 12 nil))
+                          (max-pop 0)
+                          (max-uvi 0)
+                          (total-humidity 0)
+                          (total-wind 0)
+                          (hour-count 0))
+                      (dolist (hour-entry hourly)
+                        (let* ((dt (alist-get 'dt hour-entry))
+                               (local-time (+ dt tz-offset))
+                               (hour (mod (/ local-time 3600) 24))
+                               (entry-date (format-time-string "%Y-%m-%d" (seconds-to-time dt)))
+                               (temp (round (alist-get 'temp hour-entry)))
+                               (weather (car (alist-get 'weather hour-entry)))
+                               (condition (alist-get 'main weather))
+                               (emoji (aj/openweather-icon condition))
+                               (pop (or (alist-get 'pop hour-entry) 0))
+                               (uvi (or (alist-get 'uvi hour-entry) 0))
+                               (humidity (or (alist-get 'humidity hour-entry) 0))
+                               (wind (or (alist-get 'wind_speed hour-entry) 0)))
+                          (when (string= entry-date date-str)
+                            (setq hour-count (1+ hour-count))
+                            (setq max-pop (max max-pop pop))
+                            (setq max-uvi (max max-uvi uvi))
+                            (setq total-humidity (+ total-humidity humidity))
+                            (setq total-wind (+ total-wind wind))
+                            (if (< hour 12)
+                                (progn
+                                  (aset am-emoji hour emoji)
+                                  (aset am-temp hour (number-to-string temp)))
+                              (aset pm-emoji (- hour 12) emoji)
+                              (aset pm-temp (- hour 12) (number-to-string temp))))))
+                      ;; Calculate averages and get sun/moon data
+                      (let* ((avg-humidity (if (> hour-count 0) (/ total-humidity hour-count) 0))
+                             (avg-wind (if (> hour-count 0) (/ total-wind hour-count) 0))
+                             (current (alist-get 'current forecast-data))
+                             (sunrise (alist-get 'sunrise current))
+                             (sunset (alist-get 'sunset current))
+                             (d-parts (split-string date-str "-"))
+                             (year (string-to-number (nth 0 d-parts)))
+                             (month (string-to-number (nth 1 d-parts)))
+                             (day (string-to-number (nth 2 d-parts)))
+                             (moon (aj/calculate-moon-phase year month day)))
+                        ;; Insert hourly table
+                        (insert "\nhourly:\n")
+                        (insert "|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        (insert "| AM |")
+                        (dotimes (h 12)
+                          (insert (format " %2d |" (if (= h 0) 12 h))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        ;; AM emoji row (blank first column)
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref am-emoji h) "  "))))
+                        (insert "\n")
+                        ;; AM temp row
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref am-temp h) "  "))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        (insert "| PM |")
+                        (dotimes (h 12)
+                          (insert (format " %2d |" (if (= h 0) 12 h))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        ;; PM emoji row (blank first column)
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref pm-emoji h) "  "))))
+                        (insert "\n")
+                        ;; PM temp row
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref pm-temp h) "  "))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        ;; Align hourly table
+                        (forward-line -2)
+                        (org-table-align)
+                        ;; Move past hourly table for conditions table
+                        (goto-char insert-point)
+                        (when (re-search-forward "^hourly:" section-end t)
+                          (while (and (< (point) section-end) (looking-at "\\|^|"))
+                            (forward-line 1))
+                          (forward-line 1)
+                          (while (and (< (point) section-end) (looking-at "^|"))
+                            (forward-line 1)))
+                        ;; Insert conditions table
+                        (insert "\n|----------+-------------------|\n")
+                        (insert (format "| sun      | ↑ %s  ↓ %s |\n"
+                                        (if sunrise (aj/format-unix-time sunrise "%H:%M") "--:--")
+                                        (if sunset (aj/format-unix-time sunset "%H:%M") "--:--")))
+                        (insert (format "| moon     | %s |\n" moon))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| rain     | %3d%% |\n" (round (* 100 max-pop))))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| UV       | %3d |\n" (round max-uvi)))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| humidity | %3d%% |\n" (round avg-humidity)))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| wind     | %3d km/h |\n" (round (* 3.6 avg-wind))))
+                        (insert "|----------+-------------------|\n")
+                        ;; Align conditions table
+                        (forward-line -2)
+                        (org-table-align)))))))))))))
 
 ;;(defun org-roam-node-insert-immediate (arg &rest args)
 ;;  (interactive "P")
@@ -1919,8 +2112,9 @@ Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
 
 (use-package org-super-agenda
   :after org-agenda
-  :hook (org-agenda-mode . org-super-agenda-mode)
   :config
+  ;; Enable the mode globally (it's a global minor mode, not buffer-local)
+  (org-super-agenda-mode 1)
   (setq org-super-agenda-groups
         '((:name "Overdue"
            :deadline past
