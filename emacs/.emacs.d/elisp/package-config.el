@@ -230,7 +230,8 @@ With prefix ARG, search from current directory instead of project root."
   (let* ((search-dir (if arg
                          default-directory
                        (aj/project-root)))
-         (helm-ag-base-command "rg --no-heading --vimgrep --smart-case --max-depth 6 -g !public/ -g !node_modules/ -g !.git/ -g !build/ -g !dist/"))
+         (helm-ag-base-command "rg --no-heading --vimgrep --smart-case --max-depth 6 -g !*~ -g !public/ -g !node_modules/ -g !.git/ -g !build/ -g !dist/")
+         (helm-ag-insert-at-point nil))
     (message "Searching in: %s" search-dir)
     (helm-do-ag search-dir)))
 
@@ -1718,11 +1719,12 @@ Weather is relative to DATE-STR (the file's date), not today's date."
       (save-excursion
         (goto-char (point-min))
         (when (re-search-forward "^\\* Calendar\\b" nil t)
-          (let ((section-end (save-excursion
-                               (forward-line 1)
-                               (if (re-search-forward "^\\* " nil t)
-                                   (1- (line-beginning-position))
-                                 (point-max)))))
+          (let ((section-end (copy-marker
+                              (save-excursion
+                                (forward-line 1)
+                                (if (re-search-forward "^\\* " nil t)
+                                    (1- (line-beginning-position))
+                                  (point-max))))))
             ;; Remove existing weather lines
             (save-excursion
               (goto-char (point-min))
@@ -1743,23 +1745,35 @@ Weather is relative to DATE-STR (the file's date), not today's date."
               (insert "\nforecast:\n" forecast-str "\n"))))))))
 
 (defun aj/fetch-calendar-weather-async (date-str buffer)
-  "Fetch weather from server cache and insert into BUFFER's Calendar section.
-Syncs from abaj.ai weather archive - NO direct API calls from Emacs."
-  ;; Sync archive from server
+  "Fetch fresh weather from server and insert into BUFFER's Calendar section.
+Runs weather script on server, syncs data, then inserts."
+  (message "Weather: fetching fresh data from server...")
   (make-directory aj/weather-archive-local t)
-  (let ((proc (start-process "weather-sync" nil
-                             "rsync" "-az"
-                             aj/weather-archive-remote
-                             aj/weather-archive-local)))
+  ;; Step 1: Run weather script on server to get latest data
+  (let ((fetch-proc (start-process "weather-fetch" "*weather-fetch*"
+                                   "ssh" "root@abaj.ai"
+                                   "/root/scripts/weather-archive.sh")))
     (set-process-sentinel
-     proc
+     fetch-proc
      (lambda (p e)
-       (when (and (string-match-p "finished" e)
-                  (buffer-live-p buffer))
-         (aj/insert-weather-from-cache buffer date-str)
-         ;; Insert hourly table if today (reads from synced cache)
-         (aj/insert-hourly-weather-table buffer date-str)
-         (message "Weather updated from server cache"))))))
+       (if (not (string-match-p "finished" e))
+           (message "Weather: server fetch failed - %s" (string-trim e))
+         (message "Weather: server updated, syncing...")
+         ;; Step 2: Sync from server
+         (let ((sync-proc (start-process "weather-sync" nil
+                                         "rsync" "-az"
+                                         aj/weather-archive-remote
+                                         aj/weather-archive-local)))
+           (set-process-sentinel
+            sync-proc
+            (lambda (p2 e2)
+              (if (not (string-match-p "finished" e2))
+                  (message "Weather: sync failed - %s" (string-trim e2))
+                (message "Weather: inserting into buffer...")
+                (when (buffer-live-p buffer)
+                  (aj/insert-weather-from-cache buffer date-str)
+                  (aj/insert-hourly-weather-table buffer date-str)
+                  (message "Weather: done ✓")))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Hourly Weather Table (only for today's daily)
@@ -1798,11 +1812,12 @@ Works for today and tomorrow (since we have 48 hours of forecast data)."
             (save-excursion
               (goto-char (point-min))
               (when (re-search-forward "^\\* Calendar\\b" nil t)
-                (let ((section-end (save-excursion
-                                     (forward-line 1)
-                                     (if (re-search-forward "^\\* " nil t)
-                                         (1- (line-beginning-position))
-                                       (point-max)))))
+                (let ((section-end (copy-marker
+                                    (save-excursion
+                                      (forward-line 1)
+                                      (if (re-search-forward "^\\* " nil t)
+                                          (1- (line-beginning-position))
+                                        (point-max))))))
                   ;; Remove existing hourly table and conditions table
                   (save-excursion
                     (goto-char (point-min))
@@ -1949,6 +1964,88 @@ Works for today and tomorrow (since we have 48 hours of forecast data)."
                         ;; Align conditions table
                         (forward-line -2)
                         (org-table-align)))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Current Hour Highlighting in Hourly Weather Table
+;; ---------------------------------------------------------------------------
+
+(defface aj/current-hour-face
+  '((t :background "#2e7d32" :extend t))
+  "Face for highlighting the current hour in the weather table.")
+
+(defvar-local aj/hour-overlays nil
+  "List of overlays for current hour highlighting.")
+
+(defun aj/highlight-current-hour ()
+  "Highlight the current hour column in the hourly weather table.
+Only works for today's daily note."
+  (when (aj/daily-date-file-p)
+    (let* ((filename (file-name-sans-extension
+                      (file-name-nondirectory (buffer-file-name))))
+           (today-str (format-time-string "%Y-%m-%d")))
+      ;; Only highlight if this is today's daily
+      (when (string= filename today-str)
+        ;; Remove old overlays
+        (mapc #'delete-overlay aj/hour-overlays)
+        (setq aj/hour-overlays nil)
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^hourly:" nil t)
+            (let* ((now-hour (string-to-number (format-time-string "%H")))
+                   (is-pm (>= now-hour 12))
+                   (display-hour (mod now-hour 12))  ; 0-11, where 0 = 12 o'clock
+                   (col-index (+ 2 display-hour))    ; +2 for AM/PM label + blank column
+                   (table-start (point))
+                   (table-end (save-excursion
+                                (if (re-search-forward "^[^|]" nil t)
+                                    (line-beginning-position)
+                                  (point-max)))))
+              ;; Find the right section (AM or PM)
+              (when (re-search-forward (if is-pm "^| PM |" "^| AM |") table-end t)
+                ;; Highlight header row (hour number), emoji row, and temp row
+                ;; Row offsets: 0=header, 1=separator(skip), 2=emoji, 3=temp
+                (dolist (row-offset '(0 2 3))
+                  (beginning-of-line)
+                  (forward-line row-offset)
+                  (let ((line-end (line-end-position))
+                        (col 0)
+                        cell-start cell-end)
+                    ;; Find the nth cell (col-index)
+                    (goto-char (line-beginning-position))
+                    (while (and (< col col-index) (< (point) line-end))
+                      (when (search-forward "|" line-end t)
+                        (setq col (1+ col))))
+                    ;; Now point is after the | before our target cell
+                    ;; Include the | to capture org-modern's table decoration
+                    (when (= col col-index)
+                      (setq cell-start (1- (point)))  ; include preceding |
+                      (when (search-forward "|" line-end t)
+                        (setq cell-end (point))       ; include trailing |
+                        (let ((ov (make-overlay cell-start cell-end)))
+                          (overlay-put ov 'face 'aj/current-hour-face)
+                          (overlay-put ov 'priority 100)
+                          (push ov aj/hour-overlays)))))
+                  ;; Go back to header row for next iteration
+                  (goto-char (line-beginning-position))
+                  (forward-line (- row-offset)))))))))))
+
+(defun aj/highlight-current-hour-if-daily ()
+  "Highlight current hour if this is a daily org file."
+  (when (and (derived-mode-p 'org-mode)
+             (buffer-file-name)
+             (aj/daily-date-file-p))
+    (aj/highlight-current-hour)))
+
+;; Add to daily file open hook
+(add-hook 'org-roam-dailies-find-file-hook #'aj/highlight-current-hour)
+
+;; Add to after-save-hook (buffer-local, only for daily files)
+(defun aj/setup-hour-highlight-on-save ()
+  "Set up current hour highlighting on save for daily files."
+  (when (aj/daily-date-file-p)
+    (add-hook 'after-save-hook #'aj/highlight-current-hour nil t)))
+
+(add-hook 'org-roam-dailies-find-file-hook #'aj/setup-hour-highlight-on-save)
 
 ;;(defun org-roam-node-insert-immediate (arg &rest args)
 ;;  (interactive "P")

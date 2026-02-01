@@ -1197,6 +1197,8 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
               "\n\\usepackage{pgfplots}"
               "\n\\usepackage{xcolor}"
               "\n\\usetikzlibrary{shapes.geometric, positioning, arrows.meta, calc, decorations.pathreplacing}"
+              "\n\\usepackage{tikz-uml}"
+              "\n\\usetikzlibrary{arrows.meta,decorations.markings}"
               "\n\\pgfplotsset{compat=1.18}"))
 
 ;; AUCTeX settings

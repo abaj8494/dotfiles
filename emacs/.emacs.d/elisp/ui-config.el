@@ -46,7 +46,7 @@
   ;; Use aspell if available (better suggestions than ispell)
   (when (executable-find "aspell")
     (setq ispell-program-name "aspell")
-    (setq ispell-extra-args '("--sug-mode=ultra" "--lang=en_US")))
+    (setq ispell-extra-args '("--sug-mode=ultra" "--lang=en_AU")))
   ;; Speed up flyspell
   (setq flyspell-issue-message-flag nil))
 

@@ -440,17 +440,14 @@ for part in msg.walk():
     "Check if TAGS already contains a jobsync-was/* tag."
     (cl-some (lambda (tag) (string-prefix-p "jobsync-was/" tag)) tags))
 
-  (defun my/jobsync-rotate-classification-search ()
-    "Rotate JobSync classification for current thread in search mode.
-Only adds jobsync-was/<original> on the FIRST rotation to track the original classification."
-    (interactive)
+  (defun my/jobsync-rotate-single-thread ()
+    "Rotate JobSync classification for current thread.
+Returns (current . next) classification pair, or nil if no classification."
     (let* ((tags (notmuch-search-get-tags))
            (current (my/jobsync-get-current-classification tags)))
-      (if (not current)
-          (message "No jobsync classification on this email")
+      (when current
         (let* ((next (my/jobsync-next-classification current))
                (has-was (my/jobsync-has-was-tag tags))
-               ;; Only add was tag on first rotation (when no was tag exists)
                (tag-changes (if has-was
                                 (list (concat "-jobsync/" current)
                                       (concat "+jobsync/" next))
@@ -458,7 +455,41 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
                                     (concat "+jobsync/" next)
                                     (concat "+jobsync-was/" current)))))
           (notmuch-search-tag tag-changes)
-          (message "JobSync: %s -> %s" current next)))))
+          (cons current next)))))
+
+  (defun my/jobsync-rotate-classification-search ()
+    "Rotate JobSync classification for marked threads or current thread.
+If threads are marked with 'x', rotates all marked threads.
+Only adds jobsync-was/<original> on the FIRST rotation to track the original classification."
+    (interactive)
+    (if (and my/notmuch-marked-threads (> (length my/notmuch-marked-threads) 0))
+        ;; Bulk rotation for marked threads
+        (let ((count 0)
+              (rotations '()))
+          (save-excursion
+            (goto-char (point-min))
+            (while (not (eobp))
+              (let ((thread-id (notmuch-search-find-thread-id)))
+                (when (member thread-id my/notmuch-marked-threads)
+                  (let ((result (my/jobsync-rotate-single-thread)))
+                    (when result
+                      (cl-incf count)
+                      (push result rotations)))))
+              (forward-line 1)))
+          ;; Clear marks
+          (call-process-shell-command "notmuch tag -marked -- tag:marked")
+          (setq my/notmuch-marked-threads nil)
+          (notmuch-refresh-this-buffer)
+          ;; Summarize what happened
+          (if (= count 0)
+              (message "No jobsync classifications found in marked threads")
+            (let ((summary (mapcar (lambda (r) (format "%s->%s" (car r) (cdr r))) rotations)))
+              (message "JobSync rotated %d: %s" count (string-join (cl-remove-duplicates summary :test #'string=) ", ")))))
+      ;; Single thread rotation
+      (let ((result (my/jobsync-rotate-single-thread)))
+        (if result
+            (message "JobSync: %s -> %s" (car result) (cdr result))
+          (message "No jobsync classification on this email")))))
 
   (defun my/jobsync-rotate-classification-show ()
     "Rotate JobSync classification for current message in show mode.

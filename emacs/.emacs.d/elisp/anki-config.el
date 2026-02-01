@@ -229,7 +229,8 @@ ANKI_NOTE_TYPE=\"Cloze\" and ANKI_PREPEND_HEADING=\"t\"."
   (define-key org-mode-map (kbd "C-c a D") #'anki-editor-delete-note-at-point)
   (define-key org-mode-map (kbd "C-c a d") #'anki-editor-set-deck)
   (define-key org-mode-map (kbd "C-c a h") #'anki-editor-toggle-prepend-heading)
-  (define-key org-mode-map (kbd "C-c a c") #'anki-editor-cloze-region))
+  (define-key org-mode-map (kbd "C-c a c") #'anki-editor-cloze-region)
+  (define-key org-mode-map (kbd "C-c a C") #'anki-editor-set-note-type))
 
 (provide 'anki-config)
 ;;; anki-config.el ends here
