@@ -284,7 +284,35 @@ With prefix ARG, search from current directory instead of project root."
          ("s-G" . aj/helm-rg-deep)         ; Command+Shift+G for deep ripgrep
          ("s-s" . aj/search-menu))         ; Command+S for search menu
   :config
-  (helm-mode 1))
+  (helm-mode 1)
+  ;; Protect against pathological regex patterns (like \| which matches everywhere)
+  (defun aj/pattern-matches-empty-p (pattern)
+    "Return t if PATTERN matches the empty string (pathological)."
+    (and pattern
+         (not (string-empty-p pattern))
+         (condition-case nil
+             (string-match-p pattern "")
+           (error nil))))
+  ;; Hook into helm's update cycle to skip pathological patterns
+  (defun aj/helm-occur-skip-pathological (orig-fun &rest args)
+    "Skip re-search-forward if pattern matches empty string."
+    (let ((pattern (car args)))
+      (if (aj/pattern-matches-empty-p pattern)
+          nil  ; Return nil to indicate no match
+        (apply orig-fun args))))
+  ;; Advise re-search-forward only during helm-occur
+  (defvar aj/helm-occur-active nil)
+  (defun aj/helm-occur-wrapper (orig-fun &rest args)
+    "Run helm-occur with pathological pattern protection."
+    (let ((aj/helm-occur-active t))
+      (apply orig-fun args)))
+  (advice-add 'helm-occur :around #'aj/helm-occur-wrapper)
+  (defun aj/re-search-forward-safe (orig-fun pattern &rest args)
+    "Block re-search-forward for pathological patterns during helm-occur."
+    (if (and aj/helm-occur-active (aj/pattern-matches-empty-p pattern))
+        nil
+      (apply orig-fun pattern args)))
+  (advice-add 're-search-forward :around #'aj/re-search-forward-safe))
 
 (use-package helm-ag
   :straight t
@@ -767,7 +795,7 @@ Only ADDS new tasks - does not replace or modify existing ones."
          (today (format-time-string "%Y-%m-%d"))
          (capture-date (format-time-string "%Y-%m-%d" capture-time)))
     (if (equal today capture-date)
-        (format-time-string "%I:%M%p | " capture-time)
+        (format-time-string "%I:%M%p " capture-time)
       "")))
 
 ;; Track dailies file for repositioning after capture
@@ -849,8 +877,10 @@ Returns the position where the heading should be inserted."
       ;; No later heading found, insert at end of buffer
       nil)))
 
-(defvar aj/headings-with-statistics '("Capture" "Tasks")
-  "Headings that should have [/] statistics cookies.")
+(defvar aj/headings-with-statistics '("Tasks")
+  "Headings that should have [/] statistics cookies.
+Note: Capture is excluded because org-capture's file+head+olp
+cannot match headings with statistics cookies like '* Capture [/]'.")
 
 (defun aj/ensure-heading-exists (heading)
   "Ensure HEADING exists in the daily note at the correct position.

@@ -1347,8 +1347,10 @@ Called from `post-command-hook'. Works with all environments in
 (setq org-clock-sound aj/bell-sound)
 
 (use-package org-pomodoro
-  :straight t
-  :bind ("C-c o p" . org-pomodoro)
+  :straight (:host github :repo "abaj8494/org-pomodoro")
+  :bind (("C-c p s" . org-pomodoro)              ; start
+         ("C-c p p" . org-pomodoro-pause-or-resume) ; pause/resume
+         ("C-c p k" . org-pomodoro-kill))        ; kill (logs to LOGBOOK)
   :config
   (setq org-pomodoro-start-sound aj/bell-sound
         org-pomodoro-finished-sound aj/bell-sound

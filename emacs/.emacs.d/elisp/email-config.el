@@ -103,6 +103,9 @@
   (defun my/notmuch-search-toggle-mark ()
     "Toggle mark on current thread."
     (interactive)
+    (when my/email-syncing
+      (user-error "Sync in progress, please wait"))
+    (setq my/notmuch-last-tag-time (current-time))
     (let ((thread-id (notmuch-search-find-thread-id)))
       (if (member thread-id my/notmuch-marked-threads)
           (progn
@@ -151,6 +154,9 @@
     (lambda ()
       "Move to trash (marked or current)"
       (interactive)
+      (when my/email-syncing
+        (user-error "Sync in progress, please wait"))
+      (setq my/notmuch-last-tag-time (current-time))
       (if my/notmuch-marked-threads
           (my/notmuch-search-mark-action '("+trash" "-inbox" "-unread" "-marked"))
         (notmuch-search-tag '("+trash" "-inbox" "-unread"))
@@ -161,6 +167,9 @@
     (lambda ()
       "Archive (marked or current)"
       (interactive)
+      (when my/email-syncing
+        (user-error "Sync in progress, please wait"))
+      (setq my/notmuch-last-tag-time (current-time))
       (if (and my/notmuch-marked-threads (> (length my/notmuch-marked-threads) 0))
           (progn
             (message "Archiving %d marked..." (length my/notmuch-marked-threads))
@@ -173,6 +182,9 @@
     (lambda ()
       "Undelete if trashed, otherwise toggle unread"
       (interactive)
+      (when my/email-syncing
+        (user-error "Sync in progress, please wait"))
+      (setq my/notmuch-last-tag-time (current-time))
       (if (member "trash" (notmuch-search-get-tags))
           (progn
             (notmuch-search-tag '("-trash" "+inbox"))
@@ -186,6 +198,9 @@
     (lambda ()
       "Toggle flagged/starred"
       (interactive)
+      (when my/email-syncing
+        (user-error "Sync in progress, please wait"))
+      (setq my/notmuch-last-tag-time (current-time))
       (notmuch-search-tag
        (if (member "flagged" (notmuch-search-get-tags))
            '("-flagged")
@@ -563,8 +578,9 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
 (use-package smtpmail
   :straight (:type built-in)
   :config
-  (setq smtpmail-debug-info nil
-        smtpmail-debug-verb nil))
+  ;; Enable debug logging for SMTP
+  (setq smtpmail-debug-info t
+        smtpmail-debug-verb t))
 
 (use-package message
   :straight (:type built-in)
@@ -572,25 +588,152 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
   (setq message-send-mail-function 'message-smtpmail-send-it
         message-kill-buffer-on-exit t)
 
-  ;; Set SMTP based on From address
-  (defun my/set-smtp-from-address ()
-    "Set SMTP server based on From address."
-    (let ((from (message-fetch-field "from")))
-      (cond
-       ((string-match "aayushbajaj7@gmail.com" from)
-        (setq smtpmail-smtp-server "smtp.gmail.com"
-              smtpmail-smtp-service 465
-              smtpmail-stream-type 'ssl))
-       ((string-match "j@abaj.ai" from)
-        (setq smtpmail-smtp-server "mail.abaj.ai"
-              smtpmail-smtp-service 465
-              smtpmail-stream-type 'ssl))
-       ((string-match "z5362216@zmail.unsw.edu.au" from)
-        (setq smtpmail-smtp-server "smtp.office365.com"
-              smtpmail-smtp-service 587
-              smtpmail-stream-type 'starttls)))))
+  ;; ---------------------------------------------------------------------------
+  ;; Identity configuration
+  ;; ---------------------------------------------------------------------------
+  (defvar my/email-identities
+    '(("aayushbajaj7@gmail.com"
+       :name "Aayush Bajaj"
+       :smtp-server "smtp.gmail.com"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc nil)  ; Gmail saves sent automatically
+      ("j@abaj.ai"
+       :name "Aayush Bajaj"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc "abaj/Sent")
+      ("z5362216@zmail.unsw.edu.au"
+       :name "Aayush Bajaj"
+       :smtp-server "smtp.office365.com"
+       :smtp-port 587
+       :smtp-stream starttls
+       :fcc "unsw/Sent Items"))
+    "Email identity configurations.")
 
-  (add-hook 'message-send-hook 'my/set-smtp-from-address))
+  (defun my/email-get-identity (email)
+    "Get identity config for EMAIL address."
+    (assoc email my/email-identities))
+
+  (defun my/email-extract-address (from-field)
+    "Extract email address from FROM-FIELD string."
+    (when from-field
+      (if (string-match "<\\([^>]+\\)>" from-field)
+          (match-string 1 from-field)
+        (string-trim from-field))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Identity switching (C-c C-i in compose buffer)
+  ;; ---------------------------------------------------------------------------
+  (defun my/email-cycle-identity ()
+    "Cycle through email identities, updating From, Fcc, and SMTP settings."
+    (interactive)
+    (unless (derived-mode-p 'message-mode 'notmuch-message-mode)
+      (user-error "Not in a compose buffer"))
+    (let* ((current-from (message-fetch-field "from"))
+           (current-email (my/email-extract-address current-from))
+           (emails (mapcar #'car my/email-identities))
+           (current-idx (or (cl-position current-email emails :test #'string=) -1))
+           (next-idx (mod (1+ current-idx) (length emails)))
+           (next-email (nth next-idx emails))
+           (next-identity (my/email-get-identity next-email))
+           (next-name (plist-get (cdr next-identity) :name))
+           (next-fcc (plist-get (cdr next-identity) :fcc)))
+      ;; Update From header
+      (save-excursion
+        (message-goto-from)
+        (message-beginning-of-line)
+        (delete-region (point) (line-end-position))
+        (insert (format "%s <%s>" next-name next-email)))
+      ;; Update or add Fcc header
+      (save-excursion
+        (goto-char (point-min))
+        (if (re-search-forward "^Fcc: " nil t)
+            (progn
+              (message-beginning-of-line)
+              (delete-region (point) (line-end-position))
+              (if next-fcc
+                  (insert next-fcc)
+                (beginning-of-line)
+                (delete-region (point) (1+ (line-end-position)))))
+          ;; No Fcc header, add one if needed
+          (when next-fcc
+            (message-goto-from)
+            (end-of-line)
+            (insert (format "\nFcc: %s" next-fcc)))))
+      (message "Switched to: %s (SMTP: %s, Fcc: %s)"
+               next-email
+               (plist-get (cdr next-identity) :smtp-server)
+               (or next-fcc "none"))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; SMTP configuration with logging
+  ;; ---------------------------------------------------------------------------
+  (defun my/set-smtp-from-address ()
+    "Set SMTP server based on From address with logging."
+    (let* ((from (message-fetch-field "from"))
+           (email (my/email-extract-address from))
+           (identity (my/email-get-identity email)))
+      (if identity
+          (let ((server (plist-get (cdr identity) :smtp-server))
+                (port (plist-get (cdr identity) :smtp-port))
+                (stream (plist-get (cdr identity) :smtp-stream)))
+            (setq smtpmail-smtp-server server
+                  smtpmail-smtp-service port
+                  smtpmail-stream-type stream)
+            (message "SMTP configured: %s:%s (%s) for %s"
+                     server port stream email))
+        ;; Unknown identity - WARN
+        (message "WARNING: Unknown email identity '%s' - SMTP may fail!" email)
+        (unless (yes-or-no-p (format "Unknown identity '%s'. Send anyway? " email))
+          (user-error "Send cancelled - unknown identity")))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Pre-send validation
+  ;; ---------------------------------------------------------------------------
+  (defun my/email-validate-before-send ()
+    "Validate email configuration before sending."
+    (let* ((from (message-fetch-field "from"))
+           (to (message-fetch-field "to"))
+           (subject (message-fetch-field "subject"))
+           (email (my/email-extract-address from))
+           (identity (my/email-get-identity email))
+           (fcc (message-fetch-field "fcc")))
+      ;; Check for empty To
+      (unless (and to (not (string-empty-p (string-trim to))))
+        (user-error "No recipient (To) specified"))
+      ;; Check for empty subject
+      (when (or (not subject) (string-empty-p (string-trim subject)))
+        (unless (yes-or-no-p "Subject is empty. Send anyway? ")
+          (user-error "Send cancelled - no subject")))
+      ;; Check identity
+      (unless identity
+        (message "WARNING: Unknown identity '%s'" email))
+      ;; Check Fcc for non-Gmail
+      (when (and identity
+                 (plist-get (cdr identity) :fcc)
+                 (not fcc))
+        (message "WARNING: No Fcc header but identity expects one. Adding...")
+        (save-excursion
+          (message-goto-from)
+          (end-of-line)
+          (insert (format "\nFcc: %s" (plist-get (cdr identity) :fcc)))))
+      ;; Log what we're about to do
+      (message "Sending from %s via %s..."
+               email
+               (or (plist-get (cdr identity) :smtp-server) "UNKNOWN"))))
+
+  (add-hook 'message-send-hook 'my/email-validate-before-send)
+  (add-hook 'message-send-hook 'my/set-smtp-from-address)
+
+  ;; Bind identity cycling in message-mode
+  (add-hook 'message-mode-hook
+            (lambda ()
+              (local-set-key (kbd "C-c C-i") 'my/email-cycle-identity)))
+  (add-hook 'notmuch-message-mode-hook
+            (lambda ()
+              (local-set-key (kbd "C-c C-i") 'my/email-cycle-identity))))
 
 ;; =============================================================================
 ;; Auth
@@ -609,6 +752,32 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
 ;; =============================================================================
 ;; Email status tracking
 ;; =============================================================================
+(defvar my/email-new-mail-sound "/System/Library/Sounds/Glass.aiff"
+  "Sound file to play when new mail arrives. Set to nil to disable.")
+
+(defvar my/email-job-mail-sound "/System/Library/Sounds/Hero.aiff"
+  "Sound file to play when job-related mail arrives at jobs.abaj.ai.")
+
+(defun my/email-play-sound (sound-file)
+  "Play SOUND-FILE if it exists."
+  (when (and sound-file (file-exists-p sound-file))
+    (start-process "email-sound" nil "afplay" sound-file)))
+
+(defun my/email-check-new-job-mail ()
+  "Check if there are new jobsync-classified emails (excluding 'other') from the last 5 minutes."
+  (let ((count (string-to-number
+                (string-trim
+                 (shell-command-to-string
+                  "notmuch count 'tag:unread and date:5min.. and (tag:jobsync/job_application or tag:jobsync/job_response or tag:jobsync/interview or tag:jobsync/rejection or tag:jobsync/offer or tag:jobsync/follow_up)'")))))
+    (> count 0)))
+
+(defun my/email-play-new-mail-sound ()
+  "Play sound notification for new mail.
+Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
+  (if (my/email-check-new-job-mail)
+      (my/email-play-sound my/email-job-mail-sound)
+    (my/email-play-sound my/email-new-mail-sound)))
+
 (defvar my/email-sync-process nil
   "Current email sync process.")
 
@@ -617,6 +786,9 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
 
 (defvar my/notmuch-pending-changes nil
   "Non-nil if there are local tag changes not yet synced to remote.")
+
+(defvar my/notmuch-last-tag-time nil
+  "Time of last tag operation, used to prevent sync during active marking.")
 
 (defvar my/email-unread-counts nil
   "Alist of (account . unread-count).")
@@ -737,7 +909,9 @@ If QUIET is non-nil, don't show messages."
                    (ignore-errors (notmuch-refresh-this-buffer)))))
              ;; Notify
              (if (> new-mail 0)
-                 (message "Sync: +%d new (%d unread)" new-mail total)
+                 (progn
+                   (my/email-play-new-mail-sound)
+                   (message "Sync: +%d new (%d unread)" new-mail total))
                (unless quiet
                  (message "Sync done (%d unread)" total)))))
          (force-mode-line-update t))))))
@@ -754,14 +928,20 @@ If QUIET is non-nil, don't show messages."
                   'notmuch-hello-mode 'notmuch-tree-mode))
 
 (defun my/email-auto-sync-maybe ()
-  "Sync email based on context - 1 min in notmuch, 30 min otherwise."
+  "Sync email based on context - 1 min in notmuch, 30 min otherwise.
+Skips sync if user was marking emails in the last 10 seconds."
   (let* ((now (current-time))
          (elapsed (if my/email-last-sync-time
                       (float-time (time-subtract now my/email-last-sync-time))
                     most-positive-fixnum))
+         (tag-elapsed (if my/notmuch-last-tag-time
+                          (float-time (time-subtract now my/notmuch-last-tag-time))
+                        most-positive-fixnum))
          (in-notmuch (my/email-in-notmuch-p))
          (interval (if in-notmuch 60 1800))) ; 1 min or 30 min
-    (when (>= elapsed interval)
+    ;; Skip if user was actively marking in last 10 seconds
+    (when (and (>= elapsed interval)
+               (>= tag-elapsed 10))
       (email-sync-all t))))
 
 (defun my/email-start-auto-sync ()
