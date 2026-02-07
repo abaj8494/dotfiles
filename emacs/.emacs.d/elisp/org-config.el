@@ -52,6 +52,92 @@
 
 ;; Jupyter-python mode mapping
 (add-to-list 'org-src-lang-modes '("jupyter-python" . python))
+(add-to-list 'org-src-lang-modes '("chess" . latex))
+
+;; ---------------------------------------------------------------------------
+;; Chess babel blocks - render LaTeX chess diagrams to images
+;; ---------------------------------------------------------------------------
+;; Usage:
+;;   #+NAME: fig:opening
+;;   #+CAPTION: King's Indian Opening
+;;   #+BEGIN_SRC chess :exports results :file opening.png
+;;   \setchessboard{boardfontsize=0.8cm}
+;;   \chessboard[showmover=false]
+;;   #+END_SRC
+;;
+;; Execute with C-c C-c to generate the image. ox-hugo exports the result.
+
+(defvar aj/chess-latex-preamble
+  "\\usepackage[LSBC4,T1]{fontenc}
+\\usepackage{xskak}
+\\usepackage{chessboard}
+\\setboardfontencoding{LSBC4}
+"
+  "LaTeX preamble for chess diagrams.")
+
+(defvar aj/chess-latex-docclass
+  "\\documentclass[varwidth,border=2pt]{standalone}"
+  "Document class for chess diagrams. varwidth allows line breaks.")
+
+;; Default header args: result is a file link
+(defvar org-babel-default-header-args:chess
+  '((:results . "file link replace")
+    (:exports . "results"))
+  "Default header arguments for chess blocks.")
+
+(defun org-babel-execute:chess (body params)
+  "Execute a chess diagram block, rendering LaTeX to an image."
+  (let* ((out-file (or (cdr (assq :file params))
+                       (error "Chess block requires :file parameter")))
+         (out-file-abs (expand-file-name out-file default-directory))
+         (tex-content (concat
+                       aj/chess-latex-docclass "\n"
+                       aj/chess-latex-preamble
+                       "\\begin{document}\n"
+                       body
+                       "\n\\end{document}\n"))
+         (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (tex-file (make-temp-file "chess-babel-" nil ".tex"))
+         (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
+         (is-svg (string-suffix-p ".svg" out-file))
+         (result nil))
+    ;; Ensure directories exist
+    (unless (file-directory-p temporary-file-directory)
+      (make-directory temporary-file-directory t))
+    (unless (file-directory-p (file-name-directory out-file-abs))
+      (make-directory (file-name-directory out-file-abs) t))
+    ;; Write tex file
+    (with-temp-file tex-file
+      (insert tex-content))
+    ;; Compile LaTeX
+    (let ((latex-exit (call-process "lualatex" nil nil nil
+                                    "-interaction=nonstopmode"
+                                    (format "-output-directory=%s" temporary-file-directory)
+                                    tex-file)))
+      (if (/= latex-exit 0)
+          (error "LaTeX compilation failed. Check %s"
+                 (concat (file-name-sans-extension tex-file) ".log"))
+        ;; Convert to image
+        (let ((convert-exit
+               (if is-svg
+                   (call-process "inkscape" nil nil nil
+                                 "--pdf-poppler"
+                                 "--export-text-to-path"
+                                 "--export-plain-svg"
+                                 "--export-area-drawing"
+                                 (format "--export-filename=%s" out-file-abs)
+                                 pdf-file)
+                 (call-process "convert" nil nil nil
+                               "-density" "300"
+                               "-trim" "-antialias"
+                               pdf-file
+                               "-quality" "100"
+                               out-file-abs))))
+          (if (/= convert-exit 0)
+              (error "Image conversion failed")
+            (setq result out-file)))))
+    ;; Return the file path for org-babel to use
+    result))
 
 ;; ---------------------------------------------------------------------------
 ;; Org Core Settings
@@ -208,11 +294,11 @@ Shows current date for reference."
 ;; ---------------------------------------------------------------------------
 
 (with-eval-after-load 'ox-latex
-  ;; Override default article to support 5 heading levels (paragraph, subparagraph)
+  ;; Override default article to support 6 heading levels with custom formatting
   ;; Use Menlo for monospace to support Unicode box-drawing characters
   (add-to-list 'org-latex-classes
                '("article"
-                 "\\documentclass[11pt]{article}
+                 "\\documentclass[11pt,a4paper]{article}
 [NO-DEFAULT-PACKAGES]
 \\usepackage{amsmath}
 \\usepackage{amssymb}
@@ -225,7 +311,25 @@ Shows current date for reference."
 \\usepackage[normalem]{ulem}
 \\usepackage{capt-of}
 \\usepackage[dvipsnames]{xcolor}
-\\usepackage{hyperref}"
+\\usepackage{hyperref}
+
+% Paragraph heading formatting (for deep headline levels)
+\\usepackage{titlesec}
+\\titleformat{\\paragraph}{\\normalfont\\normalsize\\bfseries}{\\theparagraph}{1em}{}
+\\titlespacing*{\\paragraph}{0pt}{2.5ex plus 1ex minus .2ex}{1ex plus .2ex}
+\\setcounter{secnumdepth}{6}
+\\setcounter{tocdepth}{6}
+
+% Paragraph spacing (no indent, vertical skip between paragraphs)
+\\usepackage[skip=10pt, indent=0pt]{parskip}
+
+% Page margins
+\\usepackage[top=20mm,bottom=20mm,left=20mm,right=20mm]{geometry}
+
+% List formatting
+\\usepackage{enumitem}
+\\setlist[description]{leftmargin=!,labelwidth=1.5em,itemindent=0pt}
+\\setlist[itemize]{leftmargin=1.5em,topsep=0pt}"
                  ("\\section{%s}" . "\\section*{%s}")
                  ("\\subsection{%s}" . "\\subsection*{%s}")
                  ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
@@ -273,12 +377,12 @@ Shows current date for reference."
 (add-to-list 'org-preview-latex-process-alist
              '(luamagick
                :programs ("lualatex" "magick")
-               :description "pdf > png (3x scale)"
+               :description "pdf > png (2x scale)"
                :message "Requires lualatex and imagemagick."
                :use-xcolor t
                :image-input-type "pdf"
                :image-output-type "png"
-               :image-size-adjust (3.0 . 3.0)
+               :image-size-adjust (2.0 . 2.0)
                :latex-compiler
                ("lualatex -interaction nonstopmode -output-directory %o %f")
                :image-converter
@@ -692,6 +796,112 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
 (defalias 'aj/tikz-clear-previews 'aj/latex-clear-previews)
 
 ;; ---------------------------------------------------------------------------
+;; Chess Diagram Preview (using buffer #+LATEX_HEADER directives)
+;; ---------------------------------------------------------------------------
+
+(defun aj/latex--extract-buffer-headers ()
+  "Extract all #+LATEX_HEADER lines from the buffer."
+  (let ((headers ""))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^#\\+LATEX_HEADER:\\s-*\\(.+\\)$" nil t)
+        (setq headers (concat headers (match-string 1) "\n"))))
+    headers))
+
+(defun aj/chess-preview-at-point ()
+  "Toggle chessboard preview at point using buffer's #+LATEX_HEADER directives.
+If preview exists, remove it. Otherwise, render it."
+  (interactive)
+  (let* ((block-bounds (aj/latex--find-export-block-at-point)))
+    (if (not block-bounds)
+        (message "No export block found at point")
+      (let* ((beg (car block-bounds))
+             (end (cdr block-bounds))
+             ;; Check for existing overlay
+             (existing (cl-some (lambda (ov) (overlay-get ov 'aj-latex-preview))
+                                (overlays-in beg end))))
+        (if existing
+            ;; Toggle off - remove overlay
+            (progn
+              (dolist (ov (overlays-in beg end))
+                (when (overlay-get ov 'aj-latex-preview)
+                  (delete-overlay ov)))
+              (message "Chess preview removed"))
+          ;; Toggle on - render preview
+          (let ((content (buffer-substring-no-properties beg end))
+                (headers (aj/latex--extract-buffer-headers)))
+            (aj/latex--render-chess-preview content beg end headers)))))))
+
+(defun aj/latex--find-export-block-at-point ()
+  "Find the LaTeX export block at point. Returns (BEG . END) of content."
+  (save-excursion
+    (let ((pos (point))
+          beg end)
+      ;; Find #+BEGIN_EXPORT latex
+      (when (re-search-backward "^#\\+BEGIN_EXPORT\\s-+latex" nil t)
+        (forward-line 1)
+        (setq beg (point))
+        ;; Find #+END_EXPORT
+        (when (re-search-forward "^#\\+END_EXPORT" nil t)
+          (forward-line 0)
+          (setq end (point))
+          (when (and (<= beg pos) (<= pos end))
+            (cons beg end)))))))
+
+(defun aj/latex--render-chess-preview (content beg end headers)
+  "Render chess CONTENT with HEADERS as preamble."
+  (let* ((temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (tex-file (make-temp-file "chess-" nil ".tex"))
+         (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
+         (log-file (concat (file-name-sans-extension tex-file) ".log"))
+         (img-file (concat (file-name-sans-extension tex-file)
+                           (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
+         (full-content (concat
+                        "\\documentclass[border=2pt]{standalone}\n"
+                        headers
+                        "\\begin{document}\n"
+                        content
+                        "\n\\end{document}\n"))
+         (buf (current-buffer)))
+    (unless (file-directory-p temporary-file-directory)
+      (make-directory temporary-file-directory t))
+    (with-temp-file tex-file
+      (insert full-content))
+    (message "Rendering chess diagram...")
+    (let* ((default-directory temporary-file-directory)
+           (latex-cmd (format "lualatex -interaction=nonstopmode -output-directory=%s %s"
+                              (shell-quote-argument temporary-file-directory)
+                              (shell-quote-argument tex-file)))
+           (convert-cmd (if (eq org-preview-latex-default-process 'ajlua)
+                            (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
+                                    (shell-quote-argument img-file)
+                                    (shell-quote-argument pdf-file))
+                          (format "convert -density 300 -trim -antialias %s -quality 100 %s"
+                                  (shell-quote-argument pdf-file)
+                                  (shell-quote-argument img-file)))))
+      (set-process-sentinel
+       (start-process-shell-command "chess-preview" nil latex-cmd)
+       (lambda (proc _event)
+         (when (eq (process-status proc) 'exit)
+           (if (/= (process-exit-status proc) 0)
+               (aj/latex--show-error tex-file log-file "chessboard")
+             (set-process-sentinel
+              (start-process-shell-command "chess-convert" nil convert-cmd)
+              (lambda (proc2 _event2)
+                (when (eq (process-status proc2) 'exit)
+                  (if (/= (process-exit-status proc2) 0)
+                      (message "Chess image conversion failed")
+                    (when (and (file-exists-p img-file) (buffer-live-p buf))
+                      (with-current-buffer buf
+                        (aj/latex--create-overlay beg end img-file))
+                      (message "Chess preview complete")))))))))))))
+
+;; Structure templates: <el + TAB, <ch + TAB
+(with-eval-after-load 'org
+  (add-to-list 'org-structure-template-alist '("el" . "export latex"))
+  (add-to-list 'org-structure-template-alist '("ch" . "src chess :file ")))
+
+;; ---------------------------------------------------------------------------
 ;; Comprehensive LaTeX Preview (standard fragments + export block environments)
 ;; ---------------------------------------------------------------------------
 
@@ -712,31 +922,38 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
 
 (defun aj/latex--find-all-environments-in-buffer ()
   "Find all LaTeX environments in export blocks throughout the buffer.
-Returns a list of (ENV-NAME BEG END) for each environment found."
+Returns a list of (ENV-NAME BEG END EXTRA-PREAMBLE) for each environment found.
+Also detects chess blocks (export blocks containing \\chessboard commands)."
   (let ((envs nil)
-        (case-fold-search nil))
+        (case-fold-search nil)
+        (buffer-headers (aj/latex--extract-buffer-headers)))
     (save-excursion
       (goto-char (point-min))
       ;; Find all export blocks and special blocks
-      (while (re-search-forward "^#\\+BEGIN_EXPORT\\|^#\\+begin_" nil t)
-        (let ((block-start (point))
-              (block-end (save-excursion
-                           (when (re-search-forward "^#\\+END_EXPORT\\|^#\\+end_" nil t)
-                             (match-beginning 0)))))
+      (while (re-search-forward "^#\\+BEGIN_EXPORT\\s-+latex" nil t)
+        (let* ((block-start (save-excursion (forward-line 1) (point)))
+               (block-end (save-excursion
+                            (when (re-search-forward "^#\\+END_EXPORT" nil t)
+                              (forward-line 0)
+                              (point)))))
           (when block-end
-            ;; Search within this block for environments
-            (dolist (env-spec aj/latex-preview-environments)
-              (let ((env-name (car env-spec)))
-                (save-excursion
-                  (goto-char block-start)
-                  (while (re-search-forward
-                          (format "\\\\begin{%s}" (regexp-quote env-name))
-                          block-end t)
-                    (let ((beg (match-beginning 0)))
-                      (when (re-search-forward
-                             (format "\\\\end{%s}" (regexp-quote env-name))
-                             block-end t)
-                        (push (list env-name beg (point)) envs)))))))
+            (let ((block-content (buffer-substring-no-properties block-start block-end)))
+              ;; Check for chess content first (uses buffer headers)
+              (if (string-match "\\\\chessboard\\|\\\\newchessgame\\|\\\\setchessboard" block-content)
+                  (push (list "chess" block-start block-end buffer-headers) envs)
+                ;; Otherwise search for standard environments
+                (dolist (env-spec aj/latex-preview-environments)
+                  (let ((env-name (car env-spec)))
+                    (save-excursion
+                      (goto-char block-start)
+                      (while (re-search-forward
+                              (format "\\\\begin{%s}" (regexp-quote env-name))
+                              block-end t)
+                        (let ((beg (match-beginning 0)))
+                          (when (re-search-forward
+                                 (format "\\\\end{%s}" (regexp-quote env-name))
+                                 block-end t)
+                            (push (list env-name beg (point) nil) envs)))))))))
             (goto-char block-end)))))
     (nreverse envs)))
 
@@ -758,15 +975,19 @@ Returns a list of (ENV-NAME BEG END) for each environment found."
     (let* ((env-info (pop aj/latex-env-preview--queue))
            (env-name (nth 0 env-info))
            (beg (nth 1 env-info))
-           (end (nth 2 env-info)))
+           (end (nth 2 env-info))
+           (stored-preamble (nth 3 env-info)))  ; For chess, this contains buffer headers
       (when (and beg end (buffer-live-p aj/latex-env-preview--buffer))
         (cl-incf aj/latex-env-preview--active)
         (with-current-buffer aj/latex-env-preview--buffer
-          (let* ((block-start (save-excursion
-                                (goto-char beg)
-                                (aj/latex--find-block-start)))
-                 (extra-preamble (aj/latex--extract-preamble-commands block-start beg))
-                 (content (buffer-substring-no-properties beg end)))
+          (let* ((content (buffer-substring-no-properties beg end))
+                 ;; For chess, use stored buffer headers; otherwise extract preamble commands
+                 (extra-preamble (if (string= env-name "chess")
+                                     stored-preamble
+                                   (let ((block-start (save-excursion
+                                                        (goto-char beg)
+                                                        (aj/latex--find-block-start))))
+                                     (aj/latex--extract-preamble-commands block-start beg)))))
             ;; Skip if already has overlay
             (if (cl-some (lambda (ov) (overlay-get ov 'aj-latex-preview))
                          (overlays-in beg end))
@@ -778,23 +999,32 @@ Returns a list of (ENV-NAME BEG END) for each environment found."
                env-name content beg end extra-preamble))))))))
 
 (defun aj/latex--render-preview-queued (env-name content beg end &optional extra-preamble)
-  "Like `aj/latex--render-preview' but updates queue on completion."
-  (let* ((env-config (cdr (assoc env-name aj/latex-preview-environments)))
-         (docclass (or (plist-get env-config :docclass)
-                       "\\documentclass[border=2pt]{standalone}"))
-         (packages (or (plist-get env-config :packages) '()))
+  "Like `aj/latex--render-preview' but updates queue on completion.
+For chess blocks, EXTRA-PREAMBLE contains buffer #+LATEX_HEADER lines to use as packages."
+  (let* ((is-chess (string= env-name "chess"))
+         (env-config (unless is-chess (cdr (assoc env-name aj/latex-preview-environments))))
+         (docclass (if is-chess
+                       "\\documentclass[border=2pt]{standalone}"
+                     (or (plist-get env-config :docclass)
+                         "\\documentclass[border=2pt]{standalone}")))
+         (packages (unless is-chess (or (plist-get env-config :packages) '())))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
          (tex-file (make-temp-file "latex-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
                            (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
-         (preamble (concat
-                    docclass "\n"
-                    (mapconcat #'identity packages "\n") "\n"
-                    "\\usepackage{xcolor}\n"
-                    (or extra-preamble "")
-                    "\\begin{document}\n"))
+         (preamble (if is-chess
+                       ;; Chess: use buffer headers directly
+                       (concat docclass "\n"
+                               (or extra-preamble "")
+                               "\\begin{document}\n")
+                     ;; Standard: use environment packages + extra preamble
+                     (concat docclass "\n"
+                             (mapconcat #'identity packages "\n") "\n"
+                             "\\usepackage{xcolor}\n"
+                             (or extra-preamble "")
+                             "\\begin{document}\n")))
          (postamble "\n\\end{document}\n")
          (full-content (concat preamble content postamble))
          (buf aj/latex-env-preview--buffer))
@@ -1086,6 +1316,8 @@ Output is always SVG."
   (define-key org-mode-map (kbd "C-c C-x T") #'aj/tikz-clear-previews)
   ;; tikzjax preview at point (WebAssembly - site fidelity)
   (define-key org-mode-map (kbd "C-c C-x j") #'aj/tikzjax-preview-at-point)
+  ;; Chess preview at point (uses #+LATEX_HEADER directives)
+  (define-key org-mode-map (kbd "C-c C-x c") #'aj/chess-preview-at-point)
   ;; Region preview (refs work!) - select region then press this
   (define-key org-mode-map (kbd "C-c C-x r") #'aj/latex-preview-region)
   (define-key org-mode-map (kbd "C-c C-x R") #'aj/latex-clear-region-previews))
@@ -1151,6 +1383,10 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
 ;; LaTeX Export Settings
 ;; ---------------------------------------------------------------------------
 
+;; Global export options
+(setq org-export-with-smart-quotes t)  ; #+OPTIONS: ':t
+(setq org-export-headline-levels 6)    ; #+OPTIONS: H:6
+
 ;; Use latexmk for automatic reference/bibliography resolution
 (setq org-latex-pdf-process
       '("latexmk -lualatex -shell-escape -interaction=nonstopmode %f"))
@@ -1158,9 +1394,30 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
 ;; Note: xcolor, amssymb, and fontspec are loaded in the article class definition
 ;; to ensure proper ordering and Unicode monospace font support (Menlo)
 
-;; Configure hyperref options with custom DeepNavy link color
-(setq org-latex-hyperref-template
-      "\\definecolor{DeepNavy}{HTML}{00007B}
+;; Configure hyperref link colors via #+LATEX_LINKCOLOR: directive
+;; Usage: #+LATEX_LINKCOLOR: red-violet  (default)
+;;        #+LATEX_LINKCOLOR: deep-navy
+
+(defvar aj/latex-link-color-default 'red-violet
+  "Default link color for LaTeX exports when not specified in file.")
+
+(defun aj/latex--get-file-link-color ()
+  "Get link color from #+LATEX_LINKCOLOR directive in current buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward "^#\\+LATEX_LINKCOLOR:\\s-*\\(\\S-+\\)" nil t)
+        (let ((color (downcase (match-string 1))))
+          (cond
+           ((member color '("deep-navy" "deepnavy" "navy")) 'deep-navy)
+           ((member color '("red-violet" "redviolet" "violet")) 'red-violet)
+           (t aj/latex-link-color-default)))
+      aj/latex-link-color-default)))
+
+(defun aj/latex--hyperref-template-for-color (color)
+  "Return hyperref template string for COLOR.
+Always defines DeepNavy to ensure it's available for TOC on subsequent runs."
+  (let ((color-name (if (eq color 'deep-navy) "DeepNavy" "RedViolet")))
+    (concat "\\definecolor{DeepNavy}{HTML}{00007B}
 \\hypersetup{
  pdfauthor={%a},
  pdftitle={%t},
@@ -1169,9 +1426,22 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
  pdfcreator={%c},
  pdflang={%L},
  colorlinks=true,
- linkcolor=DeepNavy,
- urlcolor=RedViolet
-}")
+ linkcolor=" color-name ",
+ urlcolor=" color-name "
+}")))
+
+(defun aj/latex--set-link-color-before-export (backend)
+  "Set hyperref template based on #+LATEX_LINKCOLOR before export.
+Only applies to LaTeX-based backends."
+  (when (org-export-derived-backend-p backend 'latex)
+    (setq org-latex-hyperref-template
+          (aj/latex--hyperref-template-for-color (aj/latex--get-file-link-color)))))
+
+(add-hook 'org-export-before-processing-hook #'aj/latex--set-link-color-before-export)
+
+;; Initialize with default
+(setq org-latex-hyperref-template
+      (aj/latex--hyperref-template-for-color aj/latex-link-color-default))
 
 ;; Open exported PDFs in Chrome (new tab in existing window)
 (defun aj/open-pdf-in-chrome (file)
@@ -1355,7 +1625,10 @@ Called from `post-command-hook'. Works with all environments in
   (setq org-pomodoro-start-sound aj/bell-sound
         org-pomodoro-finished-sound aj/bell-sound
         org-pomodoro-short-break-sound aj/bell-sound
-        org-pomodoro-long-break-sound aj/bell-sound))
+        org-pomodoro-long-break-sound aj/bell-sound
+        org-pomodoro-tts-backend 'edge-tts
+        org-pomodoro-tts-enabled t
+        org-pomodoro-skip-name-prompt t))
 
 (provide 'org-config)
 ;;; org-config.el ends here

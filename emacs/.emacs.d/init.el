@@ -45,6 +45,9 @@
 ;; Load ox-hugo keybindings
 (require 'ox-hugo-bindings)
 
+;; Load custom keybindings (C-c Y prefix)
+(require 'aj-bindings)
+
 ;; Load email configuration (mu4e with mbsync)
 (require 'email-config)
 

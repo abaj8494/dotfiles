@@ -447,6 +447,8 @@ With prefix ARG, search from current directory instead of project root."
 
   ;; Add extra bindings to dailies map
   (define-key org-roam-dailies-map (kbd "Y") #'org-roam-dailies-capture-yesterday)
+  (define-key org-roam-dailies-map (kbd "c") #'org-roam-dailies-capture-date)
+  (define-key org-roam-dailies-map (kbd "g") #'org-roam-dailies-goto-date)
   (define-key org-roam-dailies-map (kbd "T") #'org-roam-dailies-capture-tomorrow)
   (define-key org-roam-dailies-map (kbd "F") #'aj/org-roam-dailies-goto-next-day)
   (define-key org-roam-dailies-map (kbd "B") #'aj/org-roam-dailies-goto-previous-day)
@@ -471,7 +473,8 @@ With prefix ARG, search from current directory instead of project root."
            "** %(aj/dailies-entry-prefix)%?"
            :target (file+head+olp "%<%Y-%m-%d>.org"
                                   "#+title: %<%Y-%m-%d> | %<%A>\n#+EXPORT_FILE_NAME: %<%Y-%m-%d>\n"
-                                  ("Capture")))))
+                                  ("Capture"))
+           :empty-lines-before 1)))
 
   ;; If you're using a vertical completion framework, you might want a more informative completion interface
   (org-roam-db-autosync-mode)
@@ -719,10 +722,19 @@ Matches regardless of TODO state (TODO/DONE/WAIT/CANCEL) or priority."
   (when (string-match "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
     (match-string 1 line)))
 
+(defun aj/extract-heading-order (tasks)
+  "Extract ordered list of heading names from TASKS string."
+  (let ((headings nil))
+    (dolist (line (split-string tasks "\n"))
+      (when (string-match "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
+        (push (match-string 1 line) headings)))
+    (nreverse headings)))
+
 (defun aj/refresh-daily-recurring ()
   "Refresh recurring tasks in the current daily note.
 Parses date from #+title: line, fetches all recurring templates.
-Only ADDS new tasks - does not replace or modify existing ones."
+Only ADDS new tasks - does not replace or modify existing ones.
+Maintains template order even when some headings already exist."
   (interactive)
   (save-excursion
     (goto-char (point-min))
@@ -739,6 +751,8 @@ Only ADDS new tasks - does not replace or modify existing ones."
                (added-count 0))
           (if (string-empty-p tasks)
               (message "No recurring tasks for %s" date-str)
+            ;; Populate heading order for correct insertion positions
+            (setq aj/recurring-heading-order (aj/extract-heading-order tasks))
             ;; Ensure Recurring heading exists at correct position
             (aj/ensure-heading-exists "Recurring")
             ;; Parse each task block and only add if not already present
@@ -771,19 +785,52 @@ Only ADDS new tasks - does not replace or modify existing ones."
               (message "All recurring tasks already present for %s" date-str))))
       (message "Not a daily note (no date in title)"))))
 
-(defun aj/insert-recurring-block (heading content-lines)
-  "Insert HEADING and CONTENT-LINES at end of * Recurring section."
+(defvar aj/recurring-heading-order nil
+  "Ordered list of recurring heading names, populated during refresh.")
+
+(defun aj/find-recurring-insert-point (heading-name)
+  "Find correct insertion point for HEADING-NAME under * Recurring.
+Uses `aj/recurring-heading-order' to maintain template order."
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^\\* Recurring\\b" nil t)
-      (let ((section-end (save-excursion
-                           (forward-line 1)
-                           (if (re-search-forward "^\\* " nil t)
-                               (1- (line-beginning-position))
-                             (point-max)))))
-        (goto-char section-end)
+      (let* ((section-start (line-end-position))
+             (section-end (save-excursion
+                            (forward-line 1)
+                            (if (re-search-forward "^\\* " nil t)
+                                (line-beginning-position)
+                              (point-max))))
+             (pos (cl-position heading-name aj/recurring-heading-order :test 'equal))
+             (later-headings (when pos (nthcdr (1+ pos) aj/recurring-heading-order))))
+        ;; Find first existing heading that should come AFTER this one
+        (catch 'found
+          (dolist (next-heading later-headings)
+            (goto-char section-start)
+            (when (re-search-forward
+                   (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\b"
+                           (regexp-quote next-heading))
+                   section-end t)
+              (throw 'found (line-beginning-position))))
+          ;; No later heading found, insert at end of section
+          section-end)))))
+
+(defun aj/insert-recurring-block (heading content-lines)
+  "Insert HEADING and CONTENT-LINES at correct position under * Recurring.
+Maintains template order by inserting before later headings.
+Ensures exactly one blank line before the heading."
+  (let* ((heading-name (aj/extract-heading-name heading))
+         (insert-point (aj/find-recurring-insert-point heading-name)))
+    (when insert-point
+      (save-excursion
+        (goto-char insert-point)
+        ;; Ensure we're at beginning of line
         (unless (bolp) (insert "\n"))
-        (insert "\n" heading "\n")
+        ;; Check if previous line is blank; if not, add one
+        (when (save-excursion
+                (forward-line -1)
+                (not (looking-at-p "^[ \t]*$")))
+          (insert "\n"))
+        (insert heading "\n")
         (dolist (line content-lines)
           (unless (string-empty-p line)
             (insert line "\n")))))))
@@ -826,11 +873,8 @@ Entries are placed under * Capture by the capture template."
             (aj/insert-week-transclude)))
         ;; 2. Ensure all headings exist in correct order (with statistics cookies)
         (aj/ensure-daily-structure)
-        ;; 3. Update statistics cookies on Capture heading after capture
-        (save-excursion
-          (goto-char (point-min))
-          (when (re-search-forward "^\\* Capture\\b" nil t)
-            (org-update-statistics-cookies nil)))
+        ;; 3. Update statistics cookies (stripped before capture, restored here)
+        (org-update-statistics-cookies t)
         ;; 4. Refresh recurring tasks
         (aj/refresh-daily-recurring)
         ;; 5. Insert calendar content
@@ -851,8 +895,6 @@ Entries are placed under * Capture by the capture template."
         (when (and (fboundp 'org-transclusion-mode)
                    (not (bound-and-true-p org-transclusion-mode)))
           (org-transclusion-mode 1))
-        ;; Fold the transcluded Week heading
-        (aj/fold-week-heading)
         (save-buffer)))))
 
 ;; Desired order of level-1 headings in daily notes
@@ -877,10 +919,8 @@ Returns the position where the heading should be inserted."
       ;; No later heading found, insert at end of buffer
       nil)))
 
-(defvar aj/headings-with-statistics '("Tasks")
-  "Headings that should have [/] statistics cookies.
-Note: Capture is excluded because org-capture's file+head+olp
-cannot match headings with statistics cookies like '* Capture [/]'.")
+(defvar aj/headings-with-statistics '("Capture" "Tasks")
+  "Headings that should have [/] statistics cookies.")
 
 (defun aj/ensure-heading-exists (heading)
   "Ensure HEADING exists in the daily note at the correct position.
@@ -927,7 +967,56 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
         (aj/ensure-heading-exists heading))
       ;; Ensure statistics cookies on headings that need them
       (dolist (heading aj/headings-with-statistics)
-        (aj/ensure-heading-has-statistics-cookie heading)))))
+        (aj/ensure-heading-has-statistics-cookie heading))
+      ;; Ensure ----- separators between level-1 headings
+      (aj/ensure-heading-separators))))
+
+(defun aj/ensure-heading-separators ()
+  "Ensure ----- separators immediately before each level-1 heading except the first.
+If a separator was displaced (e.g. by a capture inserting after it),
+removes the stale separator and inserts a fresh one.  User-placed
+separators earlier in the section are preserved."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (let ((headings nil))
+        ;; Collect all level-1 heading positions
+        (while (re-search-forward "^\\* " nil t)
+          (push (line-beginning-position) headings))
+        (setq headings (nreverse headings))
+        (let ((len (length headings)))
+          (when (>= len 2)
+            ;; Process from bottom to top so position shifts don't affect
+            ;; headings we haven't processed yet
+            (dotimes (j (1- len))
+              (let* ((i (- len 1 j))
+                     (heading-bol (nth i headings))
+                     (section-start (save-excursion
+                                      (goto-char (nth (1- i) headings))
+                                      (forward-line 1) (point))))
+                ;; Check if ----- is right above heading (skip blank lines)
+                (goto-char heading-bol)
+                (forward-line -1)
+                (while (and (> (point) section-start)
+                            (looking-at-p "^[ \t]*$"))
+                  (forward-line -1))
+                (unless (looking-at-p "^-----$")
+                  ;; Remove the LAST ----- in this section (the displaced
+                  ;; structural separator); earlier user-placed ones stay
+                  (let ((last-beg nil) (last-end nil))
+                    (goto-char section-start)
+                    (while (re-search-forward "^-----$" heading-bol t)
+                      (setq last-beg (line-beginning-position)
+                            last-end (min (1+ (line-end-position)) (point-max))))
+                    (when last-beg
+                      (delete-region last-beg last-end)
+                      (setq heading-bol (- heading-bol (- last-end last-beg)))))
+                  ;; Insert fresh separator before heading
+                  (goto-char heading-bol)
+                  (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                    (insert "\n"))
+                  (insert "-----\n\n"))))))))))
 
 (defun aj/fold-week-heading ()
   "Fold the Week heading if present.
@@ -1160,11 +1249,27 @@ For all files: enables transclusion and folds Week heading."
     (when (and (fboundp 'org-transclusion-mode)
                (not (bound-and-true-p org-transclusion-mode)))
       (org-transclusion-mode 1))
-    ;; Fold the transcluded Week heading
-    (aj/fold-week-heading)
     ;; Save if we did setup
     (when (buffer-modified-p)
       (save-buffer))))
+
+;; Strip statistics cookies from olp headings in daily files before org-roam
+;; does heading matching, so that "* Capture [4/4]" still matches olp "Capture".
+;; Cookies are restored by aj/dailies-reposition-entry after capture finalize.
+(defun aj/strip-cookies-for-olp (orig-fn olp)
+  "Around advice: strip statistics cookies in daily files before OLP matching."
+  (when (and buffer-file-name
+             (string-match-p "/daily/" buffer-file-name))
+    (save-excursion
+      (dolist (heading olp)
+        (goto-char (point-min))
+        (let ((re (format "^\\(\\*+ %s\\) \\[[0-9]*[/%%][0-9]*\\]"
+                          (regexp-quote heading))))
+          (when (re-search-forward re nil t)
+            (replace-match (match-string 1)))))))
+  (funcall orig-fn olp))
+
+(advice-add 'org-roam-capture--find-or-create-olp :around #'aj/strip-cookies-for-olp)
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
 (add-hook 'org-capture-after-finalize-hook #'aj/dailies-reposition-entry)
@@ -1260,8 +1365,7 @@ Preserves transclusion state in current buffer."
                (buffer-live-p source-buffer))
       (with-current-buffer source-buffer
         (unless (bound-and-true-p org-transclusion-mode)
-          (org-transclusion-mode 1))
-        (aj/fold-week-heading)))))
+          (org-transclusion-mode 1))))))
 
 (add-hook 'org-after-todo-state-change-hook
           (lambda ()
@@ -1596,6 +1700,65 @@ Outputs an org table with links to daily files.
 (defvar aj/weather-archive-local (expand-file-name "~/.cache/weather-archive/")
   "Local cache directory for weather archive.")
 
+(defvar aj/weather-location-cache nil
+  "Cached location data: (timestamp lat lon name).")
+
+(defvar aj/weather-location-cache-duration 3600
+  "How long to cache location data in seconds (default 1 hour).")
+
+(defvar aj/weather-location-file (expand-file-name "~/.weather-location")
+  "Optional file to manually set weather location.
+Format: LAT LON NAME (e.g., -33.8148 151.1029 West Ryde)")
+
+(defun aj/get-location-from-file ()
+  "Read location from ~/.weather-location if it exists.
+Returns (lat lon name) or nil."
+  (when (file-exists-p aj/weather-location-file)
+    (with-temp-buffer
+      (insert-file-contents aj/weather-location-file)
+      (let ((content (string-trim (buffer-string))))
+        (when (string-match "^\\(-?[0-9.]+\\)\\s-+\\(-?[0-9.]+\\)\\s-+\\(.+\\)$" content)
+          (list (string-to-number (match-string 1 content))
+                (string-to-number (match-string 2 content))
+                (string-trim (match-string 3 content))))))))
+
+(defun aj/get-location-from-ip ()
+  "Get current location from IP geolocation (ip-api.com).
+Returns (lat lon name) or nil on failure."
+  (condition-case err
+      (let ((url-request-method "GET")
+            (url-show-status nil))
+        (with-current-buffer
+            (url-retrieve-synchronously "http://ip-api.com/json/?fields=lat,lon,city,regionName" t t 5)
+          (goto-char (point-min))
+          (when (re-search-forward "\n\n" nil t)
+            (let* ((json-object-type 'alist)
+                   (data (json-read))
+                   (lat (alist-get 'lat data))
+                   (lon (alist-get 'lon data))
+                   (city (alist-get 'city data)))
+              (when (and lat lon)
+                (list lat lon (or city "Sydney")))))))
+    (error
+     (message "Location lookup failed: %s" err)
+     nil)))
+
+(defun aj/get-weather-location ()
+  "Get weather location, preferring config file over IP geolocation.
+Returns (lat lon name) or defaults to Sydney CBD."
+  (let* ((now (float-time))
+         (cache-valid (and aj/weather-location-cache
+                           (< (- now (car aj/weather-location-cache))
+                              aj/weather-location-cache-duration))))
+    (if cache-valid
+        (cdr aj/weather-location-cache)
+      ;; Try config file first, then IP geolocation
+      (let ((location (or (aj/get-location-from-file)
+                          (aj/get-location-from-ip)
+                          (list -33.8688 151.2093 "Sydney"))))
+        (setq aj/weather-location-cache (cons now location))
+        location))))
+
 (defun aj/sync-weather-archive ()
   "Sync weather archive from remote server."
   (interactive)
@@ -1633,6 +1796,17 @@ Week runs Sunday to Saturday."
               (json-array-type 'list))
           (condition-case nil
               (json-read)
+            (error nil)))))))
+
+(defun aj/read-weather-location-name ()
+  "Read location name from cached location.json. Returns string or nil."
+  (let ((file (expand-file-name "location.json" aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist))
+          (condition-case nil
+              (alist-get 'name (json-read))
             (error nil)))))))
 
 (defun aj/get-openweather-api-key ()
@@ -1759,10 +1933,10 @@ Weather is relative to DATE-STR (the file's date), not today's date."
             (save-excursion
               (goto-char (point-min))
               (when (re-search-forward "^\\* Calendar\\b" nil t)
-                (while (re-search-forward "^\\(forecast:\\|today:\\|sun:\\|moon:\\)" section-end t)
+                (while (re-search-forward "^\\(.+ forecast:\\|forecast:\\|today:\\|sun:\\|moon:\\)" section-end t)
                   (let ((line-start (line-beginning-position)))
                     (forward-line 1)
-                    (when (string-match-p "^forecast:" (match-string 0))
+                    (when (string-match-p "forecast:" (match-string 0))
                       (while (and (< (point) section-end)
                                   (looking-at "^  "))
                         (forward-line 1)))
@@ -1770,40 +1944,47 @@ Weather is relative to DATE-STR (the file's date), not today's date."
             ;; Go to end of section
             (goto-char section-end)
             ;; Read from cache - only insert forecast (sun/moon/conditions now in hourly table)
-            (let ((forecast-str (aj/parse-weather-week-from-cache date-str)))
+            (let ((forecast-str (aj/parse-weather-week-from-cache date-str))
+                  (location-name (or (aj/read-weather-location-name) "Sydney")))
               (unless (bolp) (insert "\n"))
-              (insert "\nforecast:\n" forecast-str "\n"))))))))
+              (insert (format "\n%s forecast:\n" location-name) forecast-str "\n"))))))))
 
 (defun aj/fetch-calendar-weather-async (date-str buffer)
   "Fetch fresh weather from server and insert into BUFFER's Calendar section.
-Runs weather script on server, syncs data, then inserts."
-  (message "Weather: fetching fresh data from server...")
-  (make-directory aj/weather-archive-local t)
-  ;; Step 1: Run weather script on server to get latest data
-  (let ((fetch-proc (start-process "weather-fetch" "*weather-fetch*"
-                                   "ssh" "root@abaj.ai"
-                                   "/root/scripts/weather-archive.sh")))
-    (set-process-sentinel
-     fetch-proc
-     (lambda (p e)
-       (if (not (string-match-p "finished" e))
-           (message "Weather: server fetch failed - %s" (string-trim e))
-         (message "Weather: server updated, syncing...")
-         ;; Step 2: Sync from server
-         (let ((sync-proc (start-process "weather-sync" nil
-                                         "rsync" "-az"
-                                         aj/weather-archive-remote
-                                         aj/weather-archive-local)))
-           (set-process-sentinel
-            sync-proc
-            (lambda (p2 e2)
-              (if (not (string-match-p "finished" e2))
-                  (message "Weather: sync failed - %s" (string-trim e2))
-                (message "Weather: inserting into buffer...")
-                (when (buffer-live-p buffer)
-                  (aj/insert-weather-from-cache buffer date-str)
-                  (aj/insert-hourly-weather-table buffer date-str)
-                  (message "Weather: done ✓")))))))))))
+Detects location from ~/.weather-location or IP, runs weather script on server,
+syncs data, then inserts."
+  (let* ((location (aj/get-weather-location))
+         (lat (number-to-string (nth 0 location)))
+         (lon (number-to-string (nth 1 location)))
+         (name (nth 2 location)))
+    (message "Weather: fetching for %s (%s, %s)..." name lat lon)
+    (make-directory aj/weather-archive-local t)
+    ;; Step 1: Run weather script on server with location args
+    (let ((fetch-proc (start-process "weather-fetch" "*weather-fetch*"
+                                     "ssh" "root@abaj.ai"
+                                     (format "/root/scripts/weather-archive.sh %s %s '%s'"
+                                             lat lon name))))
+      (set-process-sentinel
+       fetch-proc
+       (lambda (p e)
+         (if (not (string-match-p "finished" e))
+             (message "Weather: server fetch failed - %s" (string-trim e))
+           (message "Weather: server updated, syncing...")
+           ;; Step 2: Sync from server
+           (let ((sync-proc (start-process "weather-sync" nil
+                                           "rsync" "-az"
+                                           aj/weather-archive-remote
+                                           aj/weather-archive-local)))
+             (set-process-sentinel
+              sync-proc
+              (lambda (p2 e2)
+                (if (not (string-match-p "finished" e2))
+                    (message "Weather: sync failed - %s" (string-trim e2))
+                  (message "Weather: inserting into buffer...")
+                  (when (buffer-live-p buffer)
+                    (aj/insert-weather-from-cache buffer date-str)
+                    (aj/insert-hourly-weather-table buffer date-str)
+                    (message "Weather: done for %s ✓" name))))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Hourly Weather Table (only for today's daily)

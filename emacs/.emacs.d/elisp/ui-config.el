@@ -77,6 +77,25 @@
     (tab-bar-new-tab)
     (switch-to-buffer (my-home-buffer))))
 
+;; ---------------------------------------------------------------------------
+;; Two-row mode-line (header-line + mode-line)
+;; ---------------------------------------------------------------------------
+;; Bottom row (mode-line): buffer, modified, position, vc branch
+;; Top row (header-line): misc info (pomodoro, email, weather), modes
+
+(setq-default mode-line-format
+              '("%e" mode-line-front-space
+                mode-line-mule-info mode-line-client
+                mode-line-modified mode-line-remote
+                mode-line-frame-identification
+                mode-line-buffer-identification "   "
+                mode-line-position
+                (vc-mode vc-mode)
+                mode-line-end-spaces))
+
+(setq-default header-line-format
+              '("%e " mode-line-misc-info "  " mode-line-modes))
+
 (provide 'ui-config)
 ;;; ui-config.el ends here
 
