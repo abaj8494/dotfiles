@@ -287,6 +287,13 @@
       (setq my/notmuch-pending-changes t)
       (notmuch-search-next-thread)))
 
+  (define-key notmuch-search-mode-map (kbd "m u")
+    (lambda () (interactive)
+      "Undo move - restore to inbox"
+      (notmuch-search-tag '("+inbox" "-Finance" "-Orders"))
+      (setq my/notmuch-pending-changes t)
+      (notmuch-search-next-thread)))
+
 
   ;; ---------------------------------------------------------------------------
   ;; Keybindings for show mode (reading email)
@@ -417,6 +424,12 @@ for part in msg.walk():
   (define-key notmuch-show-mode-map (kbd "m o")
     (lambda () (interactive)
       (notmuch-show-tag '("+Orders" "-inbox"))
+      (setq my/notmuch-pending-changes t)))
+
+  (define-key notmuch-show-mode-map (kbd "m u")
+    (lambda () (interactive)
+      "Undo move - restore to inbox"
+      (notmuch-show-tag '("+inbox" "-Finance" "-Orders"))
       (setq my/notmuch-pending-changes t)))
 
   ;; Move to IMAP folder (for abaj/unsw)
