@@ -56,4 +56,13 @@
 (unless (server-running-p)
   (server-start))
 
+;; Reload Emacs configuration
+(defun aj/reload-config ()
+  "Reload Emacs configuration by re-evaluating init.el."
+  (interactive)
+  (load-file (expand-file-name "init.el" user-emacs-directory))
+  (message "Emacs configuration reloaded!"))
+
+(global-set-key (kbd "C-c R") #'aj/reload-config)
+
 ;;; init.el ends here

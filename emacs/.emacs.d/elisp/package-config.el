@@ -848,6 +848,35 @@ Ensures exactly one blank line before the heading."
 ;; Track dailies file for repositioning after capture
 (defvar aj/--dailies-capture-file nil)
 
+;; Track captured entry position for optional jump
+(defvar aj/--dailies-capture-pos nil
+  "Position of the newly captured dailies entry.")
+
+(defun aj/dailies-store-capture-marker ()
+  "Store position of the captured entry for optional jump."
+  (let* ((buf (org-capture-get :buffer))
+         (file (and buf (buffer-file-name buf)))
+         (pos (org-capture-get :insertion-point)))
+    ;; Check if this is a dailies capture
+    (when (and file
+               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file)
+               pos)
+      ;; Store position as number (marker would become invalid when capture buffer is killed)
+      (setq aj/--dailies-capture-pos pos))))
+
+(defun aj/dailies-prompt-jump-to-capture ()
+  "Prompt user to jump to the newly captured dailies entry."
+  (when (and aj/--dailies-capture-file aj/--dailies-capture-pos)
+    (let ((file aj/--dailies-capture-file)
+          (pos aj/--dailies-capture-pos))
+      (setq aj/--dailies-capture-pos nil)
+      (when (y-or-n-p "Jump to captured entry? ")
+        (switch-to-buffer (find-file-noselect file))
+        (widen)
+        (goto-char pos)
+        (org-reveal)
+        (recenter)))))
+
 (defun aj/dailies-track-file ()
   "Track the dailies file being captured to."
   (let ((file (buffer-file-name (org-capture-get :buffer))))
@@ -877,6 +906,9 @@ Entries are placed under * Capture by the capture template."
         (org-update-statistics-cookies t)
         ;; 4. Refresh recurring tasks
         (aj/refresh-daily-recurring)
+        ;; 4b. Re-run heading separators after recurring content is inserted
+        ;; (recurring tasks may have displaced the separators)
+        (aj/ensure-heading-separators)
         ;; 5. Insert calendar content
         (save-excursion
           (goto-char (point-min))
@@ -1193,6 +1225,15 @@ Weather is now part of the Calendar section - use C-c d r c to refresh."
   (aj/fold-week-heading)
   (message "Week transclude refreshed"))
 
+(defun aj/refresh-daily-calendar ()
+  "Refresh calendar section for the current daily note.
+Inserts calendar table and fetches weather data (including hourly if available)."
+  (interactive)
+  (unless (aj/daily-date-file-p)
+    (user-error "Not in a daily note"))
+  (my/insert-aj-day-calendar)
+  (message "Calendar refreshed"))
+
 (defun aj/daily-needs-setup-p ()
   "Return t if current daily file needs full setup.
 Checks if the file is missing the Journal heading (indicates bare template)."
@@ -1240,11 +1281,16 @@ Inserts transclude, ensures headings, populates recurring and calendar."
 (defun aj/daily-file-open-hook ()
   "Hook for opening daily files.
 For new/bare files: runs full setup (transclude, headings, recurring, calendar).
-For all files: enables transclusion and folds Week heading."
+For all files: enables transclusion, refreshes recurring tasks and calendar."
   (when (aj/daily-date-file-p)
     ;; Check if this is a new file that needs setup
-    (when (aj/daily-needs-setup-p)
-      (aj/setup-daily-file))
+    (if (aj/daily-needs-setup-p)
+        (aj/setup-daily-file)
+      ;; For existing files, refresh recurring and calendar content
+      (aj/ensure-daily-structure)
+      (aj/refresh-daily-recurring)
+      (aj/ensure-heading-separators)
+      (aj/refresh-daily-calendar))
     ;; Enable org-transclusion-mode to render transcludes
     (when (and (fboundp 'org-transclusion-mode)
                (not (bound-and-true-p org-transclusion-mode)))
@@ -1272,7 +1318,9 @@ For all files: enables transclusion and folds Week heading."
 (advice-add 'org-roam-capture--find-or-create-olp :around #'aj/strip-cookies-for-olp)
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
+(add-hook 'org-capture-before-finalize-hook #'aj/dailies-store-capture-marker)
 (add-hook 'org-capture-after-finalize-hook #'aj/dailies-reposition-entry)
+(add-hook 'org-capture-after-finalize-hook #'aj/dailies-prompt-jump-to-capture)
 ;; Fold Week heading when opening daily files
 (add-hook 'org-roam-dailies-find-file-hook #'aj/daily-file-open-hook)
 
@@ -2004,18 +2052,20 @@ syncs data, then inserts."
 
 (defun aj/insert-hourly-weather-table (buffer date-str)
   "Insert hourly weather table and conditions table into BUFFER's Calendar section.
-Works for today and tomorrow (since we have 48 hours of forecast data)."
+Works for any date that has archived hourly data, plus today/tomorrow from live forecast."
   (let* ((today-str (format-time-string "%Y-%m-%d"))
          (tomorrow-str (format-time-string "%Y-%m-%d" (time-add nil (* 24 60 60))))
          (is-today (string= date-str today-str))
          (is-tomorrow (string= date-str tomorrow-str))
-         (data (when (or is-today is-tomorrow) (aj/read-hourly-weather today-str)))
+         ;; First try archived data for specific date, then fall back to today's forecast
+         (data (or (aj/read-hourly-weather date-str)
+                   (when (or is-today is-tomorrow) (aj/read-hourly-weather today-str))))
          (forecast-file (expand-file-name "forecast-latest.json" aj/weather-archive-local))
          (forecast-data (when (file-exists-p forecast-file)
                           (condition-case nil
                               (json-read-file forecast-file)
                             (error nil)))))
-    (when (and (or is-today is-tomorrow) data)
+    (when data
       (let ((hourly (alist-get 'hourly data))
             (tz-offset (or (alist-get 'timezone_offset data) 39600)))
         (when hourly
