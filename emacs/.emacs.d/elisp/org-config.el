@@ -1336,7 +1336,6 @@ Output is always SVG."
 (defun my/filter-deep-headlines (tree backend info)
   "Remove headlines deeper than `my/max-headline-export-level'.
 Preserves #+LATEX: snippets from removed headlines by moving them up."
-  (message "DEBUG: filter called, max-level=%s" my/max-headline-export-level)
   (when my/max-headline-export-level
     (condition-case err
         (let ((to-remove nil)
@@ -1346,7 +1345,6 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
             (lambda (hl)
               (when (> (org-element-property :level hl) my/max-headline-export-level)
                 (push hl to-remove))))
-          (message "DEBUG: found %d headlines to remove" (length to-remove))
           ;; Process in reverse order (deepest/last first)
           (dolist (hl to-remove)
             ;; Find LATEX keywords in this headline's own section

@@ -289,8 +289,11 @@ SCOPE is as in `anki-editor-push-notes'."
                    (setq aj/anki-push-async-process nil)
                    (pcase result
                      (`(success ,count)
-                      (message "Anki: finished pushing %d notes. Reverting..." count)
-                      (revert-buffer t t t))
+                      (message "Anki: finished pushing %d notes." count)
+                      (start-process "anki-done-sound" nil "afplay" "/System/Library/Sounds/Glass.aiff")
+                      (when-let ((buf (find-buffer-visiting file)))
+                        (with-current-buffer buf
+                          (revert-buffer t t t))))
                      (`(error ,msg)
                       (message "Anki push failed: %s" msg))
                      (_ (message "Anki push completed")))))))))))
