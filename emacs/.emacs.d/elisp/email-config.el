@@ -978,6 +978,35 @@ Skips sync if user was marking emails in the last 10 seconds."
 (my/email-start-auto-sync)
 
 ;; =============================================================================
+;; Org-msg - Compose HTML emails with org syntax
+;; =============================================================================
+;; IMPORTANT: Set mail-user-agent BEFORE org-msg loads so it detects notmuch
+(setq mail-user-agent 'notmuch-user-agent)
+
+(use-package org-msg
+  :straight t
+  :after notmuch
+  :config
+  (setq org-msg-options "html-postamble:nil toc:nil author:nil email:nil"
+        org-msg-startup "hidestars indent inlineimages"
+        org-msg-greeting-fmt nil  ; No automatic greeting
+        org-msg-signature nil     ; Use notmuch signature instead
+        org-msg-default-alternatives '((new . (text html))
+                                       (reply-to-html . (text html))
+                                       (reply-to-text . (text)))
+        org-msg-convert-citation t)
+
+  ;; Add message-mode header navigation keybindings to org-msg-edit-mode
+  (with-eval-after-load 'org-msg
+    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-t") #'message-goto-to)
+    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-c") #'message-goto-cc)
+    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-b") #'message-goto-bcc)
+    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-s") #'message-goto-subject)
+    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-f") #'message-goto-from))
+
+  (org-msg-mode))
+
+;; =============================================================================
 ;; Dired attachment support
 ;; =============================================================================
 (use-package gnus-dired

@@ -216,6 +216,97 @@ ANKI_NOTE_TYPE=\"Cloze\" and ANKI_PREPEND_HEADING=\"t\"."
       (call-interactively #'anki-editor-push-note-at-point)))) ; Close call-interactively, let, defun
 
 ;; ---------------------------------------------------------------------------
+;; Async Push Notes
+;; ---------------------------------------------------------------------------
+
+(defvar aj/anki-push-async-process nil
+  "Current async process for anki-editor-push-notes.")
+
+(defvar aj/anki-push-log-interval 200
+  "Log progress every N notes during push operations.")
+
+(defun aj/anki-push-notes-async (&optional scope)
+  "Push notes to Anki asynchronously with batch logging.
+SCOPE is as in `anki-editor-push-notes'."
+  (interactive (list (cond
+                      ((region-active-p) 'region)
+                      ((equal current-prefix-arg '(4)) 'tree)
+                      ((equal current-prefix-arg '(16)) 'file)
+                      ((equal current-prefix-arg '(64)) 'agenda)
+                      (t nil))))
+  (when (and aj/anki-push-async-process
+             (process-live-p aj/anki-push-async-process))
+    (user-error "Anki push already in progress"))
+  (let ((file (buffer-file-name)))
+    (unless file
+      (user-error "Buffer must be visiting a file"))
+    ;; Run heading prepend synchronously first
+    (aj/anki-prepend-heading-into-cloze-text t)
+    (save-buffer)
+    ;; Count notes to push
+    (let ((note-count 0))
+      (save-excursion
+        (anki-editor-map-note-entries
+         (lambda () (cl-incf note-count))
+         nil scope))
+      (if (= note-count 0)
+          (message "No notes to push")
+        ;; Confirm
+        (when (yes-or-no-p (format "Push %d notes to Anki asynchronously? " note-count))
+          (message "Anki: pushing %d notes asynchronously..." note-count)
+          (setq aj/anki-push-async-process
+                (async-start
+                 `(lambda ()
+                    ;; Auto-accept prompts
+                    (fset 'yes-or-no-p (lambda (&rest _) t))
+                    (fset 'y-or-n-p (lambda (&rest _) t))
+                    (message "[anki-push-async] Starting...")
+                    ;; Load config
+                    (setq user-emacs-directory ,(expand-file-name user-emacs-directory))
+                    (load ,(expand-file-name "init.el" user-emacs-directory) nil t)
+                    (message "[anki-push-async] Config loaded. Opening file...")
+                    ;; Open file
+                    (find-file ,file)
+                    (message "[anki-push-async] Pushing %d notes..." ,note-count)
+                    ;; Override progress display with batch logging
+                    (advice-add 'anki-editor--draw-progress-bar
+                                :override
+                                (lambda (title count total &rest _)
+                                  (when (or (= count 1)
+                                            (= (% count ,aj/anki-push-log-interval) 0)
+                                            (= count total))
+                                    (message "[anki-push-async] %s: %d/%d" title count total))))
+                    (condition-case err
+                        (progn
+                          (anki-editor-push-notes ',scope)
+                          (save-buffer)
+                          (message "[anki-push-async] Done!")
+                          (list 'success ,note-count))
+                      (error
+                       (message "[anki-push-async] ERROR: %s" (error-message-string err))
+                       (list 'error (error-message-string err)))))
+                 (lambda (result)
+                   (setq aj/anki-push-async-process nil)
+                   (pcase result
+                     (`(success ,count)
+                      (message "Anki: finished pushing %d notes. Reverting..." count)
+                      (revert-buffer t t t))
+                     (`(error ,msg)
+                      (message "Anki push failed: %s" msg))
+                     (_ (message "Anki push completed")))))))))))
+
+(defun aj/anki-push-notes-with-heading-async (&optional arg)
+  "Prepend headings into Cloze Text fields, then push notes asynchronously."
+  (interactive "P")
+  (let ((scope (cond
+                ((region-active-p) 'region)
+                ((equal arg '(4)) 'tree)
+                ((equal arg '(16)) 'file)
+                ((equal arg '(64)) 'agenda)
+                (t nil))))
+    (aj/anki-push-notes-async scope)))
+
+;; ---------------------------------------------------------------------------
 ;; Anki-Editor Keybindings
 ;; ---------------------------------------------------------------------------
 
@@ -223,7 +314,7 @@ ANKI_NOTE_TYPE=\"Cloze\" and ANKI_PREPEND_HEADING=\"t\"."
   ;; anki-editor keybindings under "C-c a ..."
   (define-key org-mode-map (kbd "C-c a i") #'anki-editor-insert-note)
   (define-key org-mode-map (kbd "C-c a p") #'aj/anki-push-note-at-point-with-heading)
-  (define-key org-mode-map (kbd "C-c a P") #'aj/anki-push-notes-with-heading)
+  (define-key org-mode-map (kbd "C-c a P") #'aj/anki-push-notes-with-heading-async)  ; Now async!
   (define-key org-mode-map (kbd "C-c a s") #'anki-editor-sync-collection)
   (define-key org-mode-map (kbd "C-c a m") #'anki-editor-mode)
   (define-key org-mode-map (kbd "C-c a D") #'anki-editor-delete-note-at-point)

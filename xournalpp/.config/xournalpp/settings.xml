@@ -6,8 +6,8 @@
   <property name="pressureMultiplier" value="1"/>
   <property name="zoomGesturesEnabled" value="true"/>
   <property name="selectedToolbar" value="Right hand Note Taking"/>
-  <property name="lastSavePath" value="/Users/aayushbajaj/Documents/career/tutoring/vivan"/>
-  <property name="lastOpenPath" value=""/>
+  <property name="lastSavePath" value="/Users/aayushbajaj/Documents/Google Drive/1. - goodnotes/11. - tuition/111. - students/111.22 - Vivan Sharma"/>
+  <property name="lastOpenPath" value="/Users/aayushbajaj/Documents/Google Drive/1. - goodnotes/11. - tuition/112. - resources/1120. - high school/11200. - mathematics/112004. - year 10/1120042. - normo/Topic 3 - Functions"/>
   <property name="lastImagePath" value=""/>
   <property name="edgePanSpeed" value="20"/>
   <property name="edgePanMaxMult" value="5"/>
@@ -182,7 +182,7 @@
     </data>
   </data>
   <data name="tools">
-    <attribute name="current" type="string" value="highlighter"/>
+    <attribute name="current" type="string" value="pen"/>
     <data name="drawArrow">
       <attribute name="drawingType" type="string" value="default"/>
     </data>
@@ -214,13 +214,13 @@
       <attribute name="drawingType" type="string" value="default"/>
       <attribute name="fill" type="int" value="0"/>
       <attribute name="fillAlpha" type="int" value="128"/>
-      <attribute name="size" type="string" value="MEDIUM"/>
+      <attribute name="size" type="string" value="BIG"/>
     </data>
     <data name="image">
       <attribute name="drawingType" type="string" value="default"/>
     </data>
     <data name="pen">
-      <attribute name="color" type="hex" value="ff0000"/>
+      <attribute name="color" type="hex" value="000000"/>
       <attribute name="drawingType" type="string" value="default"/>
       <attribute name="fill" type="int" value="0"/>
       <attribute name="fillAlpha" type="int" value="128"/>

@@ -98,8 +98,51 @@
 (use-package sqlite3
   :straight (:host github :repo "pekingduck/emacs-sqlite3-api"))
 
-(use-package anki-editor  
+(use-package anki-editor
   :straight (:host github :repo "anki-editor/anki-editor"))
+
+;; ---------------------------------------------------------------------------
+;; Fix inline src blocks to use same syntax highlighting as src blocks
+;; ---------------------------------------------------------------------------
+
+(defun aj/org-html-inline-src-block (inline-src-block _contents _info)
+  "Export INLINE-SRC-BLOCK with proper syntax highlighting.
+Fontifies directly with htmlize, bypassing org-babel entirely."
+  (require 'htmlize)
+  (let* ((lang (org-element-property :language inline-src-block))
+         (code (org-element-property :value inline-src-block))
+         (mode (and lang (org-src-get-lang-mode lang)))
+         (fontified
+          (if (and mode (fboundp mode))
+              (with-temp-buffer
+                ;; Insert code and fontify with the language's major mode
+                (insert code)
+                ;; delay-mode-hooks prevents any hooks (including babel) from running
+                (delay-mode-hooks (funcall mode))
+                (font-lock-ensure)
+                ;; Convert fontified buffer to HTML via htmlize
+                (let* ((htmlize-output-type 'inline-css)
+                       (html (htmlize-region-for-paste (point-min) (point-max))))
+                  ;; htmlize wraps in <pre>, strip it for inline use
+                  (if (string-match "<pre[^>]*>\\(\\(?:.\\|\n\\)*?\\)</pre>" html)
+                      (match-string 1 html)
+                    html)))
+            ;; Fallback: no highlighting
+            (org-html-encode-plain-text code))))
+    (format "<code class=\"src src-%s\">%s</code>"
+            (or lang "")
+            (string-trim fontified))))
+
+(advice-add 'org-html-inline-src-block :override #'aj/org-html-inline-src-block)
+
+;; Disable babel evaluation during anki-editor export (we want code, not results)
+(with-eval-after-load 'anki-editor
+  (advice-add 'anki-editor--export-string :around
+              (lambda (orig-fn &rest args)
+                "Disable babel evaluation during anki-editor export."
+                (let ((org-export-use-babel nil)
+                      (org-confirm-babel-evaluate nil))
+                  (apply orig-fn args)))))
 
 (use-package ankiorg
   :straight (:host github :repo "orgtre/ankiorg")
@@ -107,7 +150,267 @@
   (ankiorg-sql-database
    "~/Library/Application Support/Anki2/j/collection.anki2")
   (ankiorg-media-directory
-   "~/Library/Application Support/Anki2/j/collection.media/"))
+   "~/Library/Application Support/Anki2/j/collection.media/")
+  :config
+  ;; Use SQL mode when Anki is closed, AnkiConnect when Anki is open
+  ;; Toggle with: (ankiorg-sql-minor-mode)
+  ;; Currently using AnkiConnect (requires Anki running)
+
+  ;; Fix AnkiConnect query for deck names with special characters
+  (define-advice ankiorg-ancon-note-ids (:override (&optional deck) aj/fix-special-chars)
+    "Get note IDs via AnkiConnect, properly escaping deck names."
+    (anki-editor-api-call-result
+     'findNotes
+     :query (if deck
+                ;; Quote deck name to handle spaces, commas, parentheses
+                (concat "\"deck:" deck "\"")
+              "")))
+
+  ;; Reduce logging verbosity - log every 200 notes instead of every note
+  (defvar aj/ankiorg-log-interval 200
+    "Log progress every N notes during ankiorg operations.")
+
+  (define-advice ankiorg-create-org-notes (:override (note-ids &optional deck) aj/batch-logging)
+    "Create org notes with batch logging every `aj/ankiorg-log-interval' notes."
+    (setq notes (ankiorg-get-convert-notes-from-anki note-ids deck))
+    (setq number-of-notes (length notes))
+    (let ((i 1))
+      (dolist (note notes)
+        (when (or (= i 1)
+                  (= (% i aj/ankiorg-log-interval) 0)
+                  (= i number-of-notes))
+          (message "Creating org note %d/%d from Anki." i number-of-notes))
+        (ankiorg--create-org-note note)
+        (setq i (1+ i))))
+    (message "Done creating %d new org notes from Anki." number-of-notes))
+
+  (define-advice ankiorg-update-org-notes (:override (note-ids &optional scope) aj/batch-logging)
+    "Update org notes with batch logging every `aj/ankiorg-log-interval' notes."
+    (setq notes (ankiorg-get-convert-notes-from-anki note-ids))
+    (setq number-of-notes (length notes))
+    (let ((i 1))
+      (dolist (note notes)
+        (when (or (= i 1)
+                  (= (% i aj/ankiorg-log-interval) 0)
+                  (= i number-of-notes))
+          (message "Updating org note %d/%d from Anki." i number-of-notes))
+        (ankiorg--update-org-note note scope)
+        (setq i (1+ i))))
+    (message "Done updating %d org notes from Anki." number-of-notes)))
+
+;; ---------------------------------------------------------------------------
+;; Async wrapper for ankiorg-pull-notes
+;; ---------------------------------------------------------------------------
+(use-package async
+  :straight t)
+
+(defvar ankiorg-pull-notes-async-process nil
+  "Current async process for ankiorg-pull-notes.")
+
+(defun ankiorg-pull-notes-async (deck &optional scope)
+  "Run `ankiorg-pull-notes' asynchronously in a child Emacs process.
+Analysis and confirmation happen synchronously in main Emacs.
+Only the heavy lifting (delete/create/update) runs async.
+DECK and SCOPE are as in `ankiorg-pull-notes'."
+  (interactive (list (ankiorg-pick-deck)
+                     (when current-prefix-arg
+                       (ankiorg-pick-scope))))
+  (when (and ankiorg-pull-notes-async-process
+             (process-live-p ankiorg-pull-notes-async-process))
+    (user-error "Ankiorg pull already in progress"))
+  (let ((file (buffer-file-name)))
+    (unless file
+      (user-error "Buffer must be visiting a file"))
+
+    ;; Phase 1: Synchronous analysis in main Emacs
+    (message "Ankiorg: analyzing deck '%s'..." deck)
+    (let* ((ids-in-org-deck (ankiorg-org-note-ids deck scope))
+           (ids-in-org (ankiorg-all-org-note-ids))
+           (ids-in-anki-deck (funcall ankiorg-anki-note-ids-function deck))
+           (ids-in-anki (funcall ankiorg-anki-note-ids-function))
+           ;; Compute what needs to be done
+           (ids-in-org-deck-deduped (delete-dups (copy-sequence ids-in-org-deck)))
+           (ids-deck-org-not-anki (cl-set-difference ids-in-org-deck-deduped ids-in-anki-deck))
+           (ids-deck-changed-away (cl-intersection ids-deck-org-not-anki ids-in-anki))
+           (ids-deck-deleted (cl-set-difference ids-deck-org-not-anki ids-in-anki))
+           (ids-deck-anki-not-org (cl-set-difference ids-in-anki-deck ids-in-org-deck-deduped))
+           (ids-deck-changed-to (cl-intersection ids-deck-anki-not-org ids-in-org))
+           (ids-deck-created (cl-set-difference ids-deck-anki-not-org ids-in-org))
+           (ids-deck-anki-org (cl-intersection ids-in-anki-deck ids-in-org-deck-deduped))
+           (ids-to-update (append ids-deck-changed-away ids-deck-changed-to ids-deck-anki-org))
+           ;; Build summary
+           (summary-message
+            (format
+             (concat
+              "The following changes to deck '%s' will be pulled from Anki:\n\n"
+              "%d notes moved to another deck -- to be updated in org.\n"
+              "%d notes deleted -- to be deleted in org.\n"
+              "%d notes added from another deck -- to be updated in org.\n"
+              "%d notes created -- to be created in org.\n"
+              "%d notes unchanged in the above ways -- to be updated in org.\n")
+             deck
+             (length ids-deck-changed-away)
+             (length ids-deck-deleted)
+             (length ids-deck-changed-to)
+             (length ids-deck-created)
+             (length ids-deck-anki-org))))
+
+      ;; Phase 2: Confirmation in main Emacs
+      (unless (yes-or-no-p (concat summary-message "\nContinue? "))
+        (user-error "Ankiorg pull cancelled"))
+
+      ;; Phase 3: Async execution of heavy operations
+      (message "Ankiorg: pulling deck '%s' asynchronously..." deck)
+      (setq ankiorg-pull-notes-async-process
+            (async-start
+             `(lambda ()
+                ;; Auto-accept prompts BEFORE loading config
+                (fset 'yes-or-no-p (lambda (&rest _) (message "  [auto-yes]") t))
+                (fset 'y-or-n-p (lambda (&rest _) (message "  [auto-y]") t))
+                (fset 'read-char-choice (lambda (prompt chars &rest _) (car chars)))
+                (message "[ankiorg-async] Starting subprocess...")
+                ;; Load user's Emacs config
+                (setq user-emacs-directory ,(expand-file-name user-emacs-directory))
+                (message "[ankiorg-async] Loading init.el...")
+                (load ,(expand-file-name "init.el" user-emacs-directory) nil t)
+                (message "[ankiorg-async] Config loaded. Opening file...")
+                ;; Open the file
+                (find-file ,file)
+                (message "[ankiorg-async] File opened. Starting operations...")
+                (condition-case err
+                    (progn
+                      ;; Run the three operations with pre-computed ID lists
+                      (message "[ankiorg-async] Deleting %d notes..." ,(length ids-deck-deleted))
+                      (ankiorg-delete-org-notes ',ids-deck-deleted ',scope)
+                      (message "[ankiorg-async] Creating %d notes..." ,(length ids-deck-created))
+                      (ankiorg-create-org-notes ',ids-deck-created ,deck)
+                      (message "[ankiorg-async] Updating %d notes..." ,(length ids-to-update))
+                      (ankiorg-update-org-notes ',ids-to-update ',scope)
+                      (message "[ankiorg-async] Saving buffer...")
+                      (save-buffer)
+                      (message "[ankiorg-async] Done!")
+                      (list 'success ,deck
+                            ,(length ids-deck-deleted)
+                            ,(length ids-deck-created)
+                            ,(length ids-to-update)))
+                  (error
+                   (message "[ankiorg-async] ERROR: %s" (error-message-string err))
+                   (list 'error (error-message-string err)))))
+             (lambda (result)
+               (setq ankiorg-pull-notes-async-process nil)
+               (pcase result
+                 (`(success ,deck ,deleted ,created ,updated)
+                  (message "Ankiorg: finished deck '%s' (deleted:%d created:%d updated:%d). Reverting..."
+                           deck deleted created updated)
+                  (revert-buffer t t t))
+                 (`(error ,msg)
+                  (message "Ankiorg pull failed: %s" msg))
+                 (_ (message "Ankiorg pull completed")))))))))
+
+;; ---------------------------------------------------------------------------
+;; AnkiConnect: Pull Flagged Notes with Quickfix Navigation
+;; ---------------------------------------------------------------------------
+
+(defvar ankiorg-search-directories '("~/Documents/new-site/content-org/flashcards")
+  "Directories to search for org files containing Anki note IDs.")
+
+(defun ankiorg--anki-connect (action params)
+  "Make an AnkiConnect request with ACTION and PARAMS."
+  (let* ((url-request-method "POST")
+         (url-request-extra-headers '(("Content-Type" . "application/json")))
+         (url-request-data
+          (json-encode `((action . ,action) (version . 6) (params . ,params))))
+         (buffer (url-retrieve-synchronously "http://127.0.0.1:8765" t t 5)))
+    (unless buffer
+      (error "Cannot connect to AnkiConnect. Is Anki running?"))
+    (unwind-protect
+        (with-current-buffer buffer
+          (goto-char url-http-end-of-headers)
+          (let ((json-object-type 'alist))
+            (cdr (assoc 'result (json-read)))))
+      (kill-buffer buffer))))
+
+(defun ankiorg-pull-flagged-notes (&optional flag)
+  "Pull notes with FLAG from Anki and grep org files for quickfix navigation.
+FLAG: 1=red, 2=orange, 3=green, 4=blue, 5=pink, 6=turquoise, 7=purple.
+With prefix arg, prompts for flag number. Defaults to 1 (red)."
+  (interactive
+   (list (if current-prefix-arg
+             (read-number "Flag (1=red 2=orange 3=green 4=blue): " 1)
+           1)))
+  (let* ((flag (or flag 1))
+         (flag-names '((1 . "red") (2 . "orange") (3 . "green")
+                       (4 . "blue") (5 . "pink") (6 . "turquoise") (7 . "purple")))
+         (flag-name (cdr (assoc flag flag-names)))
+         (note-ids (ankiorg--anki-connect "findNotes"
+                                          `((query . ,(format "flag:%d" flag))))))
+    (if (or (null note-ids) (= (length note-ids) 0))
+        (message "No notes found with %s flag" flag-name)
+      (let ((notes-info (ankiorg--anki-connect "notesInfo" `((notes . ,note-ids)))))
+        (message "Found %d %s-flagged notes. Searching org files..."
+                 (length notes-info) flag-name)
+        (ankiorg--grep-for-notes notes-info flag-name)))))
+
+(defun ankiorg--extract-search-term (note)
+  "Extract a searchable term from NOTE's first field."
+  (let* ((fields (cdr (assoc 'fields note)))
+         (first-field (cdr (car fields)))
+         (val (or (cdr (assoc 'value first-field)) "")))
+    ;; Strip HTML
+    (setq val (replace-regexp-in-string "<[^>]*>" "" val))
+    (setq val (replace-regexp-in-string "&nbsp;" " " val))
+    (setq val (replace-regexp-in-string "&lt;" "<" val))
+    (setq val (replace-regexp-in-string "&gt;" ">" val))
+    ;; Strip cloze markers like {{c1::...}}
+    (setq val (replace-regexp-in-string "{{c[0-9]+::\\([^}]*\\)}}" "\\1" val))
+    (setq val (string-trim val))
+    (substring val 0 (min 60 (length val)))))
+
+(defun ankiorg--grep-for-notes (notes-info flag-name)
+  "Grep for NOTES-INFO in org files and display in quickfix buffer."
+  (let* ((note-ids (mapcar (lambda (n) (cdr (assoc 'noteId n))) notes-info))
+         (id-to-content
+          (mapcar (lambda (n)
+                    (cons (cdr (assoc 'noteId n))
+                          (ankiorg--extract-search-term n)))
+                  notes-info))
+         (search-dir (expand-file-name (car ankiorg-search-directories))))
+    (with-current-buffer (get-buffer-create "*Anki Flagged Notes*")
+      (let ((inhibit-read-only t)
+            (found-ids nil))
+        (erase-buffer)
+        (insert (format "-*- mode: grep; default-directory: \"%s\" -*-\n\n"
+                        search-dir))
+        (insert (format "Anki %s-flagged notes (%d total):\n\n" flag-name (length note-ids)))
+        ;; Search for each note ID individually
+        (dolist (note-id note-ids)
+          (let ((grep-output
+                 (shell-command-to-string
+                  (format "grep -rn --include='*.org' '%s' %s 2>/dev/null"
+                          (number-to-string note-id) search-dir))))
+            (when (not (string-empty-p grep-output))
+              (push note-id found-ids)
+              (let ((content (cdr (assoc note-id id-to-content))))
+                (dolist (line (split-string grep-output "\n" t))
+                  (when (string-match "\\([^:]+\\):\\([0-9]+\\):" line)
+                    (insert (format "%s:%s: %s\n"
+                                    (match-string 1 line)
+                                    (match-string 2 line)
+                                    content))))))))
+        ;; Show notes NOT found
+        (let ((missing (seq-filter (lambda (id) (not (member id found-ids))) note-ids)))
+          (when missing
+            (insert (format "\n── Notes NOT FOUND in org files (%d) ──\n\n"
+                            (length missing)))
+            (dolist (id missing)
+              (insert (format "  ID %s: %s\n" id (cdr (assoc id id-to-content))))))))
+      (grep-mode)
+      (goto-char (point-min))
+      (condition-case nil
+          (compilation-next-error 1 nil (point-min))
+        (error (goto-char (point-min))))
+      (switch-to-buffer (current-buffer))
+      (message "Use M-g M-n / M-g M-p to navigate, RET to jump"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Tag Headings by Level - useful with anki-editor for bulk tagging
@@ -615,7 +918,7 @@ linking to the week node followed by transclude directive."
 (defun aj/read-template-file (subdir filename &optional time)
   "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
 TIME is used to replace <TODAY ...> placeholders with actual dates.
-Returns the trimmed file contents, or nil if file doesn't exist."
+Returns the file contents with trailing whitespace trimmed, or nil if file doesn't exist."
   (let ((path (expand-file-name
                (if (string-empty-p subdir)
                    filename
@@ -624,7 +927,8 @@ Returns the trimmed file contents, or nil if file doesn't exist."
     (when (file-exists-p path)
       (with-temp-buffer
         (insert-file-contents path)
-        (let ((content (string-trim (buffer-string))))
+        ;; Only trim trailing whitespace to preserve internal blank lines
+        (let ((content (string-trim-right (buffer-string))))
           (if time
               (aj/replace-date-placeholders content time)
             content))))))
@@ -685,7 +989,7 @@ Combines templates from all recurring sources."
                    (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org") time)
                    (aj/read-template-file "monthly" (concat day-of-month ".org") time)
                    (aj/read-template-file "yearly" (concat month-day ".org") time))))
-    (string-join (delq nil (delq "" results)) "\n")))
+    (string-join (delq nil (delq "" results)) "\n\n")))
 
 (defun aj/daily-recurring-tasks ()
   "Return recurring tasks for the capture date.
@@ -746,8 +1050,8 @@ Maintains template order even when some headings already exist."
                (day (string-to-number (nth 2 parts)))
                (date-time (encode-time 0 0 0 day month year))
                (tasks-raw (aj/get-recurring-tasks-for-date date-time))
-               ;; Convert * headings to ** (subheadings under * Recurring)
-               (tasks (replace-regexp-in-string "^\\* " "** " tasks-raw))
+               ;; Increment all heading levels by 1 (subheadings under * Recurring)
+               (tasks (replace-regexp-in-string "^\\(\\*+\\) " "*\\1 " tasks-raw))
                (added-count 0))
           (if (string-empty-p tasks)
               (message "No recurring tasks for %s" date-str)
@@ -831,9 +1135,9 @@ Ensures exactly one blank line before the heading."
                 (not (looking-at-p "^[ \t]*$")))
           (insert "\n"))
         (insert heading "\n")
+        ;; Insert all content lines, including blank lines for proper spacing
         (dolist (line content-lines)
-          (unless (string-empty-p line)
-            (insert line "\n")))))))
+          (insert line "\n"))))))
 
 ;; Helper for dailies time prefix - shows time only for today's captures
 (defun aj/dailies-entry-prefix ()
@@ -848,34 +1152,56 @@ Ensures exactly one blank line before the heading."
 ;; Track dailies file for repositioning after capture
 (defvar aj/--dailies-capture-file nil)
 
-;; Track captured entry position for optional jump
-(defvar aj/--dailies-capture-pos nil
-  "Position of the newly captured dailies entry.")
+;; Track captured entry heading for optional jump (position gets stale after buffer modifications)
+(defvar aj/--dailies-capture-heading nil
+  "Heading text of the newly captured dailies entry.")
 
 (defun aj/dailies-store-capture-marker ()
-  "Store position of the captured entry for optional jump."
+  "Store identifier of the captured entry for optional jump.
+Stores heading text instead of position since buffer modifications
+(separator insertion, recurring task refresh) shift positions."
   (let* ((buf (org-capture-get :buffer))
-         (file (and buf (buffer-file-name buf)))
-         (pos (org-capture-get :insertion-point)))
+         (file (and buf (buffer-file-name buf))))
     ;; Check if this is a dailies capture
     (when (and file
-               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file)
-               pos)
-      ;; Store position as number (marker would become invalid when capture buffer is killed)
-      (setq aj/--dailies-capture-pos pos))))
+               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file))
+      (setq aj/--dailies-capture-file file)
+      ;; Store the heading text to search for later
+      (with-current-buffer buf
+        (save-excursion
+          (goto-char (org-capture-get :insertion-point))
+          (when (org-at-heading-p)
+            (setq aj/--dailies-capture-heading
+                  (org-get-heading t t t t))))))))
 
 (defun aj/dailies-prompt-jump-to-capture ()
-  "Prompt user to jump to the newly captured dailies entry."
-  (when (and aj/--dailies-capture-file aj/--dailies-capture-pos)
+  "Prompt user to jump to the newly captured dailies entry.
+Searches for heading text instead of using stored position, since
+buffer modifications (separator insertion, recurring task refresh)
+shift positions after capture."
+  (when (and aj/--dailies-capture-file aj/--dailies-capture-heading)
     (let ((file aj/--dailies-capture-file)
-          (pos aj/--dailies-capture-pos))
-      (setq aj/--dailies-capture-pos nil)
+          (heading aj/--dailies-capture-heading))
+      (setq aj/--dailies-capture-heading nil)
       (when (y-or-n-p "Jump to captured entry? ")
         (switch-to-buffer (find-file-noselect file))
         (widen)
-        (goto-char pos)
-        (org-reveal)
-        (recenter)))))
+        (goto-char (point-min))
+        ;; Search for the heading under * Capture section
+        (if (re-search-forward "^\\* Capture\\b" nil t)
+            (let ((section-end (save-excursion
+                                 (if (re-search-forward "^\\* " nil t)
+                                     (point)
+                                   (point-max)))))
+              (if (re-search-forward
+                   (format "^\\*\\* .*%s" (regexp-quote heading))
+                   section-end t)
+                  (progn
+                    (beginning-of-line)
+                    (org-reveal)
+                    (recenter))
+                (message "Could not find captured entry: %s" heading)))
+          (message "Could not find Capture section"))))))
 
 (defun aj/dailies-track-file ()
   "Track the dailies file being captured to."
@@ -2505,6 +2831,7 @@ Only works for today's daily note."
   :after org
   :init
   (setq org-shop-keymap-prefix "C-c S")
+  (setq org-shop-seasons-file "~/Documents/new-site/content-org/private/shops/seasons.org")
   :config
   (setq org-shop-directory "~/Documents/new-site/content-org/private/shops/")
   (org-shop-setup))

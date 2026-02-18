@@ -1630,5 +1630,56 @@ Called from `post-command-hook'. Works with all environments in
         org-pomodoro-tts-enabled t
         org-pomodoro-skip-name-prompt t))
 
+;; ---------------------------------------------------------------------------
+;; Google Calendar Sync (org-gcal)
+;; ---------------------------------------------------------------------------
+;; Setup: Add to ~/.authinfo.gpg:
+;;   machine calendar.google.com login YOUR_CLIENT_ID password YOUR_CLIENT_SECRET
+;;
+;; Get credentials from Google Cloud Console:
+;; 1. Create project at https://console.cloud.google.com/
+;; 2. Enable "Google Calendar API"
+;; 3. Create OAuth 2.0 credentials (Desktop app)
+;; 4. Copy Client ID and Client Secret to authinfo.gpg
+
+(use-package org-gcal
+  :straight t
+  :after org
+  :commands (org-gcal-sync org-gcal-fetch org-gcal-post-at-point org-gcal-delete-at-point)
+  :init
+  ;; Dedicated file for Google Calendar events
+  (defvar aj/gcal-file (expand-file-name "gcal.org" org-directory)
+    "File to store Google Calendar events.")
+  :config
+  ;; Fetch credentials from authinfo.gpg
+  (require 'auth-source)
+  (let ((auth (car (auth-source-search :host "calendar.google.com" :max 1))))
+    (when auth
+      (setq org-gcal-client-id (plist-get auth :user)
+            org-gcal-client-secret (let ((secret (plist-get auth :secret)))
+                                     (if (functionp secret) (funcall secret) secret)))))
+
+  ;; Calendar configuration - replace with your calendar ID
+  ;; Primary calendar is usually your email address
+  (setq org-gcal-file-alist `(("aayushbajaj7@gmail.com" . ,aj/gcal-file)))
+
+  ;; Sync settings
+  (setq org-gcal-recurring-events-mode 'nested  ; Show recurring events
+        org-gcal-remove-api-cancelled-events t  ; Remove cancelled events
+        org-gcal-auto-archive nil)              ; Don't auto-archive past events
+
+  ;; Add gcal file to agenda
+  (add-to-list 'org-agenda-files aj/gcal-file)
+
+  ;; Keybindings
+  (global-set-key (kbd "C-c g s") 'org-gcal-sync)      ; Full bidirectional sync
+  (global-set-key (kbd "C-c g f") 'org-gcal-fetch)     ; Fetch from Google
+  (global-set-key (kbd "C-c g p") 'org-gcal-post-at-point)   ; Push current entry
+  (global-set-key (kbd "C-c g d") 'org-gcal-delete-at-point) ; Delete from Google
+
+  ;; Auto-sync on agenda open (optional - can be slow)
+  ;; (add-hook 'org-agenda-mode-hook #'org-gcal-fetch)
+  )
+
 (provide 'org-config)
 ;;; org-config.el ends here
