@@ -295,6 +295,7 @@ SCOPE is as in `anki-editor-push-notes'."
                         (with-current-buffer buf
                           (revert-buffer t t t))))
                      (`(error ,msg)
+                      (start-process "anki-error-sound" nil "afplay" "/System/Library/Sounds/Basso.aiff")
                       (message "Anki push failed: %s" msg))
                      (_ (message "Anki push completed")))))))))))
 

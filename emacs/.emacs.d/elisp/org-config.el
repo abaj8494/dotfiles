@@ -10,6 +10,52 @@
 (require 'ob-markdown)
 
 ;; ---------------------------------------------------------------------------
+;; Auto-populate schedule time from heading
+;; ---------------------------------------------------------------------------
+
+(defun aj/normalize-time (time-str)
+  "Convert time like '5:30PM' or '05:30pm' to 24-hour format '17:30'."
+  (when time-str
+    (let* ((time-str (string-trim time-str))
+           (pm (string-match-p "[Pp][Mm]" time-str))
+           (am (string-match-p "[Aa][Mm]" time-str))
+           (clean (replace-regexp-in-string "[AaPpMm ]" "" time-str)))
+      (when (string-match "\\([0-9]?[0-9]\\):\\([0-9][0-9]\\)" clean)
+        (let ((hour (string-to-number (match-string 1 clean)))
+              (min (match-string 2 clean)))
+          (when pm (unless (= hour 12) (setq hour (+ hour 12))))
+          (when am (when (= hour 12) (setq hour 0)))
+          (format "%02d:%s" hour min))))))
+
+(defun aj/heading-extract-time ()
+  "Extract time or time range from heading (e.g., '04:35PM' or '05:30PM-7:00PM')."
+  (when (org-at-heading-p)
+    (let ((heading (org-get-heading t t t t)))
+      ;; Match time range: 05:30PM-7:00PM or 17:30-19:00
+      (cond
+       ((string-match "\\([0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\)\\s-*-\\s-*\\([0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\)" heading)
+        (let* ((start (aj/normalize-time (match-string 1 heading)))
+               (end (aj/normalize-time (match-string 2 heading))))
+          (cons start end)))
+       ;; Match single time
+       ((string-match "\\([0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\)" heading)
+        (aj/normalize-time (match-string 1 heading)))))))
+
+(defun aj/org-schedule-with-heading-time (orig-fun &optional arg time)
+  "Advise `org-schedule' to use time from heading as default."
+  (if (or arg time)
+      (funcall orig-fun arg time)
+    (let ((heading-time (aj/heading-extract-time)))
+      (if heading-time
+          (let ((time-str (if (consp heading-time)
+                              (format "%s-%s" (car heading-time) (cdr heading-time))
+                            heading-time)))
+            (funcall orig-fun nil time-str))
+        (funcall orig-fun nil nil)))))
+
+(advice-add 'org-schedule :around #'aj/org-schedule-with-heading-time)
+
+;; ---------------------------------------------------------------------------
 ;; PATH setup (needed for external tools)
 ;; ---------------------------------------------------------------------------
 
@@ -1629,55 +1675,274 @@ Called from `post-command-hook'. Works with all environments in
         org-pomodoro-skip-name-prompt t))
 
 ;; ---------------------------------------------------------------------------
+;; Extract time from headings for scheduling
+;; ---------------------------------------------------------------------------
+;; Supports headings like "5:30PM-7:00PM Aldi Shop" or "17:30-19:00 Meeting"
+
+(defun aj/normalize-time (time-str)
+  "Convert time like '5:30PM' to 24-hour format '17:30'."
+  (when time-str
+    (let* ((time-str (string-trim time-str))
+           (pm (string-match-p "[Pp][Mm]" time-str))
+           (am (string-match-p "[Aa][Mm]" time-str))
+           (clean (replace-regexp-in-string "[AaPpMm ]" "" time-str)))
+      (when (string-match "\\([0-9]?[0-9]\\):\\([0-9][0-9]\\)" clean)
+        (let ((hour (string-to-number (match-string 1 clean)))
+              (min (match-string 2 clean)))
+          (when pm (unless (= hour 12) (setq hour (+ hour 12))))
+          (when am (when (= hour 12) (setq hour 0)))
+          (format "%02d:%s" hour min))))))
+
+(defun aj/heading-extract-time ()
+  "Extract time or time range from current heading.
+Returns a cons cell (START . END) for ranges, a string for single times, or nil."
+  (when (org-at-heading-p)
+    (let ((heading (substring-no-properties (org-get-heading t t t t))))
+      (cond
+       ;; Time range: 5:30PM-7:00PM or 17:30-19:00
+       ((string-match "\\([0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\)\\s-*-\\s-*\\([0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\)" heading)
+        ;; Capture both groups BEFORE calling normalize (which overwrites match data)
+        (let ((start (match-string 1 heading))
+              (end (match-string 2 heading)))
+          (cons (aj/normalize-time start)
+                (aj/normalize-time end))))
+       ;; Single time: 5:30PM or 17:30
+       ((string-match "\\([0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\)" heading)
+        (aj/normalize-time (match-string 1 heading)))))))
+
+(defun aj/org-schedule-with-heading-time (orig-fun &optional arg time)
+  "Advice for `org-schedule' to auto-populate time from heading.
+Uses today's date with the time extracted from the heading."
+  (if (or arg time)
+      (funcall orig-fun arg time)
+    (if-let ((heading-time (aj/heading-extract-time)))
+        ;; We have a time in the heading - insert SCHEDULED directly
+        (let* ((today (format-time-string "%Y-%m-%d %a"))
+               (timestamp (if (consp heading-time)
+                              (format "<%s %s-%s>" today (car heading-time) (cdr heading-time))
+                            (format "<%s %s>" today heading-time))))
+          (save-excursion
+            ;; Stay on current line (the heading), go to end, insert SCHEDULED
+            (end-of-line)
+            ;; Check if next line is already SCHEDULED and remove it
+            (save-excursion
+              (forward-line 1)
+              (when (looking-at "^SCHEDULED:")
+                (delete-region (line-beginning-position) (1+ (line-end-position)))))
+            ;; Insert new SCHEDULED line
+            (insert "\nSCHEDULED: " timestamp))
+          ;; Push to gcal if not in capture mode
+          (unless (bound-and-true-p org-capture-mode)
+            (aj/gcal-maybe-push-at-point)))
+      ;; No time in heading - use normal org-schedule
+      (funcall orig-fun nil nil))))
+
+;; Remove old advice and re-add
+(advice-remove 'org-schedule #'aj/org-schedule-with-heading-time)
+(advice-add 'org-schedule :around #'aj/org-schedule-with-heading-time)
+
+;; ---------------------------------------------------------------------------
 ;; Google Calendar Sync (org-gcal)
 ;; ---------------------------------------------------------------------------
 ;; Setup: Add to ~/.authinfo.gpg:
 ;;   machine calendar.google.com login YOUR_CLIENT_ID password YOUR_CLIENT_SECRET
-;;
-;; Get credentials from Google Cloud Console:
-;; 1. Create project at https://console.cloud.google.com/
-;; 2. Enable "Google Calendar API"
-;; 3. Create OAuth 2.0 credentials (Desktop app)
-;; 4. Copy Client ID and Client Secret to authinfo.gpg
 
+(defvar aj/gcal-file (expand-file-name "gcal.org" org-directory)
+  "File to store Google Calendar events.")
+(defvar aj/gcal-id-personal "aayushbajaj7@gmail.com"
+  "Personal Google Calendar ID.")
+(defvar aj/gcal-id-J "437e8c9ab6b11de9d298569fcb54570982215d88b36512facbc8846b0c3317c1@group.calendar.google.com"
+  "Shared 'J' calendar ID.")
+(defvar aj/gcal-credentials-loaded nil
+  "Non-nil if org-gcal credentials have been loaded.")
+
+(defun aj/gcal-load-credentials ()
+  "Load org-gcal credentials from authinfo.gpg and initialize org-gcal."
+  (unless aj/gcal-credentials-loaded
+    (require 'auth-source)
+    (auth-source-forget-all-cached)
+    (let ((auth (car (auth-source-search :host "calendar.google.com" :max 1))))
+      (when auth
+        (setq org-gcal-client-id (plist-get auth :user)
+              org-gcal-client-secret (let ((secret (plist-get auth :secret)))
+                                       (if (functionp secret) (funcall secret) secret)))
+        (when (and org-gcal-client-id org-gcal-client-secret)
+          (require 'org-gcal)
+          (org-gcal-reload-client-id-secret)
+          (setq aj/gcal-credentials-loaded t)
+          (message "org-gcal ready"))))))
+
+;; Wrapper commands - load credentials, then call org-gcal
+(defun aj/gcal-sync ()
+  "Sync with Google Calendar."
+  (interactive)
+  (aj/gcal-load-credentials)
+  (when aj/gcal-credentials-loaded
+    (org-gcal-sync)))
+
+(defun aj/gcal-fetch ()
+  "Fetch from Google Calendar."
+  (interactive)
+  (aj/gcal-load-credentials)
+  (when aj/gcal-credentials-loaded
+    (org-gcal-fetch)))
+
+(defun aj/gcal-post-at-point ()
+  "Push current entry to Google Calendar."
+  (interactive)
+  (aj/gcal-load-credentials)
+  (when aj/gcal-credentials-loaded
+    (org-gcal-post-at-point)))
+
+(defun aj/gcal-delete-at-point ()
+  "Delete current entry from Google Calendar."
+  (interactive)
+  (aj/gcal-load-credentials)
+  (when aj/gcal-credentials-loaded
+    (org-gcal-delete-at-point)))
+
+(defun aj/gcal-toggle-auto-push ()
+  "Toggle automatic pushing to Google Calendar."
+  (interactive)
+  (setq aj/gcal-auto-push (not aj/gcal-auto-push))
+  (message "Google Calendar auto-push: %s" (if aj/gcal-auto-push "ON" "OFF")))
+
+;; Keybindings (C-c G prefix to avoid conflict with magit's C-c g)
+(global-set-key (kbd "C-c G s") #'aj/gcal-sync)
+(global-set-key (kbd "C-c G f") #'aj/gcal-fetch)
+(global-set-key (kbd "C-c G p") #'aj/gcal-post-at-point)
+(global-set-key (kbd "C-c G d") #'aj/gcal-delete-at-point)
+(global-set-key (kbd "C-c G t") #'aj/gcal-toggle-auto-push)
+
+;; org-gcal package - defer loading until wrapper calls it
 (use-package org-gcal
   :straight t
-  :after org
-  :commands (org-gcal-sync org-gcal-fetch org-gcal-post-at-point org-gcal-delete-at-point)
-  :init
-  ;; Dedicated file for Google Calendar events
-  (defvar aj/gcal-file (expand-file-name "gcal.org" org-directory)
-    "File to store Google Calendar events.")
+  :defer t
   :config
-  ;; Fetch credentials from authinfo.gpg
-  (require 'auth-source)
-  (let ((auth (car (auth-source-search :host "calendar.google.com" :max 1))))
-    (when auth
-      (setq org-gcal-client-id (plist-get auth :user)
-            org-gcal-client-secret (let ((secret (plist-get auth :secret)))
-                                     (if (functionp secret) (funcall secret) secret)))))
-
-  ;; Calendar configuration - replace with your calendar ID
-  ;; Primary calendar is usually your email address
-  (setq org-gcal-file-alist `(("aayushbajaj7@gmail.com" . ,aj/gcal-file)))
-
-  ;; Sync settings
-  (setq org-gcal-recurring-events-mode 'nested  ; Show recurring events
-        org-gcal-remove-api-cancelled-events t  ; Remove cancelled events
-        org-gcal-auto-archive nil)              ; Don't auto-archive past events
-
-  ;; Add gcal file to agenda
+  (setq org-gcal-file-alist `((,aj/gcal-id-J . ,aj/gcal-file))
+        org-gcal-recurring-events-mode 'nested
+        org-gcal-remove-api-cancelled-events t
+        org-gcal-auto-archive nil)
   (add-to-list 'org-agenda-files aj/gcal-file)
 
-  ;; Keybindings
-  (global-set-key (kbd "C-c g s") 'org-gcal-sync)      ; Full bidirectional sync
-  (global-set-key (kbd "C-c g f") 'org-gcal-fetch)     ; Fetch from Google
-  (global-set-key (kbd "C-c g p") 'org-gcal-post-at-point)   ; Push current entry
-  (global-set-key (kbd "C-c g d") 'org-gcal-delete-at-point) ; Delete from Google
+  ;; Strip org links and time info from title
+  (defun aj/gcal-strip-links-from-headline (orig-fun)
+    "Advice to strip org link markup and time info from headline."
+    (let ((headline (funcall orig-fun)))
+      (setq headline
+            ;; Replace [[link][description]] with just description
+            (replace-regexp-in-string
+             "\\[\\[\\(?:[^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
+             "\\1"
+             ;; Also handle [[link]] without description - remove entirely
+             (replace-regexp-in-string
+              "\\[\\[\\([^]]+\\)\\]\\]"
+              ""
+              headline)))
+      ;; Strip time patterns like "1:00PM-06:00PM " or "13:00-18:00 " from start
+      (setq headline
+            (replace-regexp-in-string
+             "^[0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\s-*-\\s-*[0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]*\\s-+"
+             ""
+             headline))
+      ;; Also strip single time like "1:00PM " from start
+      (setq headline
+            (replace-regexp-in-string
+             "^[0-9]?[0-9]:[0-9][0-9]\\s-*[AaPpMm]+\\s-+"
+             ""
+             headline))
+      (string-trim headline)))
+  (advice-add 'org-gcal--headline :around #'aj/gcal-strip-links-from-headline)
 
-  ;; Auto-sync on agenda open (optional - can be slow)
-  ;; (add-hook 'org-agenda-mode-hook #'org-gcal-fetch)
-  )
+  ;; Include body content (outside :org-gcal: drawer) in description
+  (defun aj/gcal-include-body-in-desc (orig-fun)
+    "Advice to include entry body content in the event description."
+    (let ((result (funcall orig-fun)))
+      (save-excursion
+        (org-back-to-heading t)
+        (let* ((elem (org-element-at-point))
+               (content-begin (org-element-property :contents-begin elem))
+               (content-end (org-element-property :contents-end elem))
+               body-text)
+          (when (and content-begin content-end)
+            (goto-char content-begin)
+            ;; Skip SCHEDULED/DEADLINE/CLOSED lines
+            (while (and (< (point) content-end)
+                        (looking-at org-planning-line-re))
+              (forward-line 1))
+            ;; Skip property drawer
+            (when (looking-at org-property-drawer-re)
+              (goto-char (match-end 0))
+              (forward-line 1))
+            ;; Skip logbook drawer
+            (when (looking-at "^[ \t]*:LOGBOOK:")
+              (re-search-forward "^[ \t]*:END:" content-end t)
+              (forward-line 1))
+            ;; Skip org-gcal drawer
+            (when (looking-at (format "^[ \t]*:%s:" org-gcal-drawer-name))
+              (re-search-forward "^[ \t]*:END:" content-end t)
+              (forward-line 1))
+            ;; Get remaining body text (before any subheadings)
+            (let ((body-start (point))
+                  (body-end (save-excursion
+                              (if (re-search-forward "^\\*+ " content-end t)
+                                  (match-beginning 0)
+                                content-end))))
+              (setq body-text (string-trim
+                               (buffer-substring-no-properties body-start body-end)))))
+          ;; Append body to existing description
+          (when (and body-text (not (string-empty-p body-text)))
+            (let ((existing-desc (plist-get result :desc)))
+              (plist-put result :desc
+                         (if existing-desc
+                             (concat existing-desc "\n\n" body-text)
+                           body-text))))))
+      result))
+  (advice-add 'org-gcal--get-time-and-desc :around #'aj/gcal-include-body-in-desc))
+
+;; ---------------------------------------------------------------------------
+;; Auto-push scheduled items to Google Calendar
+;; ---------------------------------------------------------------------------
+
+(defvar aj/gcal-auto-push t
+  "When non-nil, automatically push scheduled/deadline items to Google Calendar.")
+
+(defun aj/gcal-maybe-push-at-point ()
+  "Push current headline to Google Calendar if it has scheduling and isn't already synced."
+  (when (and aj/gcal-auto-push
+             (or (org-entry-get nil "SCHEDULED")
+                 (org-entry-get nil "DEADLINE")))
+    (unless (org-entry-get nil "calendar-id" t)
+      (aj/gcal-load-credentials)
+      (when aj/gcal-credentials-loaded
+        (condition-case err
+            (progn
+              (org-gcal-post-at-point t)
+              (message "Pushed to Google Calendar"))
+          (error
+           (message "Failed to push to gcal: %s" (error-message-string err))))))))
+
+(defun aj/gcal-after-schedule (&rest _)
+  "Hook to push to Google Calendar after scheduling."
+  (unless (bound-and-true-p org-capture-mode)
+    (aj/gcal-maybe-push-at-point)))
+
+;; Push to gcal after capture finalization
+(defun aj/gcal-after-capture-finalize ()
+  "Push newly captured item to Google Calendar if it has scheduling."
+  (when-let ((marker org-capture-last-stored-marker))
+    (when (marker-buffer marker)
+      (with-current-buffer (marker-buffer marker)
+        (save-excursion
+          (goto-char marker)
+          (aj/gcal-maybe-push-at-point))))))
+
+(add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize)
+
+;; Add advice after org is loaded
+(with-eval-after-load 'org
+  (advice-add 'org-schedule :after #'aj/gcal-after-schedule)
+  (advice-add 'org-deadline :after #'aj/gcal-after-schedule))
 
 (provide 'org-config)
 ;;; org-config.el ends here

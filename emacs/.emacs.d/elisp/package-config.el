@@ -300,10 +300,12 @@ DECK and SCOPE are as in `ankiorg-pull-notes'."
                (setq ankiorg-pull-notes-async-process nil)
                (pcase result
                  (`(success ,deck ,deleted ,created ,updated)
+                  (start-process "ankiorg-done-sound" nil "afplay" "/System/Library/Sounds/Glass.aiff")
                   (message "Ankiorg: finished deck '%s' (deleted:%d created:%d updated:%d). Reverting..."
                            deck deleted created updated)
                   (revert-buffer t t t))
                  (`(error ,msg)
+                  (start-process "ankiorg-error-sound" nil "afplay" "/System/Library/Sounds/Basso.aiff")
                   (message "Ankiorg pull failed: %s" msg))
                  (_ (message "Ankiorg pull completed")))))))))
 
