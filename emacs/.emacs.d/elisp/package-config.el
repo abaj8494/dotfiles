@@ -99,7 +99,9 @@
   :straight (:host github :repo "pekingduck/emacs-sqlite3-api"))
 
 (use-package anki-editor
-  :straight (:host github :repo "anki-editor/anki-editor"))
+  :straight (:host github :repo "anki-editor/anki-editor")
+  :custom
+  (anki-editor-latex-style 'mathjax))
 
 ;; ---------------------------------------------------------------------------
 ;; Fix inline src blocks to use same syntax highlighting as src blocks
@@ -135,6 +137,19 @@ Fontifies directly with htmlize, bypassing org-babel entirely."
 
 (advice-add 'org-html-inline-src-block :override #'aj/org-html-inline-src-block)
 
+;; Add \( \) and \[ \] to mathjax delimiters (upstream only handles $ and $$)
+(with-eval-after-load 'anki-editor
+  (setq anki-editor--mathjax-delimiters
+        (append anki-editor--mathjax-delimiters
+                (list (list (concat "^" (regexp-quote "\\("))
+                            "\\("
+                            (concat (regexp-quote "\\)") "$")
+                            "\\)")
+                      (list (concat "^" (regexp-quote "\\["))
+                            "\\["
+                            (concat (regexp-quote "\\]") "$")
+                            "\\]")))))
+
 ;; Disable babel evaluation during anki-editor export (we want code, not results)
 (with-eval-after-load 'anki-editor
   (advice-add 'anki-editor--export-string :around
@@ -155,6 +170,43 @@ Fontifies directly with htmlize, bypassing org-babel entirely."
   ;; Use SQL mode when Anki is closed, AnkiConnect when Anki is open
   ;; Toggle with: (ankiorg-sql-minor-mode)
   ;; Currently using AnkiConnect (requires Anki running)
+
+  ;; Disable the "risky!" nested-list HTML regex that causes
+  ;; "Stack overflow in regexp matcher" on complex notes.
+  ;; Pandoc handles malformed HTML fine without this pre-processing.
+  (setq ankiorg-anki-replacements nil)
+
+  ;; Preserve <iframe> tags through pandoc conversion as @@html:...@@
+  (define-advice ankiorg--html-to-org-with-pandoc (:override (html) aj/preserve-iframes)
+    "Convert HTML to org with pandoc, preserving iframes as @@html:...@@."
+    (let ((iframes (make-hash-table :test 'equal))
+          (counter 0))
+      (with-temp-buffer
+        (insert html)
+        ;; Extract iframes before pandoc, replace with placeholders
+        (goto-char (point-min))
+        (while (re-search-forward "<iframe[^>]*>[^<]*</iframe>" nil t)
+          (let ((placeholder (format "ANKIORG_IFRAME_%d" counter))
+                (iframe (match-string 0)))
+            (puthash placeholder iframe iframes)
+            (replace-match placeholder t t)
+            (setq counter (1+ counter))))
+        ;; Run pandoc
+        (ankiorg--clean-anki)
+        (unless (zerop
+                 (call-process-region (point-min) (point-max) "pandoc"
+                                     t t nil
+                                     "--wrap=none"
+                                     "-f" "html-raw_html-native_divs" "-t" "org"))
+          (error "pandoc failed"))
+        (ankiorg--clean-pandoc-output)
+        ;; Restore iframes as @@html:...@@
+        (goto-char (point-min))
+        (while (re-search-forward "ANKIORG_IFRAME_[0-9]+" nil t)
+          (let ((iframe (gethash (match-string 0) iframes)))
+            (when iframe
+              (replace-match (concat "@@html:" iframe "@@") t t))))
+        (buffer-string))))
 
   ;; Fix AnkiConnect query for deck names with special characters
   (define-advice ankiorg-ancon-note-ids (:override (&optional deck) aj/fix-special-chars)

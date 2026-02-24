@@ -1,0 +1,23 @@
+;;; public entries -*- mode: plstore -*- 
+(("%28%22437e8c9ab6b11de9d298569fcb54570982215d88b36512facbc8846b0c3317c1%40group.calendar.google.com%22%0A%20org-gcal%29%0A"
+  :secret-access-token t :secret-refresh-token t :secret-expiration t)
+ ("%28%22aayushbajaj7%40gmail.com%22%20org-gcal%29%0A"
+  :secret-access-token t :secret-refresh-token t :secret-expiration t))
+;;; secret entries
+"-----BEGIN PGP MESSAGE-----
+
+jA0ECQMIkgrw9z2jCRT/0ukBFVA4TykGH1G2g2dL2BcxRcMfYmG6jGp6mvnkjOfe
+Xx1sHTb03Cw1PJT2VsHXG4jFCprAud3f6lTz/OAoM31OmoN7TomgV7e+kcxyVFp5
+sGqlc80KRatnQBhHTdCpIrSGn5T/XwyuZlmmLqHm9Pt3ZxezybgXIYNqjtBld1qm
+jzMwcXvVxICgugMQnBj7ljnIVuKFwakyr0EoU9BXYpvpSGaMeTn8KoYts4XDDy/x
+gX8MVPHVYdEB40k2/mUqX/+atWY/svZMoruqe13a9WcXyvj3R0t8IpzwvXbqUall
+QQtY23/fpFMMUFTi/1eUnYg/ftoZFAh6FL6tiFF2rlSb9xs2hlHLTDAlmuMnmN2O
+dCctOB4fQ/nv3SbajNdmrmSJYCO/c2ztbd8lygx/oPS2z6qe45mS/zvaf4lACyvA
+o/4i/hBoTQCxiucnRf9ap88NUL6YfqLZmYgWsPkzmU8uBHMS8IUgeBc+q/isjsy1
+55A/ifkRDt7ld6Q8VqHzf6HY0G4S0C02kOg/ls0CPkYprqUStmj0SrcyKo+uS44l
+jKCBdw7QYG6kQdJV7Cb6NNDTLlU+vsNsEHgX5XWViwQsyi7wqnHV8GuehFSE8c05
+BQR75+KTHvLKQQMqMtJFB93UiK2maiH3/+PMrRfrFG63Vzzhlalq9c3udCZ+b8+9
+2gNWSsM=
+=5IpM
+-----END PGP MESSAGE-----
+"
