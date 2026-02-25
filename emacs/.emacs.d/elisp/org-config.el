@@ -453,17 +453,30 @@ Shows current date for reference."
   (message "LaTeX preview: SVG (vector, via inkscape)"))
 
 (defun aj/latex-preview-use-png ()
-  "Use PNG (raster) for LaTeX previews. Scalable, 3x size."
+  "Use PNG (raster) for LaTeX previews. Scalable, 2x size."
   (interactive)
   (setq org-preview-latex-default-process 'luamagick)
-  (message "LaTeX preview: PNG (raster, 3x scale)"))
+  (message "LaTeX preview: PNG (raster, 2x scale)"))
 
-(defun aj/latex-preview-toggle ()
-  "Toggle between SVG and PNG LaTeX preview backends."
-  (interactive)
-  (if (eq org-preview-latex-default-process 'ajlua)
-      (aj/latex-preview-use-png)
-    (aj/latex-preview-use-svg)))
+(defvar aj/latex-preview-scale 1.0
+  "Display scale factor for custom LaTeX previews (aj/latex-preview-at-point).
+Adjusts the `:scale' parameter passed to `create-image'.")
+
+(defun aj/latex-preview-set-scale (factor)
+  "Set the LaTeX preview display scale to FACTOR (e.g. 1.5, 2.0)."
+  (setq aj/latex-preview-scale factor)
+  (message "LaTeX preview scale: %.1fx" factor))
+
+(defun aj/latex-preview-toggle (&optional arg)
+  "Toggle between SVG and PNG LaTeX preview backends.
+With prefix ARG (\\[universal-argument]), prompt for a PNG scale factor instead."
+  (interactive "P")
+  (if arg
+      (let ((factor (read-number "LaTeX preview scale factor: " 2.0)))
+        (aj/latex-preview-set-scale factor))
+    (if (eq org-preview-latex-default-process 'ajlua)
+        (aj/latex-preview-use-png)
+      (aj/latex-preview-use-svg))))
 
 (defun aj/latex-preview-status ()
   "Show current LaTeX preview backend."
@@ -579,7 +592,16 @@ Processes multiple fragments concurrently for faster completion."
     ("algorithm" . (:packages ("\\usepackage[ruled,lined]{algorithm2e}")
                     :docclass "\\documentclass[border=2pt]{standalone}")))
   "Alist of LaTeX environments to preview.
-Each entry is (ENV-NAME . (:packages LIST :docclass STRING)).")
+Each entry is (ENV-NAME . (:packages LIST :docclass STRING)).
+When :use-buffer-preamble is t, the render function uses the buffer's
+#+LATEX_HEADER lines as preamble instead of standalone docclass.")
+
+;; Theorem-style environments: render using the buffer's own preamble
+;; so that custom theorem styles, colors, and mdframed boxes work correctly
+(dolist (env '("definition" "theorem" "lemma" "corollary" "proposition"
+               "examples" "remark" "result" "proof"))
+  (add-to-list 'aj/latex-preview-environments
+               (cons env '(:use-buffer-preamble t))))
 
 (defun aj/latex--extract-balanced-braces (start)
   "Extract content from START to matching closing brace, handling nesting."
@@ -752,22 +774,26 @@ LOG-FILE is the .log file, ENV-NAME is the environment type."
   "Render LaTeX CONTENT of environment ENV-NAME as preview overlay between BEG and END.
 EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
   (let* ((env-config (cdr (assoc env-name aj/latex-preview-environments)))
-         (docclass (or (plist-get env-config :docclass)
-                       "\\documentclass[border=2pt]{standalone}"))
-         (packages (or (plist-get env-config :packages) '()))
+         (use-buf-preamble (plist-get env-config :use-buffer-preamble))
+         (docclass (if use-buf-preamble nil
+                     (or (plist-get env-config :docclass)
+                         "\\documentclass[border=2pt]{standalone}")))
+         (packages (unless use-buf-preamble
+                     (or (plist-get env-config :packages) '())))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
          (tex-file (make-temp-file "latex-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
                            (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
-         (preamble (concat
-                    docclass "\n"
-                    (mapconcat #'identity packages "\n") "\n"
-                    "\\usepackage{xcolor}\n"
-                    ;; Include any extra preamble commands from the block
-                    (or extra-preamble "")
-                    "\\begin{document}\n"))
+         (preamble (if use-buf-preamble
+                       (aj/latex--buffer-preview-preamble extra-preamble)
+                     (concat
+                      docclass "\n"
+                      (mapconcat #'identity packages "\n") "\n"
+                      "\\usepackage{xcolor}\n"
+                      (or extra-preamble "")
+                      "\\begin{document}\n")))
          (postamble "\n\\end{document}\n")
          (full-content (concat preamble content postamble)))
     ;; Ensure directory exists
@@ -826,7 +852,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
     (overlay-put ov 'display
                  (create-image img-file img-type nil
                                :ascent 'center
-                               :scale 1.0))
+                               :scale aj/latex-preview-scale))
     (overlay-put ov 'face 'default)
     (overlay-put ov 'evaporate t)))
 
@@ -853,6 +879,36 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
       (while (re-search-forward "^#\\+LATEX_HEADER:\\s-*\\(.+\\)$" nil t)
         (setq headers (concat headers (match-string 1) "\n"))))
     headers))
+
+(defun aj/latex--buffer-preview-preamble (&optional extra-preamble)
+  "Build a complete LaTeX preamble for previewing theorem-style environments.
+Uses the buffer's #+LATEX_HEADER lines (filtered: no geometry commands)
+plus base packages needed for article class rendering.
+EXTRA-PREAMBLE is appended before \\begin{document}."
+  (let* ((raw-headers (aj/latex--extract-buffer-headers))
+         ;; Filter out geometry commands (we use our own for preview cropping)
+         (filtered-headers
+          (mapconcat
+           #'identity
+           (cl-remove-if
+            (lambda (line)
+              (or (string-match "\\\\geometry{" line)
+                  (string-match "\\\\usepackage.*{geometry}" line)))
+            (split-string raw-headers "\n" t))
+           "\n")))
+    (concat
+     "\\documentclass[11pt]{article}\n"
+     "\\usepackage[paperwidth=500pt,paperheight=5000pt,margin=10pt]{geometry}\n"
+     "\\usepackage{fontspec}\n"
+     "\\usepackage{amsmath,amssymb}\n"
+     "\\usepackage[dvipsnames]{xcolor}\n"
+     "\\usepackage{enumitem}\n"
+     "\\usepackage{hyperref}\n"
+     "\\hypersetup{colorlinks=false}\n"
+     filtered-headers "\n"
+     "\\pagestyle{empty}\n"
+     (or extra-preamble "")
+     "\\begin{document}\n")))
 
 (defun aj/chess-preview-at-point ()
   "Toggle chessboard preview at point using buffer's #+LATEX_HEADER directives.
@@ -942,10 +998,32 @@ If preview exists, remove it. Otherwise, render it."
                         (aj/latex--create-overlay beg end img-file))
                       (message "Chess preview complete")))))))))))))
 
-;; Structure templates: <el + TAB, <ch + TAB
+;; Structure templates: <el + TAB, <sl + TAB, <ch + TAB
 (with-eval-after-load 'org
   (add-to-list 'org-structure-template-alist '("el" . "export latex"))
+  (add-to-list 'org-structure-template-alist '("sl" . "src latex"))
   (add-to-list 'org-structure-template-alist '("ch" . "src chess :file ")))
+
+;; ---------------------------------------------------------------------------
+;; Export filter: #+begin_src latex → raw LaTeX on export
+;; ---------------------------------------------------------------------------
+;; This allows using #+begin_src latex blocks for syntax highlighting in the
+;; org buffer while still exporting the content as raw LaTeX (not code listings).
+
+(defun aj/org-latex-src-to-export (backend)
+  "Convert #+begin_src latex blocks to #+begin_export latex for LaTeX export.
+This makes src latex blocks export as raw LaTeX instead of code listings,
+while preserving syntax highlighting in the org buffer."
+  (when (org-export-derived-backend-p backend 'latex)
+    (goto-char (point-min))
+    (while (re-search-forward "^\\([ \t]*\\)#\\+begin_src latex\\b.*$" nil t)
+      (let ((indent (match-string 1)))
+        (replace-match (concat indent "#+begin_export latex"))
+        (when (re-search-forward
+               (concat "^" (regexp-quote indent) "#\\+end_src\\b") nil t)
+          (replace-match (concat indent "#+end_export")))))))
+
+(add-hook 'org-export-before-processing-hook #'aj/org-latex-src-to-export)
 
 ;; ---------------------------------------------------------------------------
 ;; Comprehensive LaTeX Preview (standard fragments + export block environments)
@@ -967,7 +1045,7 @@ If preview exists, remove it. Otherwise, render it."
   "Buffer being processed for environment previews.")
 
 (defun aj/latex--find-all-environments-in-buffer ()
-  "Find all LaTeX environments in export blocks throughout the buffer.
+  "Find all LaTeX environments in export/src blocks throughout the buffer.
 Returns a list of (ENV-NAME BEG END EXTRA-PREAMBLE) for each environment found.
 Also detects chess blocks (export blocks containing \\chessboard commands)."
   (let ((envs nil)
@@ -975,11 +1053,15 @@ Also detects chess blocks (export blocks containing \\chessboard commands)."
         (buffer-headers (aj/latex--extract-buffer-headers)))
     (save-excursion
       (goto-char (point-min))
-      ;; Find all export blocks and special blocks
-      (while (re-search-forward "^#\\+BEGIN_EXPORT\\s-+latex" nil t)
-        (let* ((block-start (save-excursion (forward-line 1) (point)))
+      ;; Find all export blocks, src latex blocks, and special blocks
+      (while (re-search-forward "^#\\+\\(?:BEGIN_EXPORT\\s-+latex\\|begin_src latex\\b\\)" nil t)
+        (let* ((is-src (save-excursion
+                         (goto-char (match-beginning 0))
+                         (looking-at-p ".*begin_src")))
+               (block-start (save-excursion (forward-line 1) (point)))
+               (end-pattern (if is-src "^#\\+end_src" "^#\\+END_EXPORT"))
                (block-end (save-excursion
-                            (when (re-search-forward "^#\\+END_EXPORT" nil t)
+                            (when (re-search-forward end-pattern nil t)
                               (forward-line 0)
                               (point)))))
           (when block-end
@@ -1049,28 +1131,36 @@ Also detects chess blocks (export blocks containing \\chessboard commands)."
 For chess blocks, EXTRA-PREAMBLE contains buffer #+LATEX_HEADER lines to use as packages."
   (let* ((is-chess (string= env-name "chess"))
          (env-config (unless is-chess (cdr (assoc env-name aj/latex-preview-environments))))
-         (docclass (if is-chess
-                       "\\documentclass[border=2pt]{standalone}"
-                     (or (plist-get env-config :docclass)
-                         "\\documentclass[border=2pt]{standalone}")))
-         (packages (unless is-chess (or (plist-get env-config :packages) '())))
+         (use-buf-preamble (and env-config (plist-get env-config :use-buffer-preamble)))
+         (docclass (cond
+                    (is-chess "\\documentclass[border=2pt]{standalone}")
+                    (use-buf-preamble nil)
+                    (t (or (plist-get env-config :docclass)
+                           "\\documentclass[border=2pt]{standalone}"))))
+         (packages (unless (or is-chess use-buf-preamble)
+                     (or (plist-get env-config :packages) '())))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
          (tex-file (make-temp-file "latex-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
                            (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
-         (preamble (if is-chess
-                       ;; Chess: use buffer headers directly
-                       (concat docclass "\n"
-                               (or extra-preamble "")
-                               "\\begin{document}\n")
+         (preamble (cond
+                    (is-chess
+                     ;; Chess: use buffer headers directly
+                     (concat docclass "\n"
+                             (or extra-preamble "")
+                             "\\begin{document}\n"))
+                    (use-buf-preamble
+                     ;; Theorem-style: use buffer's full preamble
+                     (aj/latex--buffer-preview-preamble extra-preamble))
+                    (t
                      ;; Standard: use environment packages + extra preamble
                      (concat docclass "\n"
                              (mapconcat #'identity packages "\n") "\n"
                              "\\usepackage{xcolor}\n"
                              (or extra-preamble "")
-                             "\\begin{document}\n")))
+                             "\\begin{document}\n"))))
          (postamble "\n\\end{document}\n")
          (full-content (concat preamble content postamble))
          (buf aj/latex-env-preview--buffer))
@@ -1461,7 +1551,8 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
   "Return hyperref template string for COLOR.
 Always defines DeepNavy to ensure it's available for TOC on subsequent runs."
   (let ((color-name (if (eq color 'deep-navy) "DeepNavy" "RedViolet")))
-    (concat "\\definecolor{DeepNavy}{HTML}{00007B}
+    (concat "\\makeatletter\\@ifpackageloaded{xcolor}{}{\\usepackage{xcolor}}\\makeatother
+\\definecolor{DeepNavy}{HTML}{00007B}
 \\hypersetup{
  pdfauthor={%a},
  pdftitle={%t},
