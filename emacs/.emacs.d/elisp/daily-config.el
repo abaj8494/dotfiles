@@ -1,0 +1,2296 @@
+;;; daily-config.el --- Daily note configuration -*- lexical-binding: t; -*-
+
+;;; Commentary:
+;; All daily-note functionality: recurring tasks, weather, calendar,
+;; capture templates, weekly transclusion, heading structure, navigation.
+
+;;; Code:
+
+(require 'org-roam)
+(require 'org-roam-dailies)
+(require 'cl-lib)
+
+;; ---------------------------------------------------------------------------
+;; Variables & Config
+;; ---------------------------------------------------------------------------
+
+(defvar aj/templates-base-dir "~/Documents/new-site/content-org/templates/"
+  "Base directory for recurring task templates.")
+
+(defvar aj/daily-templates-dir
+  (expand-file-name "templates" org-roam-directory)
+  "Directory containing recurring task templates.")
+
+;; Yearly file configuration for week transclusion
+(defvar aj/yearly-file-ids
+  '((2026 . "51fe6c3d-45e2-4655-bc1c-9358f989d02a"))
+  "Alist mapping years to their yearly org file IDs.")
+
+(defvar aj/yearly-file-names
+  '((2026 . "twenty-twenty-six"))
+  "Alist mapping years to their yearly org file display names.")
+
+;; Desired order of level-1 headings in daily notes
+(defvar aj/daily-heading-order
+  '("Journal" "Recurring" "Calendar" "Capture" "Tasks")
+  "Ordered list of level-1 headings for daily notes.")
+
+(defvar aj/headings-with-statistics '("Capture" "Tasks")
+  "Headings that should have [/] statistics cookies.")
+
+;; Weather variables
+(defvar aj/openweather-city "Sydney"
+  "City for OpenWeatherMap queries.")
+
+(defvar aj/weather-archive-remote "root@abaj.ai:/var/weather-archive/"
+  "Remote path to weather archive on server.")
+
+(defvar aj/weather-archive-local (expand-file-name "~/.cache/weather-archive/")
+  "Local cache directory for weather archive.")
+
+(defvar aj/weather-location-cache nil
+  "Cached location data: (timestamp lat lon name).")
+
+(defvar aj/weather-location-cache-duration 3600
+  "How long to cache location data in seconds (default 1 hour).")
+
+(defvar aj/weather-location-file (expand-file-name "~/.weather-location")
+  "Optional file to manually set weather location.
+Format: LAT LON NAME (e.g., -33.8148 151.1029 West Ryde)")
+
+;; ---------------------------------------------------------------------------
+;; Date/Phase Helpers
+;; ---------------------------------------------------------------------------
+
+(defun aj/epoch-day (&optional time)
+  "Return the number of days since Unix epoch for TIME (default: now)."
+  (floor (/ (float-time (or time (current-time))) 86400)))
+
+(defun aj/alternating-phase (&optional time)
+  "Return alternating phase ('a' or 'b') for TIME based on epoch day parity."
+  (if (= 0 (% (aj/epoch-day time) 2)) "a" "b"))
+
+(defun aj/iso-week-parity (&optional time)
+  "Return ISO week parity ('odd' or 'even') for TIME."
+  (let ((week-num (string-to-number (format-time-string "%V" (or time (current-time))))))
+    (if (= 1 (% week-num 2)) "odd" "even")))
+
+(defun aj/iso-week-number (&optional time)
+  "Return ISO week number for TIME."
+  (string-to-number (format-time-string "%V" (or time (current-time)))))
+
+(defun aj/is-weekday-p (time)
+  "Return t if TIME is a weekday (Monday-Friday), nil otherwise."
+  (let ((dow (string-to-number (format-time-string "%u" time))))
+    (<= dow 5)))
+
+;; ---------------------------------------------------------------------------
+;; Capture Template Path Functions
+;; ---------------------------------------------------------------------------
+
+(defun aj/capture-daily-file ()
+  "Return the daily template file path."
+  (expand-file-name "daily.org" aj/templates-base-dir))
+
+(defun aj/capture-weekdays-file ()
+  "Return the weekdays template file path (Mon-Fri)."
+  (expand-file-name "weekdays.org" aj/templates-base-dir))
+
+(defun aj/capture-alternating-file ()
+  "Prompt for alternating phase and return the template file path.
+Shows current phase for reference."
+  (let* ((current-phase (aj/alternating-phase))
+         (phases '("a" "b"))
+         (phase (completing-read
+                 (format "Phase (today is '%s'): " current-phase)
+                 phases nil t)))
+    (expand-file-name (concat "alternating/" phase ".org") aj/templates-base-dir)))
+
+(defun aj/capture-weekly-file ()
+  "Prompt for day of week and return the template file path.
+Shows current day for reference."
+  (let* ((current-day (downcase (format-time-string "%A")))
+         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
+         (day (completing-read
+               (format "Day of week (today is %s): " current-day)
+               days nil t)))
+    (expand-file-name (concat "weekly/" day ".org") aj/templates-base-dir)))
+
+(defun aj/capture-biweekly-file ()
+  "Prompt for week parity and day, return the template file path.
+Shows current ISO week and parity for reference."
+  (let* ((current-week (aj/iso-week-number))
+         (current-parity (aj/iso-week-parity))
+         (current-day (downcase (format-time-string "%A")))
+         (parities '("odd" "even"))
+         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
+         (parity (completing-read
+                  (format "Week parity (week %d is %s): " current-week current-parity)
+                  parities nil t))
+         (day (completing-read
+               (format "Day of week (today is %s): " current-day)
+               days nil t)))
+    (expand-file-name (concat "biweekly/" parity "/" day ".org") aj/templates-base-dir)))
+
+(defun aj/capture-monthly-file ()
+  "Prompt for day of month and return the template file path.
+Shows current day for reference."
+  (let* ((current-dom (format-time-string "%d"))
+         (days (mapcar (lambda (n) (format "%02d" n)) (number-sequence 1 31)))
+         (day (completing-read
+               (format "Day of month (today is %s): " current-dom)
+               days nil t)))
+    (expand-file-name (concat "monthly/" day ".org") aj/templates-base-dir)))
+
+(defun aj/capture-yearly-file ()
+  "Prompt for MM-DD and return the template file path.
+Shows current date for reference."
+  (let* ((current-date (format-time-string "%m-%d"))
+         (date (read-string (format "Date MM-DD (today is %s): " current-date))))
+    (expand-file-name (concat "yearly/" date ".org") aj/templates-base-dir)))
+
+(setq org-capture-templates
+      '(("r" "recurring templates")
+        ("rd" "daily (every day)" plain
+         (file aj/capture-daily-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rk" "weekdays (Mon-Fri)" plain
+         (file aj/capture-weekdays-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("ra" "alternating (every other day)" plain
+         (file aj/capture-alternating-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rw" "weekly" plain
+         (file aj/capture-weekly-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rb" "biweekly (fortnightly)" plain
+         (file aj/capture-biweekly-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("rm" "monthly" plain
+         (file aj/capture-monthly-file)
+         "* TODO %?"
+         :empty-lines 0)
+        ("ry" "yearly" plain
+         (file aj/capture-yearly-file)
+         "* TODO %?"
+         :empty-lines 0)))
+
+;; ---------------------------------------------------------------------------
+;; Daily File Detection
+;; ---------------------------------------------------------------------------
+
+(defun aj/daily-date-file-p (&optional file)
+  "Return t if FILE matches YYYY-MM-DD.org pattern (actual daily note).
+Excludes yearly files like twenty_twenty_six.org."
+  (let ((path (or file (buffer-file-name))))
+    (and path
+         (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" path))))
+
+;; ---------------------------------------------------------------------------
+;; Week Transclude
+;; ---------------------------------------------------------------------------
+
+(defun aj/get-week-heading-info (week-num year)
+  "Get the ID and title of Week WEEK-NUM heading tagged with YEAR.
+Returns (id . title) or nil if not found."
+  (let* ((year-tag (number-to-string year))
+         (title-pattern (format "Week %d%%" week-num))
+         (result (org-roam-db-query
+                  [:select [nodes:id nodes:title]
+                   :from nodes
+                   :left-join tags :on (= nodes:id tags:node-id)
+                   :where (and (like nodes:title $s1)
+                               (= tags:tag $s2))]
+                  title-pattern year-tag)))
+    (when result
+      (let ((row (car result)))
+        (cons (car row) (cadr row))))))
+
+(defun aj/insert-week-transclude ()
+  "Insert linked week heading and transclude directive.
+Parses date from filename, calculates ISO week, inserts a heading
+linking to the week node followed by transclude directive."
+  (interactive)
+  (save-excursion
+    (when (and buffer-file-name
+               (string-match "\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\.org$"
+                             buffer-file-name))
+      (let* ((year-str (match-string 1 buffer-file-name))
+             (month-str (match-string 2 buffer-file-name))
+             (day-str (match-string 3 buffer-file-name))
+             (year (string-to-number year-str))
+             (month (string-to-number month-str))
+             (day (string-to-number day-str))
+             (date-time (encode-time 0 0 0 day month year))
+             (week-num (aj/iso-week-number date-time))
+             (file-id (cdr (assoc year aj/yearly-file-ids)))
+             (file-name (cdr (assoc year aj/yearly-file-names)))
+             (week-info (aj/get-week-heading-info week-num year))
+             (week-id (car week-info))
+             (week-title (cdr week-info)))
+        (when (and file-id file-name)
+          (goto-char (point-min))
+          ;; Find insertion point (after EXPORT_FILE_NAME line)
+          (if (re-search-forward "^#\\+EXPORT_FILE_NAME:.*$" nil t)
+              (progn
+                (goto-char (match-end 0))
+                (if (and week-id week-title)
+                    ;; New format with linked heading
+                    (insert (format "\n\n* [[id:%s][%s]]\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                    week-id week-title file-id week-num file-name))
+                  ;; Fallback without week heading ID (shouldn't happen normally)
+                  (insert (format "\n\n* Week %d\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                  week-num file-id week-num file-name))))
+            ;; Fallback: insert at end of front matter
+            (when (re-search-forward "^:END:$" nil t)
+              (forward-line 1)
+              (if (and week-id week-title)
+                  (insert (format "\n* [[id:%s][%s]]\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                  week-id week-title file-id week-num file-name))
+                (insert (format "\n* Week %d\n#+transclude: [[id:%s::* Week %d][%s]] :no-first-heading\n"
+                                week-num file-id week-num file-name))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Recurring Task Management
+;; ---------------------------------------------------------------------------
+
+(defun aj/read-template-file (subdir filename &optional time)
+  "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
+TIME is used to replace <TODAY ...> placeholders with actual dates.
+Returns the file contents with trailing whitespace trimmed, or nil if file doesn't exist."
+  (let ((path (expand-file-name
+               (if (string-empty-p subdir)
+                   filename
+                 (concat subdir "/" filename))
+               aj/daily-templates-dir)))
+    (when (file-exists-p path)
+      (with-temp-buffer
+        (insert-file-contents path)
+        ;; Only trim trailing whitespace to preserve internal blank lines
+        (let ((content (string-trim-right (buffer-string))))
+          (if time
+              (aj/replace-date-placeholders content time)
+            content))))))
+
+(defun aj/replace-date-placeholders (content time)
+  "Replace <TODAY ...> placeholders in CONTENT with actual org timestamps for TIME."
+  (let ((date-str (format-time-string "%Y-%m-%d %a" time)))
+    ;; Replace <TODAY HH:MM> with <YYYY-MM-DD Day HH:MM>
+    (setq content (replace-regexp-in-string
+                   "<TODAY \\([0-9]\\{2\\}:[0-9]\\{2\\}\\)>"
+                   (lambda (match)
+                     (format "<%s %s>" date-str (match-string 1 match)))
+                   content))
+    ;; Replace bare <TODAY> with <YYYY-MM-DD Day>
+    (setq content (replace-regexp-in-string
+                   "<TODAY>"
+                   (format "<%s>" date-str)
+                   content))
+    content))
+
+(defun aj/get-recurring-tasks-grouped (time)
+  "Return recurring tasks for TIME as an alist of (SOURCE-TYPE . CONTENT).
+SOURCE-TYPE is one of: daily-group, weekly, biweekly, monthly, yearly.
+daily-group combines daily.org, weekdays.org, and alternating templates.
+Only non-nil, non-empty entries are included."
+  (let* ((day-name (downcase (format-time-string "%A" time)))
+         (day-of-month (format-time-string "%d" time))
+         (month-day (format-time-string "%m-%d" time))
+         (alt-phase (aj/alternating-phase time))
+         (week-parity (aj/iso-week-parity time))
+         (daily-parts (delq nil (list
+                                 (aj/read-template-file "" "daily.org" time)
+                                 (when (aj/is-weekday-p time)
+                                   (aj/read-template-file "" "weekdays.org" time))
+                                 (aj/read-template-file "alternating" (concat alt-phase ".org") time))))
+         (daily-group (when daily-parts (string-join daily-parts "\n\n")))
+         (weekly (aj/read-template-file "weekly" (concat day-name ".org") time))
+         (biweekly (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org") time))
+         (monthly (aj/read-template-file "monthly" (concat day-of-month ".org") time))
+         (yearly (aj/read-template-file "yearly" (concat month-day ".org") time)))
+    (delq nil
+          (list
+           (when (and daily-group (not (string-empty-p daily-group)))
+             (cons 'daily-group daily-group))
+           (when (and weekly (not (string-empty-p weekly)))
+             (cons 'weekly weekly))
+           (when (and biweekly (not (string-empty-p biweekly)))
+             (cons 'biweekly biweekly))
+           (when (and monthly (not (string-empty-p monthly)))
+             (cons 'monthly monthly))
+           (when (and yearly (not (string-empty-p yearly)))
+             (cons 'yearly yearly))))))
+
+(defun aj/get-recurring-tasks-for-date (time)
+  "Return recurring tasks string for TIME.
+Combines templates from all recurring sources."
+  (let ((groups (aj/get-recurring-tasks-grouped time)))
+    (string-join (mapcar #'cdr groups) "\n\n")))
+
+(defun aj/daily-recurring-tasks ()
+  "Return recurring tasks for the capture date.
+Combines templates from:
+  - daily.org (every day)
+  - alternating/<a|b>.org (every other day, epoch-based)
+  - weekly/<dayname>.org (e.g., wednesday.org)
+  - biweekly/<odd|even>/<dayname>.org (fortnightly)
+  - monthly/<day>.org (e.g., 14.org for 14th of month)
+  - yearly/<mm-dd>.org (e.g., 01-14.org for January 14th)"
+  (let* ((capture-time (org-capture-get :default-time))
+         (combined (aj/get-recurring-tasks-for-date capture-time)))
+    (if (string-empty-p combined)
+        ""
+      (concat "\n" combined "\n"))))
+
+(defun aj/recurring-heading-exists-p (heading)
+  "Check if HEADING already exists under * Recurring.
+Matches regardless of TODO state (TODO/DONE/WAIT/CANCEL) or priority."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let ((section-end (save-excursion
+                           (if (re-search-forward "^\\* " nil t)
+                               (line-beginning-position)
+                             (point-max)))))
+        (re-search-forward
+         (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                 (regexp-quote heading))
+         section-end t)))))
+
+(defun aj/extract-heading-name (line)
+  "Extract heading name from LINE, stripping TODO keywords and priority."
+  (when (string-match "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
+    (match-string 1 line)))
+
+(defun aj/extract-heading-order (tasks)
+  "Extract ordered list of heading names from TASKS string."
+  (let ((headings nil))
+    (dolist (line (split-string tasks "\n"))
+      (when (string-match "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
+        (push (match-string 1 line) headings)))
+    (nreverse headings)))
+
+(defvar aj/recurring-heading-order nil
+  "Ordered list of recurring heading names, populated during refresh.")
+
+(defvar-local aj/recurring-heading-source-map nil
+  "Buffer-local alist mapping recurring heading names to their source types.
+Set during `aj/refresh-daily-recurring', used by post-capture hooks.")
+
+(defun aj/build-heading-source-map (grouped-tasks)
+  "Build alist mapping heading name -> source-type from GROUPED-TASKS.
+GROUPED-TASKS is an alist of (SOURCE-TYPE . CONTENT) as returned by
+`aj/get-recurring-tasks-grouped'.  Operates on raw template content
+\(level-1 headings, before incrementing)."
+  (let (result)
+    (dolist (group grouped-tasks)
+      (let ((source-type (car group))
+            (content (cdr group)))
+        (dolist (line (split-string content "\n"))
+          (when (string-match "^\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
+            (push (cons (match-string 1 line) source-type) result)))))
+    (nreverse result)))
+
+(defun aj/recurring-separator-for (prev-source curr-source)
+  "Return the separator string between headings from PREV-SOURCE and CURR-SOURCE.
+Returns single ----- for same group, double ----- for group boundary crossings."
+  (cond
+   ;; Same group (including daily-group): single
+   ((eq prev-source curr-source)
+    "-----\n")
+   ;; Different groups: double
+   (t
+    "-----\n-----\n")))
+
+(defun aj/clean-and-insert-recurring-separator (prev-heading-bol curr-heading-bol separator)
+  "Clean existing separators between PREV-HEADING-BOL and CURR-HEADING-BOL.
+Then insert SEPARATOR (or nothing if nil)."
+  (save-excursion
+    (let ((zone-start (save-excursion
+                        (goto-char prev-heading-bol)
+                        (forward-line 1)
+                        (point)))
+          (positions nil))
+      ;; Collect all ----- lines in the zone
+      (goto-char zone-start)
+      (while (re-search-forward "^-----$" curr-heading-bol t)
+        (push (cons (line-beginning-position)
+                    (min (1+ (line-end-position)) (point-max)))
+              positions))
+      ;; Delete from bottom to top
+      (dolist (pos positions)
+        (delete-region (car pos) (cdr pos))
+        (setq curr-heading-bol (- curr-heading-bol (- (cdr pos) (car pos)))))
+      ;; Insert the correct separator before curr heading
+      (when separator
+        (goto-char curr-heading-bol)
+        ;; Walk backwards past blank lines
+        (forward-line -1)
+        (while (and (> (point) zone-start) (looking-at-p "^[ \t]*$"))
+          (forward-line -1))
+        (forward-line 1)
+        ;; Remove excess blank lines
+        (let ((blank-start (point)))
+          (while (and (< (point) curr-heading-bol) (looking-at-p "^[ \t]*$"))
+            (forward-line 1))
+          (when (> (point) blank-start)
+            (delete-region blank-start (point))))
+        (insert "\n" separator "\n")))))
+
+(defun aj/ensure-recurring-separators (heading-source-map)
+  "Ensure correct separators between ** headings under * Recurring.
+HEADING-SOURCE-MAP is an alist of (HEADING-NAME . SOURCE-TYPE).
+Separator rules:
+  - Within same group (including daily-group): single -----
+  - Between different groups: double -----"
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let* ((section-start (line-end-position))
+             (section-end (save-excursion
+                            (forward-line 1)
+                            (if (re-search-forward "^\\* " nil t)
+                                (line-beginning-position)
+                              (point-max))))
+             (headings nil))
+        ;; Collect all ** heading positions in the Recurring section
+        (goto-char section-start)
+        (while (re-search-forward "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+?\\)[ \t]*$" section-end t)
+          (push (cons (match-string 1) (line-beginning-position)) headings))
+        (setq headings (nreverse headings))
+        ;; Process from bottom to top (position stability)
+        (let ((len (length headings)))
+          (when (>= len 2)
+            (dotimes (j (1- len))
+              (let* ((i (- len 1 j))
+                     (curr-name (car (nth i headings)))
+                     (curr-bol (cdr (nth i headings)))
+                     (prev-name (car (nth (1- i) headings)))
+                     (prev-source (cdr (assoc prev-name heading-source-map)))
+                     (curr-source (cdr (assoc curr-name heading-source-map)))
+                     (separator (aj/recurring-separator-for prev-source curr-source)))
+                (aj/clean-and-insert-recurring-separator
+                 (cdr (nth (1- i) headings)) curr-bol separator)))))))))
+
+(defun aj/ensure-recurring-separators-from-cache ()
+  "Re-apply recurring separators using cached heading-source-map."
+  (when aj/recurring-heading-source-map
+    (aj/ensure-recurring-separators aj/recurring-heading-source-map)))
+
+(defun aj/find-recurring-insert-point (heading-name)
+  "Find correct insertion point for HEADING-NAME under * Recurring.
+Uses `aj/recurring-heading-order' to maintain template order."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let* ((section-start (line-end-position))
+             (section-end (save-excursion
+                            (forward-line 1)
+                            (if (re-search-forward "^\\* " nil t)
+                                (line-beginning-position)
+                              (point-max))))
+             (pos (cl-position heading-name aj/recurring-heading-order :test 'equal))
+             (later-headings (when pos (nthcdr (1+ pos) aj/recurring-heading-order))))
+        ;; Find first existing heading that should come AFTER this one
+        (catch 'found
+          (dolist (next-heading later-headings)
+            (goto-char section-start)
+            (when (re-search-forward
+                   (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\b"
+                           (regexp-quote next-heading))
+                   section-end t)
+              (throw 'found (line-beginning-position))))
+          ;; No later heading found, insert at end of section
+          section-end)))))
+
+(defun aj/insert-recurring-block (heading content-lines)
+  "Insert HEADING and CONTENT-LINES at correct position under * Recurring.
+Maintains template order by inserting before later headings.
+Ensures exactly one blank line before the heading."
+  (let* ((heading-name (aj/extract-heading-name heading))
+         (insert-point (aj/find-recurring-insert-point heading-name)))
+    (when insert-point
+      (save-excursion
+        (goto-char insert-point)
+        ;; Ensure we're at beginning of line
+        (unless (bolp) (insert "\n"))
+        ;; Check if previous line is blank; if not, add one
+        (when (save-excursion
+                (forward-line -1)
+                (not (looking-at-p "^[ \t]*$")))
+          (insert "\n"))
+        (insert heading "\n")
+        ;; Insert all content lines, including blank lines for proper spacing
+        (dolist (line content-lines)
+          (insert line "\n"))))))
+
+(defun aj/refresh-daily-recurring ()
+  "Refresh recurring tasks in the current daily note.
+Parses date from #+title: line, fetches all recurring templates.
+Only ADDS new tasks - does not replace or modify existing ones.
+Maintains template order even when some headings already exist."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+        (let* ((date-str (match-string 1))
+               (parts (split-string date-str "-"))
+               (year (string-to-number (nth 0 parts)))
+               (month (string-to-number (nth 1 parts)))
+               (day (string-to-number (nth 2 parts)))
+               (date-time (encode-time 0 0 0 day month year))
+               (grouped (aj/get-recurring-tasks-grouped date-time))
+               (tasks-raw (string-join (mapcar #'cdr grouped) "\n\n"))
+               ;; Increment all heading levels by 1 (subheadings under * Recurring)
+               (tasks (replace-regexp-in-string "^\\(\\*+\\) " "*\\1 " tasks-raw))
+               ;; Build heading-source-map from raw (pre-increment) content
+               (heading-source-map (aj/build-heading-source-map grouped))
+               (added-count 0))
+          (if (string-empty-p tasks)
+              (message "No recurring tasks for %s" date-str)
+            ;; Cache the source map buffer-locally
+            (setq aj/recurring-heading-source-map heading-source-map)
+            ;; Populate heading order for correct insertion positions
+            (setq aj/recurring-heading-order (aj/extract-heading-order tasks))
+            ;; Ensure Recurring heading exists at correct position
+            (aj/ensure-heading-exists "Recurring")
+            ;; Parse each task block and only add if not already present
+            (let ((task-lines (split-string tasks "\n"))
+                  (current-heading nil)
+                  (current-block nil))
+              ;; Group lines by heading
+              (dolist (line task-lines)
+                (cond
+                 ;; New heading found
+                 ((string-match "^\\*\\* " line)
+                  ;; Process previous block if exists
+                  (when (and current-heading
+                             (not (aj/recurring-heading-exists-p
+                                   (aj/extract-heading-name current-heading))))
+                    (aj/insert-recurring-block current-heading (nreverse current-block))
+                    (setq added-count (1+ added-count)))
+                  (setq current-heading line
+                        current-block nil))
+                 ;; Content line
+                 (t (push line current-block))))
+              ;; Process final block
+              (when (and current-heading
+                         (not (aj/recurring-heading-exists-p
+                               (aj/extract-heading-name current-heading))))
+                (aj/insert-recurring-block current-heading (nreverse current-block))
+                (setq added-count (1+ added-count))))
+            ;; Apply recurring separators after all headings are inserted
+            (aj/ensure-recurring-separators heading-source-map)
+            (if (> added-count 0)
+                (message "Added %d recurring task(s) for %s" added-count date-str)
+              (message "All recurring tasks already present for %s" date-str))))
+      (message "Not a daily note (no date in title)"))))
+
+;; ---------------------------------------------------------------------------
+;; Daily File Structure & Separators
+;; ---------------------------------------------------------------------------
+
+(defun aj/find-heading-insert-point (heading)
+  "Find the correct insertion point for HEADING based on `aj/daily-heading-order'.
+Returns the position where the heading should be inserted."
+  (let* ((pos (cl-position heading aj/daily-heading-order :test 'equal))
+         (later-headings (nthcdr (1+ pos) aj/daily-heading-order)))
+    ;; Find the first existing heading that should come after this one
+    (catch 'found
+      (dolist (next-heading later-headings)
+        (save-excursion
+          (save-restriction
+            (widen)
+            (goto-char (point-min))
+            (when (re-search-forward (format "^\\* %s\\b" (regexp-quote next-heading)) nil t)
+              (throw 'found (line-beginning-position))))))
+      ;; No later heading found, insert at end of buffer
+      nil)))
+
+(defun aj/ensure-heading-exists (heading)
+  "Ensure HEADING exists in the daily note at the correct position.
+Returns t if heading was created, nil if it already existed."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (unless (re-search-forward (format "^\\* %s\\b" (regexp-quote heading)) nil t)
+        (let ((insert-point (aj/find-heading-insert-point heading))
+              (heading-text (if (member heading aj/headings-with-statistics)
+                                (format "* %s [/]\n\n" heading)
+                              (format "* %s\n\n" heading))))
+          (if insert-point
+              (progn
+                (goto-char insert-point)
+                (insert heading-text))
+            ;; Insert at end
+            (goto-char (point-max))
+            (unless (bolp) (insert "\n"))
+            (insert (concat "\n" heading-text))))
+        t))))
+
+(defun aj/ensure-heading-has-statistics-cookie (heading)
+  "Ensure HEADING has a [/] statistics cookie if it should have one.
+Only modifies headings listed in `aj/headings-with-statistics'."
+  (when (member heading aj/headings-with-statistics)
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (point-min))
+        (when (re-search-forward (format "^\\(\\* %s\\)\\([ \t]*\\)$" (regexp-quote heading)) nil t)
+          ;; Heading exists without cookie - add it
+          (goto-char (match-end 1))
+          (insert " [/]"))))))
+
+(defun aj/ensure-daily-structure ()
+  "Ensure the daily note has all required headings in the correct order.
+Order: Journal, Recurring, Calendar, Capture, Tasks."
+  (interactive)
+  (when (aj/daily-date-file-p)
+    (save-excursion
+      (dolist (heading aj/daily-heading-order)
+        (aj/ensure-heading-exists heading))
+      ;; Ensure statistics cookies on headings that need them
+      (dolist (heading aj/headings-with-statistics)
+        (aj/ensure-heading-has-statistics-cookie heading))
+      ;; Ensure ----- separators between level-1 headings
+      (aj/ensure-heading-separators)
+      (aj/ensure-recurring-separators-from-cache))))
+
+(defun aj/ensure-heading-separators ()
+  "Ensure triple ----- separators immediately before each level-1 heading except the first.
+If a separator was displaced (e.g. by a capture inserting after it),
+removes all stale separators and inserts a fresh triple separator.
+User-placed separators earlier in the section are preserved."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (let ((headings nil))
+        ;; Collect all level-1 heading positions
+        (while (re-search-forward "^\\* " nil t)
+          (push (line-beginning-position) headings))
+        (setq headings (nreverse headings))
+        (let ((len (length headings)))
+          (when (>= len 2)
+            ;; Process from bottom to top so position shifts don't affect
+            ;; headings we haven't processed yet
+            (dotimes (j (1- len))
+              (let* ((i (- len 1 j))
+                     (heading-bol (nth i headings))
+                     (section-start (save-excursion
+                                      (goto-char (nth (1- i) headings))
+                                      (forward-line 1) (point))))
+                ;; Check if double ----- is right above heading (skip blank lines)
+                (goto-char heading-bol)
+                (forward-line -1)
+                (while (and (> (point) section-start)
+                            (looking-at-p "^[ \t]*$"))
+                  (forward-line -1))
+                (let ((has-triple-sep
+                       (and (looking-at-p "^-----$")
+                            (save-excursion
+                              (forward-line -1)
+                              (and (looking-at-p "^-----$")
+                                   (save-excursion
+                                     (forward-line -1)
+                                     (looking-at-p "^-----$")))))))
+                  (unless has-triple-sep
+                    ;; Remove ALL ----- lines in this section (stale singles or doubles)
+                    (let ((positions nil))
+                      (goto-char section-start)
+                      (while (re-search-forward "^-----$" heading-bol t)
+                        (push (cons (line-beginning-position)
+                                    (min (1+ (line-end-position)) (point-max)))
+                              positions))
+                      ;; Delete from bottom to top so positions stay valid
+                      (dolist (pos positions)
+                        (delete-region (car pos) (cdr pos))
+                        (setq heading-bol (- heading-bol (- (cdr pos) (car pos))))))
+                    ;; Insert fresh double separator before heading
+                    (goto-char heading-bol)
+                    (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                      (insert "\n"))
+                    (insert "-----\n-----\n-----\n\n")))))))))))
+
+(defun aj/fold-week-heading ()
+  "Fold the Week heading if present.
+Matches both linked format (* [[id:...][Week N ...]]) and plain format (* Week N)."
+  (when (aj/daily-date-file-p)
+    (save-excursion
+      (goto-char (point-min))
+      ;; Match either: * [[id:...][Week N...]] or * Week N
+      (when (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)
+        (goto-char (line-beginning-position))
+        (when (not (org-fold-folded-p (line-end-position)))
+          (org-cycle))))))
+
+;; ---------------------------------------------------------------------------
+;; Capture Entry Tracking & Jump
+;; ---------------------------------------------------------------------------
+
+;; Helper for dailies time prefix - shows time only for today's captures
+(defun aj/dailies-entry-prefix ()
+  "Return time prefix for today's captures, empty string otherwise."
+  (let* ((capture-time (org-capture-get :default-time))
+         (today (format-time-string "%Y-%m-%d"))
+         (capture-date (format-time-string "%Y-%m-%d" capture-time)))
+    (if (equal today capture-date)
+        (format-time-string "%I:%M%p " capture-time)
+      "")))
+
+;; Track dailies file for repositioning after capture
+(defvar aj/--dailies-capture-file nil)
+
+;; Track captured entry heading for optional jump (position gets stale after buffer modifications)
+(defvar aj/--dailies-capture-heading nil
+  "Heading text of the newly captured dailies entry.")
+
+(defvar aj/--dailies-capture-target nil
+  "Target heading for current dailies capture.
+\"Capture\" = default. Otherwise, raw heading text of a Recurring child.")
+
+(defun aj/dailies-store-capture-marker ()
+  "Store identifier of the captured entry for optional jump.
+Stores heading text instead of position since buffer modifications
+(separator insertion, recurring task refresh) shift positions."
+  (let* ((buf (org-capture-get :buffer))
+         (file (and buf (buffer-file-name buf))))
+    ;; Check if this is a dailies capture
+    (when (and file
+               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file))
+      (setq aj/--dailies-capture-file file)
+      ;; Store the heading text to search for later
+      (with-current-buffer buf
+        (save-excursion
+          (goto-char (org-capture-get :insertion-point))
+          (when (org-at-heading-p)
+            (setq aj/--dailies-capture-heading
+                  (org-get-heading t t t t))))))))
+
+(defun aj/dailies-prompt-jump-to-capture ()
+  "Prompt user to jump to the newly captured dailies entry.
+Searches for heading text instead of using stored position, since
+buffer modifications (separator insertion, recurring task refresh)
+shift positions after capture."
+  (when (and aj/--dailies-capture-file aj/--dailies-capture-heading)
+    (let ((file aj/--dailies-capture-file)
+          (heading aj/--dailies-capture-heading)
+          (target (or aj/--dailies-capture-target "Capture")))
+      ;; Clear all state vars
+      (setq aj/--dailies-capture-file nil
+            aj/--dailies-capture-heading nil
+            aj/--dailies-capture-target nil)
+      (when (y-or-n-p "Jump to captured entry? ")
+        (switch-to-buffer (find-file-noselect file))
+        (widen)
+        (goto-char (point-min))
+        (if (equal target "Capture")
+            ;; Search under * Capture section (original behavior)
+            (if (re-search-forward "^\\* Capture\\b" nil t)
+                (let ((section-end (save-excursion
+                                     (if (re-search-forward "^\\* " nil t)
+                                         (point)
+                                       (point-max)))))
+                  (if (re-search-forward
+                       (format "^\\*\\* .*%s" (regexp-quote heading))
+                       section-end t)
+                      (progn
+                        (beginning-of-line)
+                        (org-reveal)
+                        (recenter))
+                    (message "Could not find captured entry: %s" heading)))
+              (message "Could not find Capture section"))
+          ;; Entry was moved to Recurring — search as demoted *** heading
+          (if (or (re-search-forward
+                   (format "^\\*\\*\\* .*%s" (regexp-quote heading)) nil t)
+                  (progn (goto-char (point-min))
+                         (re-search-forward
+                          (format "^\\*+ .*%s" (regexp-quote heading)) nil t)))
+              (progn
+                (beginning-of-line)
+                (org-reveal)
+                (recenter))
+            (message "Could not find captured entry: %s" heading)))))))
+
+(defun aj/dailies-track-file ()
+  "Track the dailies file being captured to."
+  (let ((file (buffer-file-name (org-capture-get :buffer))))
+    (when (and file
+               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file))
+      (setq aj/--dailies-capture-file file))))
+
+(defun aj/dailies-get-recurring-children (buf)
+  "Return alist of (display-name . raw-heading) for ** children of * Recurring in BUF.
+Uses `org-link-display-format' to strip links for display."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char (point-min))
+        (when (re-search-forward "^\\* Recurring\\b" nil t)
+          (let ((section-end (save-excursion
+                               (if (re-search-forward "^\\* " nil t)
+                                   (line-beginning-position)
+                                 (point-max))))
+                (children nil))
+            (while (re-search-forward "^\\*\\* \\(.+\\)$" section-end t)
+              (let* ((raw (match-string 1))
+                     (display (org-link-display-format raw)))
+                (push (cons display raw) children)))
+            (nreverse children)))))))
+
+(defun aj/dailies-prompt-target-heading ()
+  "Prompt user to choose target heading for dailies capture.
+Offers immediate ** children of * Recurring as alternatives to Capture."
+  (let ((file (buffer-file-name (org-capture-get :buffer))))
+    (when (and file
+               (string-match-p "/daily/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\.org$" file))
+      (let* ((buf (org-capture-get :buffer))
+             (children (aj/dailies-get-recurring-children buf))
+             (options (append '("Capture")
+                              (mapcar #'car children)))
+             (choice (completing-read "Place under: " options nil t nil nil "Capture"))
+             (target (if (equal choice "Capture")
+                         "Capture"
+                       (or (cdr (assoc choice children)) choice))))
+        (setq aj/--dailies-capture-target target)))))
+
+(defun aj/dailies-move-capture-to-recurring (target heading)
+  "Move captured entry from * Capture to ** TARGET under * Recurring.
+HEADING is the captured entry's heading text. Demotes from ** to ***."
+  (save-excursion
+    ;; Find the entry under * Capture
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Capture\\b" nil t)
+      (let ((capture-end (save-excursion
+                           (if (re-search-forward "^\\* " nil t)
+                               (line-beginning-position)
+                             (point-max)))))
+        (when (re-search-forward
+               (format "^\\*\\* .*%s" (regexp-quote heading))
+               capture-end t)
+          (beginning-of-line)
+          (let* ((entry-start (point))
+                 (entry-end (save-excursion
+                              (org-end-of-subtree t t)
+                              (point)))
+                 (entry-text (buffer-substring entry-start entry-end)))
+            ;; Delete entry from Capture
+            (delete-region entry-start entry-end)
+            ;; Clean up extra blank lines left behind
+            (when (and (looking-at "\n") (save-excursion (forward-line -1) (looking-at "^$")))
+              (delete-char 1))
+            ;; Find target under * Recurring
+            (goto-char (point-min))
+            (when (re-search-forward "^\\* Recurring\\b" nil t)
+              (let ((recurring-end (save-excursion
+                                     (if (re-search-forward "^\\* " nil t)
+                                         (line-beginning-position)
+                                       (point-max)))))
+                (when (re-search-forward
+                       (format "^\\*\\* .*%s" (regexp-quote (org-link-display-format target)))
+                       recurring-end t)
+                  (let ((target-bol (line-beginning-position)))
+                  (org-end-of-subtree t t)
+                  ;; Demote: ** → ***, *** → ****, etc.
+                  (let* ((demoted (replace-regexp-in-string
+                                    "^\\(\\*+\\) " "*\\1 " entry-text))
+                         ;; Strip trailing separators to avoid doubles
+                         (demoted (replace-regexp-in-string
+                                   "\\(\n*-+\n*\\)+\\'" "\n" demoted)))
+                    ;; Ensure blank line before insertion
+                    (unless (bolp) (insert "\n"))
+                    (unless (save-excursion (forward-line -1) (looking-at "^$"))
+                      (insert "\n"))
+                    (insert demoted)
+                    (unless (bolp) (insert "\n")))
+                  ;; Remove any ----- lines between *** siblings in this subtree
+                  (save-excursion
+                    (goto-char target-bol)
+                    (let ((sub-end (save-excursion (org-end-of-subtree t t) (point))))
+                      (while (re-search-forward "^\\*\\*\\*+ " sub-end t)
+                        (save-excursion
+                          (forward-line -1)
+                          (while (and (> (point) (point-min))
+                                      (looking-at-p "^[ \t]*$"))
+                            (forward-line -1))
+                          (when (looking-at-p "^-+$")
+                            (let ((sep-start (line-beginning-position))
+                                  (sep-end (progn (forward-line 1)
+                                                  (while (looking-at-p "^[ \t]*$")
+                                                    (forward-line 1))
+                                                  (point))))
+                              (delete-region sep-start sep-end)
+                              ;; Ensure a blank line remains between siblings
+                              (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                                (insert "\n")
+                                (setq sub-end (1+ sub-end)))
+                              (setq sub-end (- sub-end (- sep-end sep-start)))))))))))))))))))
+
+(defun aj/dailies-reposition-entry ()
+  "Setup daily file after capture.
+Inserts week transclude, ensures heading structure, and populates content.
+Entries are placed under * Capture by the capture template."
+  (when aj/--dailies-capture-file
+    (let ((file aj/--dailies-capture-file))
+      (with-current-buffer (find-file-noselect file)
+        ;; 1. Insert week transclude if not present
+        ;; Check both raw directive AND rendered heading (in case transclusion already active)
+        (save-excursion
+          (goto-char (point-min))
+          (unless (or (re-search-forward "^#\\+transclude:" nil t)
+                      (progn (goto-char (point-min))
+                             (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
+            (aj/insert-week-transclude)))
+        ;; 2. Ensure all headings exist in correct order (with statistics cookies)
+        (aj/ensure-daily-structure)
+        ;; 3. Update statistics cookies (stripped before capture, restored here)
+        (org-update-statistics-cookies t)
+        ;; 4. Refresh recurring tasks
+        (aj/refresh-daily-recurring)
+        ;; 4b. Re-run heading separators after recurring content is inserted
+        ;; (recurring tasks may have displaced the separators)
+        (aj/ensure-heading-separators)
+        (aj/ensure-recurring-separators-from-cache)
+        ;; 5. Move captured entry if user chose a Recurring target
+        (when (and aj/--dailies-capture-target
+                   aj/--dailies-capture-heading
+                   (not (equal aj/--dailies-capture-target "Capture")))
+          (aj/dailies-move-capture-to-recurring
+           aj/--dailies-capture-target
+           aj/--dailies-capture-heading)
+          (aj/ensure-heading-separators)
+          (aj/ensure-recurring-separators-from-cache)
+          (org-update-statistics-cookies t))
+        ;; 5b. Insert calendar content
+        (save-excursion
+          (goto-char (point-min))
+          ;; Only insert calendar content if heading is empty
+          (when (re-search-forward "^\\* Calendar\\b" nil t)
+            (let ((heading-end (line-end-position))
+                  (next-heading (save-excursion
+                                  (forward-line 1)
+                                  (if (re-search-forward "^\\* " nil t)
+                                      (line-beginning-position)
+                                    (point-max)))))
+              ;; Check if there's no content between Calendar and next heading
+              (when (< (- next-heading heading-end) 5)
+                (my/insert-aj-day-calendar)))))
+        ;; 6. Activate org-transclusion-mode to render the transclude
+        (when (and (fboundp 'org-transclusion-mode)
+                   (not (bound-and-true-p org-transclusion-mode)))
+          (org-transclusion-mode 1))
+        (save-buffer)))))
+
+;; ---------------------------------------------------------------------------
+;; Calendar & Weather
+;; ---------------------------------------------------------------------------
+
+(defun my/parse-cal-days (line)
+  "Parse a cal output LINE into a list of 7 day values (nil for empty)."
+  (let ((days '())
+        (padded (concat line "                    ")))
+    (dotimes (i 7)
+      (let* ((start (* i 3))
+             (day-str (string-trim (substring padded start (+ start 2)))))
+        (push (if (string-empty-p day-str) nil (string-to-number day-str)) days)))
+    (nreverse days)))
+
+(defun my/format-day-cal-header (target-dow)
+  "Format day names header with widened column for TARGET-DOW (0=Sun, 6=Sat).
+Widened column: 6 chars (or 5 if last). Column before widened: no trailing space."
+  (let ((day-names ["Su" "Mo" "Tu" "We" "Th" "Fr" "Sa"])
+        (result "   "))
+    (dotimes (dow 7)
+      (let* ((name (aref day-names dow))
+             (is-widened (= dow target-dow))
+             (is-before-widened (and (> target-dow 0) (= dow (1- target-dow))))
+             (is-last (= dow 6)))
+        (setq result
+              (concat result
+                      (cond
+                       ;; Widened column: "  XX  " (6) or "  XX " (5 if last)
+                       (is-widened (if is-last (format "  %s " name) (format "  %s  " name)))
+                       ;; Before widened: no trailing space (absorbed by widened)
+                       (is-before-widened (format "%s" name))
+                       ;; Normal last
+                       (is-last name)
+                       ;; Normal column
+                       (t (format "%s " name)))))))
+    result))
+
+(defun my/format-day-cal-line (days target-day target-dow)
+  "Format calendar data line with widened TARGET-DOW column and bolded TARGET-DAY.
+DAYS is a list of 7 day numbers (nil for empty).
+Widened column: 6 chars (or 5 if last). Column before widened: no trailing space."
+  (let ((result "   "))
+    (dotimes (dow 7)
+      (let* ((day-val (nth dow days))
+             (is-widened (= dow target-dow))
+             (is-before-widened (and (> target-dow 0) (= dow (1- target-dow))))
+             (is-target (and day-val (= day-val target-day)))
+             (is-last (= dow 6)))
+        (setq result
+              (concat result
+                      (cond
+                       ;; Widened column: " *DD* " (6) or " *DD*" (5 if last)
+                       (is-widened
+                        (cond
+                         ;; Bold last: " *7* " (5) or " *12*" (5)
+                         ((and is-target is-last)
+                          (if (< day-val 10) (format " *%d* " day-val) (format " *%d*" day-val)))
+                         ;; Bold non-last: "  *7* " (6) or " *12* " (6)
+                         (is-target
+                          (if (< day-val 10) (format "  *%d* " day-val) (format " *%d* " day-val)))
+                         ((and day-val is-last) (format "  %2d " day-val))
+                         (day-val (format "  %2d  " day-val))
+                         (is-last "     ")
+                         (t "      ")))
+                       ;; Before widened: no trailing space
+                       (is-before-widened
+                        (if day-val (format "%2d" day-val) "  "))
+                       ;; Normal last column
+                       (is-last (if day-val (format "%2d" day-val) "  "))
+                       ;; Normal column
+                       (t (if day-val (format "%2d " day-val) "   ")))))))
+    result))
+
+(defun my/format-number-with-commas (n)
+  "Format integer N with comma thousand separators."
+  (let ((s (number-to-string n)))
+    (while (string-match "\\(.*[0-9]\\)\\([0-9]\\{3\\}\\)\\'" s)
+      (setq s (concat (match-string 1 s) "," (match-string 2 s))))
+    s))
+
+(defun aj/ensure-daily-id (date-str)
+  "Ensure daily note exists for DATE-STR (YYYY-MM-DD). Returns org-roam ID.
+Creates a minimal file with just ID and title if it doesn't exist.
+Does not run hooks or add headings - those are added when the file is opened."
+  (require 'org-roam)
+  (require 'org-id)
+  (let* ((parts (split-string date-str "-"))
+         (year (string-to-number (nth 0 parts)))
+         (month (string-to-number (nth 1 parts)))
+         (day (string-to-number (nth 2 parts)))
+         (date-time (encode-time 0 0 0 day month year))
+         (day-name (format-time-string "%A" date-time))
+         (daily-dir (expand-file-name
+                     (or org-roam-dailies-directory "daily")
+                     org-roam-directory))
+         (file-path (expand-file-name (concat date-str ".org") daily-dir)))
+    ;; Create minimal file if it doesn't exist
+    (unless (file-exists-p file-path)
+      (let ((id (org-id-uuid)))
+        (make-directory daily-dir t)
+        (with-temp-file file-path
+          ;; Naked file: just properties and title, no headings
+          (insert (format ":PROPERTIES:\n:ID:       %s\n:END:\n#+title: %s | %s\n#+EXPORT_FILE_NAME: %s\n"
+                          id date-str day-name date-str)))
+        ;; Update org-roam database for new file
+        (org-roam-db-update-file file-path)))
+    ;; Get ID from org-roam database
+    (caar (org-roam-db-query
+           [:select id :from nodes :where (= file $s1)]
+           file-path))))
+
+(defun my/format-day-cell (day-num target-day year month)
+  "Format a calendar day cell for org table with ID links.
+DAY-NUM is the day number (or nil for empty).
+TARGET-DAY is the current day (bolded, no link).
+YEAR and MONTH are used to build the ID link."
+  (if (null day-num)
+      "   "
+    (if (= day-num target-day)
+        ;; Current day: bold, no link
+        (if (< day-num 10)
+            (format "*%d*  " day-num)
+          (format "*%d* " day-num))
+      ;; Other days: get/create daily and link by ID
+      (let* ((date-str (format "%04d-%02d-%02d" year month day-num))
+             (id (aj/ensure-daily-id date-str))
+             (link (format "[[id:%s][%d]]" id day-num)))
+        (if (< day-num 10)
+            (format "%s  " link)
+          (format "%s " link))))))
+
+(defun my/insert-aj-day-calendar ()
+  "Insert formatted calendar for a daily org-roam note with life stats.
+Parses date from #+title: YYYY-MM-DD line.
+Outputs an org table with links to daily files.
+Σ column: Day of year (cumulative days elapsed in current year).
+ω column: Days elapsed since December 26, 2001 (AJ's birthday)."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+      (let* ((date-str (match-string 1))
+             (parts (split-string date-str "-"))
+             (year (string-to-number (nth 0 parts)))
+             (month (string-to-number (nth 1 parts)))
+             (day (string-to-number (nth 2 parts)))
+             (date (encode-time 0 0 0 day month year))
+             ;; Birthday: December 26, 2001
+             (birthday (encode-time 0 0 0 26 12 2001))
+             (cal-output (shell-command-to-string (format "cal %d %d" month year)))
+             (lines (split-string cal-output "\n")))
+
+        ;; Ensure Calendar heading exists at correct position
+        (aj/ensure-heading-exists "Calendar")
+        ;; Find it and clear existing content
+        (goto-char (point-min))
+        (when (re-search-forward "^\\* Calendar\\b" nil t)
+          (let ((heading-end (line-end-position))
+                (section-end (save-excursion
+                               (forward-line 1)
+                               (if (re-search-forward "^\\* " nil t)
+                                   (line-beginning-position)
+                                 (point-max)))))
+            (delete-region (1+ heading-end) section-end))
+          (goto-char (line-end-position))
+          (insert "\n\n"))
+
+        ;; Caption with month name
+        (let ((month-name (format-time-string "%B %Y" date)))
+          (insert (format "#+CAPTION: %s\n" month-name)))
+
+        ;; Table header with top border
+        (insert "|----+----+----+----+----+----+----+-------+--------|\n")
+        (insert "| Su | Mo | Tu | We | Th | Fr | Sa | Σ(wk) | ω(dol) |\n")
+        (insert "|----+----+----+----+----+----+----+-------+--------|\n")
+
+        ;; Day rows
+        (let ((week-num 0))
+          (dolist (line (nthcdr 2 lines))
+            (when (string-match "[0-9]" line)
+              (setq week-num (1+ week-num))
+              (let* ((days (my/parse-cal-days line))
+                     (last-day (car (last (remq nil days))))
+                     (date-end (encode-time 0 0 0 last-day month year))
+                     ;; Days alive: difference from birthday to date-end
+                     (days-alive (floor (/ (float-time (time-subtract date-end birthday)) 86400))))
+                ;; Build table row with linked days
+                (insert "|")
+                (dotimes (dow 7)
+                  (insert " " (my/format-day-cell (nth dow days) day year month) "|"))
+                (insert (format " %5d | %s |\n" week-num (my/format-number-with-commas days-alive)))))))
+
+        ;; Bottom border
+        (insert "|----+----+----+----+----+----+----+-------+--------|\n")
+
+        ;; Align the table - must be inside table, not on border
+        (forward-line -2)
+        (org-table-align)
+
+        ;; Fetch weather asynchronously and insert when ready
+        (aj/fetch-calendar-weather-async date-str (current-buffer))))))
+
+;; ---------------------------------------------------------------------------
+;; OpenWeatherMap for Calendar (uses API key from authinfo.gpg)
+;; ---------------------------------------------------------------------------
+
+(defun aj/get-location-from-file ()
+  "Read location from ~/.weather-location if it exists.
+Returns (lat lon name) or nil."
+  (when (file-exists-p aj/weather-location-file)
+    (with-temp-buffer
+      (insert-file-contents aj/weather-location-file)
+      (let ((content (string-trim (buffer-string))))
+        (when (string-match "^\\(-?[0-9.]+\\)\\s-+\\(-?[0-9.]+\\)\\s-+\\(.+\\)$" content)
+          (list (string-to-number (match-string 1 content))
+                (string-to-number (match-string 2 content))
+                (string-trim (match-string 3 content))))))))
+
+(defun aj/get-location-from-ip ()
+  "Get current location from IP geolocation (ip-api.com).
+Returns (lat lon name) or nil on failure."
+  (condition-case err
+      (let ((url-request-method "GET")
+            (url-show-status nil))
+        (with-current-buffer
+            (url-retrieve-synchronously "http://ip-api.com/json/?fields=lat,lon,city,regionName" t t 5)
+          (goto-char (point-min))
+          (when (re-search-forward "\n\n" nil t)
+            (let* ((json-object-type 'alist)
+                   (data (json-read))
+                   (lat (alist-get 'lat data))
+                   (lon (alist-get 'lon data))
+                   (city (alist-get 'city data)))
+              (when (and lat lon)
+                (list lat lon (or city "Sydney")))))))
+    (error
+     (message "Location lookup failed: %s" err)
+     nil)))
+
+(defun aj/get-weather-location ()
+  "Get weather location, preferring config file over IP geolocation.
+Returns (lat lon name) or defaults to Sydney CBD."
+  (let* ((now (float-time))
+         (cache-valid (and aj/weather-location-cache
+                           (< (- now (car aj/weather-location-cache))
+                              aj/weather-location-cache-duration))))
+    (if cache-valid
+        (cdr aj/weather-location-cache)
+      ;; Try config file first, then IP geolocation
+      (let ((location (or (aj/get-location-from-file)
+                          (aj/get-location-from-ip)
+                          (list -33.8688 151.2093 "Sydney"))))
+        (setq aj/weather-location-cache (cons now location))
+        location))))
+
+(defun aj/sync-weather-archive ()
+  "Sync weather archive from remote server."
+  (interactive)
+  (make-directory aj/weather-archive-local t)
+  (let ((proc (start-process "weather-sync" nil
+                             "rsync" "-az"
+                             aj/weather-archive-remote
+                             aj/weather-archive-local)))
+    (set-process-sentinel proc
+                          (lambda (p e)
+                            (when (string-match-p "finished" e)
+                              (message "Weather archive synced"))))))
+
+(defun aj/get-week-bounds (date-str)
+  "Return (start-date . end-date) for the week containing DATE-STR.
+Week runs Sunday to Saturday."
+  (let* ((parts (split-string date-str "-"))
+         (year (string-to-number (nth 0 parts)))
+         (month (string-to-number (nth 1 parts)))
+         (day (string-to-number (nth 2 parts)))
+         (date (encode-time 0 0 0 day month year))
+         (dow (string-to-number (format-time-string "%w" date)))
+         (week-start (time-subtract date (days-to-time dow)))
+         (week-end (time-add week-start (days-to-time 6))))
+    (cons (format-time-string "%Y-%m-%d" week-start)
+          (format-time-string "%Y-%m-%d" week-end))))
+
+(defun aj/read-archive-weather (date-str)
+  "Read archived weather for DATE-STR from local cache. Returns alist or nil."
+  (let ((file (expand-file-name (concat date-str ".json") aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist)
+              (json-array-type 'list))
+          (condition-case nil
+              (json-read)
+            (error nil)))))))
+
+(defun aj/read-weather-location-name ()
+  "Read location name from cached location.json. Returns string or nil."
+  (let ((file (expand-file-name "location.json" aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist))
+          (condition-case nil
+              (alist-get 'name (json-read))
+            (error nil)))))))
+
+(defun aj/get-openweather-api-key ()
+  "Get OpenWeatherMap API key from authinfo.gpg."
+  (require 'auth-source)
+  (let ((auth (car (auth-source-search :host "api.openweathermap.org"
+                                       :require '(:secret)))))
+    (when auth
+      (let ((secret (plist-get auth :secret)))
+        (if (functionp secret)
+            (funcall secret)
+          secret)))))
+
+(defun aj/openweather-icon (condition)
+  "Map OpenWeatherMap weather condition to emoji."
+  (pcase condition
+    ("Clear" "☀️")
+    ("Clouds" "☁️")
+    ("Rain" "🌧️")
+    ("Drizzle" "🌦️")
+    ("Thunderstorm" "⛈️")
+    ("Snow" "❄️")
+    ((or "Mist" "Fog" "Haze" "Smoke" "Dust" "Sand" "Ash" "Squall" "Tornado") "🌫️")
+    (_ "🌡️")))
+
+(defun aj/calculate-moon-phase (year month day)
+  "Calculate moon phase for given date. Returns string with emoji and name."
+  (let* ((y (if (<= month 2) (1- year) year))
+         (m (if (<= month 2) (+ month 12) month))
+         (c (/ y 100))
+         (e (+ (- 2 c) (/ c 4)))
+         (jd (+ (floor (* 365.25 (+ y 4716)))
+                (floor (* 30.6001 (+ m 1)))
+                day e -1524.5))
+         (phase-raw (mod (- jd 2451550.1) 29.530588853))
+         (phase-idx (floor (* (/ phase-raw 29.530588853) 8))))
+    (pcase phase-idx
+      (0 "🌑 New Moon")
+      (1 "🌒 Waxing Crescent")
+      (2 "🌓 First Quarter")
+      (3 "🌔 Waxing Gibbous")
+      (4 "🌕 Full Moon")
+      (5 "🌖 Waning Gibbous")
+      (6 "🌗 Last Quarter")
+      (7 "🌘 Waning Crescent")
+      (_ "🌑 New Moon"))))
+
+(defun aj/format-unix-time (unix-time format-string)
+  "Format UNIX-TIME timestamp using FORMAT-STRING."
+  (format-time-string format-string (seconds-to-time unix-time)))
+
+(defun aj/parse-weather-week-from-cache (target-date)
+  "Parse weather for the full week (Sun-Sat) containing TARGET-DATE.
+Reads from local cache files synced from server.
+The '<-- today' marker indicates TARGET-DATE (the file's date), not actual today."
+  (let* ((bounds (aj/get-week-bounds target-date))
+         (week-start (car bounds))
+         (lines '())
+         (current-date week-start))
+    ;; Iterate through each day of the week (Sun-Sat)
+    (dotimes (_ 7)
+      (let* ((d-parts (split-string current-date "-"))
+             (d-year (string-to-number (nth 0 d-parts)))
+             (d-month (string-to-number (nth 1 d-parts)))
+             (d-day (string-to-number (nth 2 d-parts)))
+             (date-time (encode-time 0 0 0 d-day d-month d-year))
+             (day-name (format-time-string "%a" date-time))
+             ;; Mark the file's date, not actual today
+             (is-file-date (string= current-date target-date))
+             ;; Read from cache (server provides both historical and forecast)
+             (archive (aj/read-archive-weather current-date))
+             weather-info)
+        (when archive
+          (setq weather-info (list :temp (alist-get 'temp archive)
+                                  :min (alist-get 'temp_min archive)
+                                  :max (alist-get 'temp_max archive)
+                                  :cond (alist-get 'condition archive))))
+        ;; Format the line
+        (if weather-info
+            (let ((emoji (aj/openweather-icon (plist-get weather-info :cond)))
+                  (today-marker (if is-file-date " ← today" "")))
+              (push (format "- %s %d: %s %d°C (%d-%d°C)%s"
+                            day-name d-day emoji
+                            (floor (plist-get weather-info :temp))
+                            (floor (plist-get weather-info :min))
+                            (floor (plist-get weather-info :max))
+                            today-marker)
+                    lines))
+          ;; No data available
+          (push (format "- %s %d: —%s" day-name d-day (if is-file-date " ← today" "")) lines))
+        ;; Move to next day
+        (setq current-date
+              (format-time-string "%Y-%m-%d"
+                                 (time-add date-time (days-to-time 1))))))
+    (string-join (nreverse lines) "\n")))
+
+(defun aj/read-forecast-latest ()
+  "Read the forecast-latest.json from local cache. Returns alist or nil."
+  (let ((file (expand-file-name "forecast-latest.json" aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist)
+              (json-array-type 'list))
+          (condition-case nil
+              (json-read)
+            (error nil)))))))
+
+(defun aj/insert-weather-from-cache (buffer date-str)
+  "Insert weather content into BUFFER's Calendar section from local cache.
+Weather is relative to DATE-STR (the file's date), not today's date."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-min))
+        (when (re-search-forward "^\\* Calendar\\b" nil t)
+          (let ((section-end (copy-marker
+                              (save-excursion
+                                (forward-line 1)
+                                (if (re-search-forward "^\\* " nil t)
+                                    (1- (line-beginning-position))
+                                  (point-max))))))
+            ;; Remove existing weather lines
+            (save-excursion
+              (goto-char (point-min))
+              (when (re-search-forward "^\\* Calendar\\b" nil t)
+                (while (re-search-forward "^\\(.+ forecast:\\|forecast:\\|today:\\|sun:\\|moon:\\)" section-end t)
+                  (let ((line-start (line-beginning-position)))
+                    (forward-line 1)
+                    (when (string-match-p "forecast:" (match-string 0))
+                      (while (and (< (point) section-end)
+                                  (looking-at "^\\(  \\|- \\)"))
+                        (forward-line 1)))
+                    (delete-region line-start (point))))))
+            ;; Go to end of section
+            (goto-char section-end)
+            ;; Read from cache - only insert forecast (sun/moon/conditions now in hourly table)
+            (let ((forecast-str (aj/parse-weather-week-from-cache date-str))
+                  (location-name (or (aj/read-weather-location-name) "Sydney")))
+              (unless (bolp) (insert "\n"))
+              (insert (format "\n%s forecast:\n" location-name) forecast-str "\n"))))))))
+
+(defun aj/fetch-calendar-weather-async (date-str buffer)
+  "Fetch fresh weather from server and insert into BUFFER's Calendar section.
+Detects location from ~/.weather-location or IP, runs weather script on server,
+syncs data, then inserts."
+  (let* ((location (aj/get-weather-location))
+         (lat (number-to-string (nth 0 location)))
+         (lon (number-to-string (nth 1 location)))
+         (name (nth 2 location)))
+    (message "Weather: fetching for %s (%s, %s)..." name lat lon)
+    (make-directory aj/weather-archive-local t)
+    ;; Step 1: Run weather script on server with location args
+    (let ((fetch-proc (start-process "weather-fetch" "*weather-fetch*"
+                                     "ssh" "root@abaj.ai"
+                                     (format "/root/scripts/weather-archive.sh %s %s '%s'"
+                                             lat lon name))))
+      (set-process-sentinel
+       fetch-proc
+       (lambda (p e)
+         (if (not (string-match-p "finished" e))
+             (message "Weather: server fetch failed - %s" (string-trim e))
+           (message "Weather: server updated, syncing...")
+           ;; Step 2: Sync from server
+           (let ((sync-proc (start-process "weather-sync" nil
+                                           "rsync" "-az"
+                                           aj/weather-archive-remote
+                                           aj/weather-archive-local)))
+             (set-process-sentinel
+              sync-proc
+              (lambda (p2 e2)
+                (if (not (string-match-p "finished" e2))
+                    (message "Weather: sync failed - %s" (string-trim e2))
+                  (message "Weather: inserting into buffer...")
+                  (when (buffer-live-p buffer)
+                    (aj/insert-weather-from-cache buffer date-str)
+                    (aj/insert-hourly-weather-table buffer date-str)
+                    (with-current-buffer buffer
+                      (aj/ensure-heading-separators)
+                      (aj/ensure-recurring-separators-from-cache))
+                    (message "Weather: done for %s ✓" name))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Hourly Weather Table
+;; ---------------------------------------------------------------------------
+
+(defun aj/read-hourly-weather (date-str)
+  "Read hourly weather for DATE-STR from local cache. Returns alist or nil."
+  (let ((file (expand-file-name (concat "hourly-" date-str ".json") aj/weather-archive-local)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((json-object-type 'alist)
+              (json-array-type 'list))
+          (condition-case nil
+              (json-read)
+            (error nil)))))))
+
+(defun aj/insert-hourly-weather-table (buffer date-str)
+  "Insert hourly weather table and conditions table into BUFFER's Calendar section.
+Works for any date that has archived hourly data, plus today/tomorrow from live forecast."
+  (let* ((today-str (format-time-string "%Y-%m-%d"))
+         (tomorrow-str (format-time-string "%Y-%m-%d" (time-add nil (* 24 60 60))))
+         (is-today (string= date-str today-str))
+         (is-tomorrow (string= date-str tomorrow-str))
+         ;; First try archived data for specific date, then fall back to today's forecast
+         (data (or (aj/read-hourly-weather date-str)
+                   (when (or is-today is-tomorrow) (aj/read-hourly-weather today-str))))
+         (forecast-file (expand-file-name "forecast-latest.json" aj/weather-archive-local))
+         (forecast-data (when (file-exists-p forecast-file)
+                          (condition-case nil
+                              (json-read-file forecast-file)
+                            (error nil)))))
+    (when data
+      (let ((hourly (alist-get 'hourly data))
+            (tz-offset (or (alist-get 'timezone_offset data) 39600)))
+        (when hourly
+          (with-current-buffer buffer
+            (save-excursion
+              (goto-char (point-min))
+              (when (re-search-forward "^\\* Calendar\\b" nil t)
+                (let ((section-end (copy-marker
+                                    (save-excursion
+                                      (forward-line 1)
+                                      (if (re-search-forward "^\\* " nil t)
+                                          (1- (line-beginning-position))
+                                        (point-max))))))
+                  ;; Remove existing hourly table and conditions table
+                  (save-excursion
+                    (goto-char (point-min))
+                    (when (re-search-forward "^hourly:" section-end t)
+                      (let ((start (line-beginning-position)))
+                        (forward-line 1)
+                        (while (and (< (point) section-end)
+                                    (or (looking-at "^|") (looking-at "^$")))
+                          (forward-line 1))
+                        (delete-region start (point)))))
+                  ;; Remove old sun:/moon:/today: lines
+                  (save-excursion
+                    (goto-char (point-min))
+                    (re-search-forward "^\\* Calendar\\b" nil t)
+                    (while (re-search-forward "^\\(sun:\\|moon:\\|today:\\)" section-end t)
+                      (delete-region (line-beginning-position) (1+ (line-end-position)))))
+                  ;; Find insertion point after forecast block
+                  (goto-char (point-min))
+                  (re-search-forward "^\\* Calendar\\b" nil t)
+                  (let ((insert-point
+                         (or (save-excursion
+                               (when (re-search-forward "^forecast:" section-end t)
+                                 (forward-line 1)
+                                 (while (and (< (point) section-end)
+                                             (not (looking-at "^\\* \\|^hourly:\\|^$")))
+                                   (forward-line 1))
+                                 (point)))
+                             section-end)))
+                    (goto-char insert-point)
+                    (unless (bolp) (insert "\n"))
+                    ;; Build hourly data and collect daily stats
+                    (let ((am-emoji (make-vector 12 nil))
+                          (am-temp (make-vector 12 nil))
+                          (pm-emoji (make-vector 12 nil))
+                          (pm-temp (make-vector 12 nil))
+                          (max-pop 0)
+                          (max-uvi 0)
+                          (total-humidity 0)
+                          (total-wind 0)
+                          (hour-count 0))
+                      (dolist (hour-entry hourly)
+                        (let* ((dt (alist-get 'dt hour-entry))
+                               (local-time (+ dt tz-offset))
+                               (hour (mod (/ local-time 3600) 24))
+                               (entry-date (format-time-string "%Y-%m-%d" (seconds-to-time dt)))
+                               (temp (round (alist-get 'temp hour-entry)))
+                               (weather (car (alist-get 'weather hour-entry)))
+                               (condition (alist-get 'main weather))
+                               (emoji (aj/openweather-icon condition))
+                               (pop (or (alist-get 'pop hour-entry) 0))
+                               (uvi (or (alist-get 'uvi hour-entry) 0))
+                               (humidity (or (alist-get 'humidity hour-entry) 0))
+                               (wind (or (alist-get 'wind_speed hour-entry) 0)))
+                          (when (string= entry-date date-str)
+                            (setq hour-count (1+ hour-count))
+                            (setq max-pop (max max-pop pop))
+                            (setq max-uvi (max max-uvi uvi))
+                            (setq total-humidity (+ total-humidity humidity))
+                            (setq total-wind (+ total-wind wind))
+                            (if (< hour 12)
+                                (progn
+                                  (aset am-emoji hour emoji)
+                                  (aset am-temp hour (number-to-string temp)))
+                              (aset pm-emoji (- hour 12) emoji)
+                              (aset pm-temp (- hour 12) (number-to-string temp))))))
+                      ;; Calculate averages and get sun/moon data
+                      (let* ((avg-humidity (if (> hour-count 0) (/ total-humidity hour-count) 0))
+                             (avg-wind (if (> hour-count 0) (/ total-wind hour-count) 0))
+                             (current (alist-get 'current forecast-data))
+                             (sunrise (alist-get 'sunrise current))
+                             (sunset (alist-get 'sunset current))
+                             (d-parts (split-string date-str "-"))
+                             (year (string-to-number (nth 0 d-parts)))
+                             (month (string-to-number (nth 1 d-parts)))
+                             (day (string-to-number (nth 2 d-parts)))
+                             (moon (aj/calculate-moon-phase year month day)))
+                        ;; Insert hourly table
+                        (insert "\nhourly:\n")
+                        (insert "|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        (insert "| AM |")
+                        (dotimes (h 12)
+                          (insert (format " %2d |" (if (= h 0) 12 h))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        ;; AM emoji row (blank first column)
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref am-emoji h) "  "))))
+                        (insert "\n")
+                        ;; AM temp row
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref am-temp h) "  "))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        (insert "| PM |")
+                        (dotimes (h 12)
+                          (insert (format " %2d |" (if (= h 0) 12 h))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        ;; PM emoji row (blank first column)
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref pm-emoji h) "  "))))
+                        (insert "\n")
+                        ;; PM temp row
+                        (insert "|    |")
+                        (dotimes (h 12)
+                          (insert (format " %s |" (or (aref pm-temp h) "  "))))
+                        (insert "\n|----")
+                        (dotimes (_ 12) (insert "+----"))
+                        (insert "|\n")
+                        ;; Align hourly table
+                        (forward-line -2)
+                        (org-table-align)
+                        ;; Move past hourly table for conditions table
+                        (goto-char insert-point)
+                        (when (re-search-forward "^hourly:" section-end t)
+                          (while (and (< (point) section-end) (looking-at "\\|^|"))
+                            (forward-line 1))
+                          (forward-line 1)
+                          (while (and (< (point) section-end) (looking-at "^|"))
+                            (forward-line 1)))
+                        ;; Insert conditions table
+                        (insert "\n|----------+-------------------|\n")
+                        (insert (format "| sun      | ↑ %s  ↓ %s |\n"
+                                        (if sunrise (aj/format-unix-time sunrise "%H:%M") "--:--")
+                                        (if sunset (aj/format-unix-time sunset "%H:%M") "--:--")))
+                        (insert (format "| moon     | %s |\n" moon))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| rain     | %3d%% |\n" (round (* 100 max-pop))))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| UV       | %3d |\n" (round max-uvi)))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| humidity | %3d%% |\n" (round avg-humidity)))
+                        (insert "|----------+-------------------|\n")
+                        (insert (format "| wind     | %3d km/h |\n" (round (* 3.6 avg-wind))))
+                        (insert "|----------+-------------------|\n")
+                        ;; Align conditions table
+                        (forward-line -2)
+                        (org-table-align)))))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Daily Lifecycle & Navigation
+;; ---------------------------------------------------------------------------
+
+(defun aj/refresh-daily-week ()
+  "Refresh the week transclude for the current daily note.
+Ensures the transclude exists and re-folds the heading.
+Weather is now part of the Calendar section - use C-c d r c to refresh."
+  (interactive)
+  (unless (aj/daily-date-file-p)
+    (user-error "Not in a daily note"))
+  ;; Ensure week transclude exists
+  (save-excursion
+    (goto-char (point-min))
+    (unless (or (re-search-forward "^#\\+transclude:" nil t)
+                (progn (goto-char (point-min))
+                       (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
+      (aj/insert-week-transclude)))
+  ;; Ensure transclusion is active
+  (when (and (fboundp 'org-transclusion-mode)
+             (not (bound-and-true-p org-transclusion-mode)))
+    (org-transclusion-mode 1))
+  ;; Re-fold the week heading
+  (aj/fold-week-heading)
+  (message "Week transclude refreshed"))
+
+(defun aj/refresh-daily-calendar ()
+  "Refresh calendar section for the current daily note.
+Inserts calendar table and fetches weather data (including hourly if available)."
+  (interactive)
+  (unless (aj/daily-date-file-p)
+    (user-error "Not in a daily note"))
+  (my/insert-aj-day-calendar)
+  (message "Calendar refreshed"))
+
+(defun aj/daily-needs-setup-p ()
+  "Return t if current daily file needs full setup.
+Checks if the file is missing the Journal heading (indicates bare template)."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (not (re-search-forward "^\\* Journal\\b" nil t)))))
+
+(defun aj/setup-daily-file ()
+  "Run full setup for a daily file.
+Inserts transclude, ensures headings, populates recurring and calendar."
+  ;; 1. Insert week transclude if not present
+  (save-excursion
+    (goto-char (point-min))
+    (unless (or (re-search-forward "^#\\+transclude:" nil t)
+                (progn (goto-char (point-min))
+                       (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
+      (aj/insert-week-transclude)))
+  ;; 2. Ensure all headings exist in correct order (with statistics cookies)
+  (aj/ensure-daily-structure)
+  ;; 3. Refresh recurring tasks
+  (aj/refresh-daily-recurring)
+  ;; 4. Update statistics cookies
+  (save-excursion
+    (dolist (heading aj/headings-with-statistics)
+      (goto-char (point-min))
+      (when (re-search-forward (format "^\\* %s\\b" (regexp-quote heading)) nil t)
+        (org-update-statistics-cookies nil))))
+  ;; 5. Insert calendar content
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Calendar\\b" nil t)
+      (let ((heading-end (line-end-position))
+            (next-heading (save-excursion
+                            (forward-line 1)
+                            (if (re-search-forward "^\\* " nil t)
+                                (line-beginning-position)
+                              (point-max)))))
+        ;; Check if there's no content between Calendar and next heading
+        (when (< (- next-heading heading-end) 5)
+          (my/insert-aj-day-calendar))))))
+
+;; Hook for file open - sets up new files and enables transclusion
+(defun aj/daily-file-open-hook ()
+  "Hook for opening daily files.
+For new/bare files: runs full setup (transclude, headings, recurring, calendar).
+For all files: enables transclusion, refreshes recurring tasks and calendar."
+  (when (aj/daily-date-file-p)
+    ;; Check if this is a new file that needs setup
+    (if (aj/daily-needs-setup-p)
+        (aj/setup-daily-file)
+      ;; For existing files, refresh recurring and calendar content
+      (aj/ensure-daily-structure)
+      (aj/refresh-daily-recurring)
+      (aj/ensure-heading-separators)
+      (aj/ensure-recurring-separators-from-cache)
+      (aj/refresh-daily-calendar))
+    ;; Enable org-transclusion-mode to render transcludes
+    (when (and (fboundp 'org-transclusion-mode)
+               (not (bound-and-true-p org-transclusion-mode)))
+      (org-transclusion-mode 1))
+    ;; Save if we did setup
+    (when (buffer-modified-p)
+      (save-buffer))))
+
+;; Strip statistics cookies from olp headings in daily files before org-roam
+;; does heading matching, so that "* Capture [4/4]" still matches olp "Capture".
+;; Cookies are restored by aj/dailies-reposition-entry after capture finalize.
+(defun aj/strip-cookies-for-olp (orig-fn olp)
+  "Around advice: strip statistics cookies in daily files before OLP matching."
+  (when (and buffer-file-name
+             (string-match-p "/daily/" buffer-file-name))
+    (save-excursion
+      (dolist (heading olp)
+        (goto-char (point-min))
+        (let ((re (format "^\\(\\*+ %s\\) \\[[0-9]*[/%%][0-9]*\\]"
+                          (regexp-quote heading))))
+          (when (re-search-forward re nil t)
+            (replace-match (match-string 1)))))))
+  (funcall orig-fn olp))
+
+(defun aj/org-roam-dailies-goto-next-day ()
+  "Go to the next day's daily note, creating it if necessary.
+Unlike `org-roam-dailies-goto-next-note', this always goes to the
+chronologically next day, not just the next existing note."
+  (interactive)
+  (unless (org-roam-dailies--daily-note-p)
+    (user-error "Not in a daily-note"))
+  (let* ((filename (file-name-sans-extension
+                    (file-name-nondirectory (buffer-file-name))))
+         (current-time (org-time-string-to-time filename))
+         (next-time (time-add current-time 86400))) ; 86400 seconds = 1 day
+    (org-roam-dailies--capture next-time t)))
+
+(defun aj/org-roam-dailies-goto-previous-day ()
+  "Go to the previous day's daily note, creating it if necessary.
+Unlike `org-roam-dailies-goto-previous-note', this always goes to the
+chronologically previous day, not just the previous existing note."
+  (interactive)
+  (unless (org-roam-dailies--daily-note-p)
+    (user-error "Not in a daily-note"))
+  (let* ((filename (file-name-sans-extension
+                    (file-name-nondirectory (buffer-file-name))))
+         (current-time (org-time-string-to-time filename))
+         (prev-time (time-add current-time -86400))) ; -86400 seconds = -1 day
+    (org-roam-dailies--capture prev-time t)))
+
+;; ---------------------------------------------------------------------------
+;; Refile to Daily
+;; ---------------------------------------------------------------------------
+
+(defun my/org-roam-copy-todo-to-today ()
+  "Refile the current heading to today's daily note under the 'Tasks' heading.
+Preserves transclusion state in current buffer."
+  (interactive)
+  (let ((org-refile-keep t) ;; Set to nil to move instead of copy
+        (org-after-refile-insert-hook #'save-buffer)
+        (source-buffer (current-buffer))
+        (source-transclusion-active (bound-and-true-p org-transclusion-mode))
+        today-file
+        pos)
+    ;; Open today's daily and ensure "Tasks" heading exists
+    (save-window-excursion
+      (org-roam-dailies--capture (current-time) t)
+      (setq today-file (buffer-file-name))
+      ;; Create "Tasks" heading if it doesn't exist (for older dailies)
+      (goto-char (point-min))
+      (unless (re-search-forward "^\\* Tasks\\b" nil t)
+        (goto-char (point-max))
+        (unless (bolp) (insert "\n"))
+        (insert "* Tasks [/]\n"))
+      ;; Ensure cookie exists on Tasks heading
+      (aj/ensure-heading-has-statistics-cookie "Tasks")
+      ;; Get position of Tasks heading
+      (goto-char (point-min))
+      (re-search-forward "^\\* Tasks\\b" nil t)
+      (setq pos (point))
+      (save-buffer))
+
+    ;; Only refile if the target file is different than the current file
+    (unless (equal (file-truename today-file)
+                   (file-truename (buffer-file-name)))
+      (org-refile nil nil (list "Tasks" today-file nil pos))
+      ;; Update statistics cookie in target file
+      (with-current-buffer (find-file-noselect today-file)
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^\\* Tasks\\b" nil t)
+            (org-update-statistics-cookies nil)))
+        (save-buffer)))
+
+    ;; Restore transclusion mode in source buffer if it was active
+    (when (and source-transclusion-active
+               (buffer-live-p source-buffer))
+      (with-current-buffer source-buffer
+        (unless (bound-and-true-p org-transclusion-mode)
+          (org-transclusion-mode 1))))))
+
+(add-hook 'org-after-todo-state-change-hook
+          (lambda ()
+            (when (equal org-state "DONE")
+              (my/org-roam-copy-todo-to-today))))
+
+;; ---------------------------------------------------------------------------
+;; Keybindings
+;; ---------------------------------------------------------------------------
+
+;; Add extra bindings to dailies map
+(define-key org-roam-dailies-map (kbd "Y") #'org-roam-dailies-capture-yesterday)
+(define-key org-roam-dailies-map (kbd "c") #'org-roam-dailies-capture-date)
+(define-key org-roam-dailies-map (kbd "g") #'org-roam-dailies-goto-date)
+(define-key org-roam-dailies-map (kbd "T") #'org-roam-dailies-capture-tomorrow)
+(define-key org-roam-dailies-map (kbd "F") #'aj/org-roam-dailies-goto-next-day)
+(define-key org-roam-dailies-map (kbd "B") #'aj/org-roam-dailies-goto-previous-day)
+;; V = capture to date (creates note if needed, prompts for date)
+(define-key org-roam-dailies-map (kbd "V") #'org-roam-dailies-capture-date)
+;; w = insert week transclude in current daily
+(define-key org-roam-dailies-map (kbd "w") #'aj/insert-week-transclude)
+
+;; Create refresh keymap: C-c d r <key>
+(defvar aj/daily-refresh-map (make-sparse-keymap)
+  "Keymap for daily refresh operations under C-c d r.")
+(defun aj/under-heading-p (heading-re)
+  "Return non-nil if point is within the section of HEADING-RE."
+  (save-excursion
+    (let ((pos (point)))
+      (goto-char (point-min))
+      (and (re-search-forward heading-re nil t)
+           (let ((start (line-beginning-position))
+                 (end (save-excursion
+                        (forward-line 1)
+                        (if (re-search-forward "^\\*+ " nil t)
+                            (line-beginning-position)
+                          (point-max)))))
+             (<= start pos end))))))
+
+(define-key aj/daily-refresh-map (kbd "c")
+  (lambda () (interactive)
+    (aj/refresh-daily-calendar)
+    (unless (aj/under-heading-p "^\\* Calendar\\b")
+      (when (y-or-n-p "Jump to Calendar heading?")
+        (goto-char (point-min))
+        (re-search-forward "^\\* Calendar\\b" nil t)
+        (org-beginning-of-line)))))
+(define-key aj/daily-refresh-map (kbd "r") #'aj/refresh-daily-recurring)
+(define-key aj/daily-refresh-map (kbd "w") #'aj/refresh-daily-week)
+(define-key aj/daily-refresh-map (kbd "a")
+  (lambda () (interactive)
+    (aj/insert-anki-review-chart)
+    (unless (aj/under-heading-p "^\\*+ TODO Anki\\b")
+      (when (y-or-n-p "Jump to Anki heading?")
+        (goto-char (point-min))
+        (re-search-forward "^\\*+ TODO Anki\\b" nil t)
+        (org-beginning-of-line)))))
+;; Bind refresh map to r in dailies map
+(define-key org-roam-dailies-map (kbd "r") aj/daily-refresh-map)
+
+;; Dailies capture template with day of week
+;; Entries go under * Capture heading; other sections inserted by hook
+(setq org-roam-dailies-capture-templates
+      '(("d" "default" entry
+         "** %(aj/dailies-entry-prefix)%?"
+         :target (file+head+olp "%<%Y-%m-%d>.org"
+                                "#+title: %<%Y-%m-%d> | %<%A>\n#+EXPORT_FILE_NAME: %<%Y-%m-%d>\n"
+                                ("Capture"))
+         :empty-lines-before 1)))
+
+;; ---------------------------------------------------------------------------
+;; Hooks & Advice
+;; ---------------------------------------------------------------------------
+
+(advice-add 'org-roam-capture--find-or-create-olp :around #'aj/strip-cookies-for-olp)
+
+(add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
+(add-hook 'org-capture-before-finalize-hook #'aj/dailies-store-capture-marker)
+(add-hook 'org-capture-before-finalize-hook #'aj/dailies-prompt-target-heading t)
+(add-hook 'org-capture-after-finalize-hook #'aj/dailies-reposition-entry)
+(add-hook 'org-capture-after-finalize-hook #'aj/dailies-prompt-jump-to-capture t)
+;; Fold Week heading when opening daily files
+(add-hook 'org-roam-dailies-find-file-hook #'aj/daily-file-open-hook)
+
+;; ---------------------------------------------------------------------------
+;; Mode-line Weather Display (fully async)
+;; ---------------------------------------------------------------------------
+
+(defvar aj/wttr-location "Sydney"
+  "Location for weather forecast (city name).")
+
+(defun aj/wttr-icon (description)
+  "Return a weather icon based on DESCRIPTION string."
+  (let ((desc (downcase description)))
+    (cond
+     ((string-match-p "thunder\\|storm" desc) "⛈️")
+     ((string-match-p "snow\\|sleet\\|blizzard" desc) "🌨️")
+     ((string-match-p "heavy.*rain\\|pour\\|torrential" desc) "🌧️")
+     ((string-match-p "rain\\|drizzle\\|shower" desc) "🌦️")
+     ((string-match-p "fog\\|mist\\|haze" desc) "🌫️")
+     ((string-match-p "cloudy\\|overcast" desc) "☁️")
+     ((string-match-p "partly\\|partial" desc) "⛅")
+     ((string-match-p "clear\\|sunny\\|sun" desc) "☀️")
+     (t "🌡️"))))
+
+(defvar aj/modeline-weather-cache nil
+  "Cached weather data: (date-str . formatted-string).")
+
+(defvar aj/modeline-weather-cache-time nil
+  "Time when weather cache was last updated.")
+
+(defvar aj/modeline-weather-cache-duration 600
+  "Seconds to cache weather data (default 10 minutes).")
+
+(defvar aj/modeline-weather-fetching nil
+  "Non-nil when weather fetch is in progress.")
+
+(defun aj/parse-wttr-modeline-data (data target-date)
+  "Parse wttr.in DATA and return formatted modeline string for TARGET-DATE."
+  (let ((today (format-time-string "%Y-%m-%d"))
+        (weather-days (alist-get 'weather data)))
+    (if (string= target-date today)
+        ;; Today: use current conditions
+        (let* ((current (car (alist-get 'current_condition data)))
+               (temp (alist-get 'temp_C current))
+               (desc (alist-get 'weatherDesc current))
+               (weather-desc (alist-get 'value (car desc)))
+               (icon (aj/wttr-icon weather-desc))
+               (today-forecast (car weather-days))
+               (min-temp (alist-get 'mintempC today-forecast))
+               (max-temp (alist-get 'maxtempC today-forecast)))
+          (format "%s %s°C (%s-%s)" icon temp min-temp max-temp))
+      ;; Other date: look in forecast
+      (let ((result nil))
+        (dolist (day weather-days)
+          (when (string= (alist-get 'date day) target-date)
+            (let* ((max-temp (alist-get 'maxtempC day))
+                   (min-temp (alist-get 'mintempC day))
+                   (hourly (alist-get 'hourly day))
+                   (midday (or (nth 4 hourly) (nth 2 hourly) (car hourly)))
+                   (desc (alist-get 'weatherDesc midday))
+                   (weather-desc (alist-get 'value (car desc)))
+                   (icon (aj/wttr-icon weather-desc)))
+              (setq result (format "%s %s°C (%s-%s)" icon max-temp min-temp max-temp)))))
+        result))))
+
+(defun aj/modeline-weather-date ()
+  "Return the date to show weather for.
+In daily files: returns that file's date.
+Otherwise: returns today's date."
+  (if (and buffer-file-name (aj/daily-date-file-p))
+      (save-excursion
+        (goto-char (point-min))
+        (if (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+            (match-string-no-properties 1)
+          (format-time-string "%Y-%m-%d")))
+    (format-time-string "%Y-%m-%d")))
+
+(defun aj/modeline-weather-update ()
+  "Fetch weather asynchronously and update cache."
+  (unless aj/modeline-weather-fetching
+    (setq aj/modeline-weather-fetching t)
+    (let ((target-date (format-time-string "%Y-%m-%d"))
+          (url (format "https://wttr.in/%s?format=j1"
+                       (url-hexify-string aj/wttr-location))))
+      (url-retrieve
+       url
+       (lambda (status target-date)
+         (unwind-protect
+             (unless (plist-get status :error)
+               (goto-char (point-min))
+               (when (re-search-forward "\n\n" nil t)
+                 (condition-case nil
+                     (let* ((json-object-type 'alist)
+                            (json-array-type 'list)
+                            (data (json-read))
+                            (weather (aj/parse-wttr-modeline-data data target-date)))
+                       (when weather
+                         (setq aj/modeline-weather-cache (cons target-date weather))
+                         (setq aj/modeline-weather-cache-time (float-time))
+                         (force-mode-line-update t)))
+                   (error nil))))
+           (setq aj/modeline-weather-fetching nil)
+           (kill-buffer)))
+       (list target-date)
+       t t))))
+
+(defun aj/modeline-weather ()
+  "Return weather string for modeline, using cache when possible."
+  (let* ((target-date (aj/modeline-weather-date))
+         (now (float-time))
+         (cache-valid (and aj/modeline-weather-cache
+                           aj/modeline-weather-cache-time
+                           (string= (car aj/modeline-weather-cache) target-date)
+                           (< (- now aj/modeline-weather-cache-time)
+                              aj/modeline-weather-cache-duration))))
+    (if cache-valid
+        (concat " " (cdr aj/modeline-weather-cache))
+      ;; Trigger background fetch if not already running
+      (unless aj/modeline-weather-fetching
+        (run-with-idle-timer 1 nil #'aj/modeline-weather-update))
+      ;; Return cached value (possibly stale) or empty while fetching
+      (if aj/modeline-weather-cache
+          (concat " " (cdr aj/modeline-weather-cache))
+        ""))))
+
+(defvar aj/modeline-weather-construct
+  '(:eval (aj/modeline-weather))
+  "Mode line construct for weather display.")
+
+;; Ensure global-mode-string is a list before pushing
+(unless (listp global-mode-string)
+  (setq global-mode-string (list global-mode-string)))
+
+;; Add to global mode line (like email)
+(unless (member aj/modeline-weather-construct global-mode-string)
+  (push aj/modeline-weather-construct global-mode-string))
+
+;; Fetch weather on startup (like email updates counts on load)
+(aj/modeline-weather-update)
+
+;; ---------------------------------------------------------------------------
+;; Current Hour Highlighting in Hourly Weather Table
+;; ---------------------------------------------------------------------------
+
+(defface aj/current-hour-face
+  '((t :background "#2e7d32" :extend t))
+  "Face for highlighting the current hour in the weather table.")
+
+(defvar-local aj/hour-overlays nil
+  "List of overlays for current hour highlighting.")
+
+(defun aj/highlight-current-hour ()
+  "Highlight the current hour column in the hourly weather table.
+Only works for today's daily note."
+  (when (aj/daily-date-file-p)
+    (let* ((filename (file-name-sans-extension
+                      (file-name-nondirectory (buffer-file-name))))
+           (today-str (format-time-string "%Y-%m-%d")))
+      ;; Only highlight if this is today's daily
+      (when (string= filename today-str)
+        ;; Remove old overlays
+        (mapc #'delete-overlay aj/hour-overlays)
+        (setq aj/hour-overlays nil)
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^hourly:" nil t)
+            (let* ((now-hour (string-to-number (format-time-string "%H")))
+                   (is-pm (>= now-hour 12))
+                   (display-hour (mod now-hour 12))  ; 0-11, where 0 = 12 o'clock
+                   (col-index (+ 2 display-hour))    ; +2 for AM/PM label + blank column
+                   (table-start (point))
+                   (table-end (save-excursion
+                                (if (re-search-forward "^[^|]" nil t)
+                                    (line-beginning-position)
+                                  (point-max)))))
+              ;; Find the right section (AM or PM)
+              (when (re-search-forward (if is-pm "^| PM |" "^| AM |") table-end t)
+                ;; Highlight header row (hour number), emoji row, and temp row
+                ;; Row offsets: 0=header, 1=separator(skip), 2=emoji, 3=temp
+                (dolist (row-offset '(0 2 3))
+                  (beginning-of-line)
+                  (forward-line row-offset)
+                  (let ((line-end (line-end-position))
+                        (col 0)
+                        cell-start cell-end)
+                    ;; Find the nth cell (col-index)
+                    (goto-char (line-beginning-position))
+                    (while (and (< col col-index) (< (point) line-end))
+                      (when (search-forward "|" line-end t)
+                        (setq col (1+ col))))
+                    ;; Now point is after the | before our target cell
+                    ;; Include the | to capture org-modern's table decoration
+                    (when (= col col-index)
+                      (setq cell-start (1- (point)))  ; include preceding |
+                      (when (search-forward "|" line-end t)
+                        (setq cell-end (point))       ; include trailing |
+                        (let ((ov (make-overlay cell-start cell-end)))
+                          (overlay-put ov 'face 'aj/current-hour-face)
+                          (overlay-put ov 'priority 100)
+                          (push ov aj/hour-overlays)))))
+                  ;; Go back to header row for next iteration
+                  (goto-char (line-beginning-position))
+                  (forward-line (- row-offset)))))))))))
+
+(defun aj/highlight-current-hour-if-daily ()
+  "Highlight current hour if this is a daily org file."
+  (when (and (derived-mode-p 'org-mode)
+             (buffer-file-name)
+             (aj/daily-date-file-p))
+    (aj/highlight-current-hour)))
+
+;; Add to daily file open hook
+(add-hook 'org-roam-dailies-find-file-hook #'aj/highlight-current-hour)
+
+;; Add to after-save-hook (buffer-local, only for daily files)
+(defun aj/setup-hour-highlight-on-save ()
+  "Set up current hour highlighting on save for daily files."
+  (when (aj/daily-date-file-p)
+    (add-hook 'after-save-hook #'aj/highlight-current-hour nil t)))
+
+(add-hook 'org-roam-dailies-find-file-hook #'aj/setup-hour-highlight-on-save)
+
+;; ---------------------------------------------------------------------------
+;; Anki Review Chart
+;; ---------------------------------------------------------------------------
+
+(defun aj/anki-review-chart-data ()
+  "Fetch last 14 days of Anki review counts from AnkiConnect.
+Returns alist of ((date-string . count) ...) sorted by date,
+with zero-count days filled in for missing dates."
+  (let* ((raw (let* ((url-request-method "POST")
+                     (url-request-extra-headers '(("Content-Type" . "application/json")))
+                     (url-request-data
+                      (json-encode `((action . "getNumCardsReviewedByDay") (version . 6))))
+                     (buffer (url-retrieve-synchronously "http://127.0.0.1:8765" t t 5)))
+                (unless buffer
+                  (error "Cannot connect to AnkiConnect. Is Anki running?"))
+                (unwind-protect
+                    (with-current-buffer buffer
+                      (goto-char url-http-end-of-headers)
+                      (let ((json-object-type 'alist))
+                        (cdr (assoc 'result (json-read)))))
+                  (kill-buffer buffer))))
+         (today (current-time))
+         (start (time-subtract today (days-to-time 13)))
+         (result '()))
+    ;; Build alist from raw data, filtering to last 14 days
+    (let ((data-alist '()))
+      (seq-doseq (entry raw)
+        (let ((date-str (aref entry 0))
+              (count (aref entry 1)))
+          (push (cons date-str count) data-alist)))
+      ;; Fill in all 14 days
+      (dotimes (i 14)
+        (let* ((day-time (time-add start (days-to-time i)))
+               (day-str (format-time-string "%Y-%m-%d" day-time))
+               (existing (assoc day-str data-alist)))
+          (push (cons day-str (if existing (cdr existing) 0)) result))))
+    (nreverse result)))
+
+(defun aj/insert-anki-review-chart ()
+  "Insert an Anki review chart under the Anki heading in the current daily note."
+  (interactive)
+  (unless (aj/daily-date-file-p)
+    (user-error "Not in a daily note"))
+  (let ((data (condition-case err
+                  (aj/anki-review-chart-data)
+                (error (user-error "Could not fetch Anki data: %s" (error-message-string err))))))
+    (let* ((cache-dir (expand-file-name "~/.cache/emacs/"))
+           (png-file (expand-file-name "anki-reviews.png" cache-dir))
+           (dat-file (make-temp-file "anki-reviews-" nil ".dat"))
+           (gp-file (make-temp-file "anki-reviews-" nil ".gp")))
+      ;; Ensure cache dir exists
+      (make-directory cache-dir t)
+      ;; Write data file
+      (with-temp-file dat-file
+        (dolist (entry data)
+          (insert (format "%s %d\n" (car entry) (cdr entry)))))
+      ;; Write gnuplot script (colors adapt to current theme)
+      (let* ((dark-p (eq (gruber-themes--get-current-variant) 'dark))
+             (bg     (if dark-p "#181818" "#ffffff"))
+             (fg     (if dark-p "#e4e4ef" "#333333"))
+             (grid   (if dark-p "#333333" "#cccccc"))
+             (border (if dark-p "#666666" "#999999"))
+             (accent (if dark-p "#73c936" "#2266aa")))
+        (with-temp-file gp-file
+          (insert (format "set terminal pngcairo size 1600,600 font \"Helvetica,22\" background \"%s\"\n\
+set output \"%s\"\n\
+set xdata time\n\
+set timefmt \"%%Y-%%m-%%d\"\n\
+set format x \"%%d/%%m\"\n\
+set xtics rotate by -45\n\
+set yrange [0:*]\n\
+set grid ytics lt 0 lw 0.5 lc rgb \"%s\"\n\
+set border lc rgb \"%s\"\n\
+set title \"Daily Anki Reviews\" tc rgb \"%s\"\n\
+set xlabel \"Date\" tc rgb \"%s\"\n\
+set ylabel \"Cards\" tc rgb \"%s\"\n\
+set key off\n\
+set style line 1 lc rgb \"%s\" lt 1 lw 4 pt 7 ps 1.2\n\
+set tics textcolor rgb \"%s\"\n\
+plot \"%s\" using 1:2 with linespoints ls 1\n"
+                          bg png-file grid border fg fg fg accent fg dat-file))))
+      ;; Run gnuplot
+      (let ((exit-code (call-process "gnuplot" nil nil nil gp-file)))
+        (unless (= exit-code 0)
+          (user-error "gnuplot failed with exit code %d" exit-code)))
+      ;; Clean up temp files
+      (delete-file dat-file)
+      (delete-file gp-file)
+      ;; Insert into buffer under Anki heading
+      (save-excursion
+        (goto-char (point-min))
+        (if (re-search-forward "^\\*+ TODO Anki\\b" nil t)
+            (let ((heading-end (line-end-position))
+                  (section-end (save-excursion
+                                 (forward-line 1)
+                                 (if (re-search-forward "^\\*+ " nil t)
+                                     (line-beginning-position)
+                                   (point-max)))))
+              (delete-region (1+ heading-end) section-end)
+              (goto-char (line-end-position))
+              (insert "\n\n")
+              (insert "#+ATTR_ORG: :width 600\n")
+              (insert "#+ATTR_LATEX: :width 0.8\\linewidth\n")
+              (insert (format "[[file:%s]]\n" png-file)))
+          (user-error "No Anki heading found in this daily note")))
+      ;; Render inline image
+      (org-display-inline-images)
+      (message "Anki review chart updated"))))
+
+;; Refresh chart before org export
+(defun aj/refresh-anki-chart-before-export (&rest _)
+  "Refresh Anki review chart before export if in a daily note."
+  (when (and (aj/daily-date-file-p)
+             (save-excursion
+               (goto-char (point-min))
+               (re-search-forward "^\\*+ TODO Anki\\b" nil t)))
+    (ignore-errors (aj/insert-anki-review-chart))))
+(advice-add 'org-export-dispatch :before #'aj/refresh-anki-chart-before-export)
+
+;; Refresh chart before magit
+(with-eval-after-load 'magit
+  (defun aj/refresh-anki-chart-before-magit (&rest _)
+    "Refresh Anki chart before opening magit if in a daily note."
+    (when (and (derived-mode-p 'org-mode)
+               (aj/daily-date-file-p)
+               (save-excursion
+                 (goto-char (point-min))
+                 (re-search-forward "^\\*+ TODO Anki\\b" nil t)))
+      (ignore-errors (aj/insert-anki-review-chart))))
+  (advice-add 'magit-status :before #'aj/refresh-anki-chart-before-magit))
+
+(provide 'daily-config)
+
+;;; daily-config.el ends here

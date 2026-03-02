@@ -82,7 +82,8 @@
    (latex   . t)
    (C       . t)
    (java    . t)
-   (go      . t)))
+   (go      . t)
+   (gnuplot . t)))
 
 ;; Python settings
 (setq custom-tab-width 4)
@@ -233,102 +234,6 @@
 
 (setq org-export-coding-system 'utf-8)
 
-;; Helper functions for recurring template captures
-(defvar aj/templates-base-dir "~/Documents/new-site/content-org/templates/"
-  "Base directory for recurring task templates.")
-
-(defun aj/capture-daily-file ()
-  "Return the daily template file path."
-  (expand-file-name "daily.org" aj/templates-base-dir))
-
-(defun aj/capture-weekdays-file ()
-  "Return the weekdays template file path (Mon-Fri)."
-  (expand-file-name "weekdays.org" aj/templates-base-dir))
-
-(defun aj/capture-alternating-file ()
-  "Prompt for alternating phase and return the template file path.
-Shows current phase for reference."
-  (let* ((current-phase (aj/alternating-phase))
-         (phases '("a" "b"))
-         (phase (completing-read
-                 (format "Phase (today is '%s'): " current-phase)
-                 phases nil t)))
-    (expand-file-name (concat "alternating/" phase ".org") aj/templates-base-dir)))
-
-(defun aj/capture-weekly-file ()
-  "Prompt for day of week and return the template file path.
-Shows current day for reference."
-  (let* ((current-day (downcase (format-time-string "%A")))
-         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
-         (day (completing-read
-               (format "Day of week (today is %s): " current-day)
-               days nil t)))
-    (expand-file-name (concat "weekly/" day ".org") aj/templates-base-dir)))
-
-(defun aj/capture-biweekly-file ()
-  "Prompt for week parity and day, return the template file path.
-Shows current ISO week and parity for reference."
-  (let* ((current-week (aj/iso-week-number))
-         (current-parity (aj/iso-week-parity))
-         (current-day (downcase (format-time-string "%A")))
-         (parities '("odd" "even"))
-         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
-         (parity (completing-read
-                  (format "Week parity (week %d is %s): " current-week current-parity)
-                  parities nil t))
-         (day (completing-read
-               (format "Day of week (today is %s): " current-day)
-               days nil t)))
-    (expand-file-name (concat "biweekly/" parity "/" day ".org") aj/templates-base-dir)))
-
-(defun aj/capture-monthly-file ()
-  "Prompt for day of month and return the template file path.
-Shows current day for reference."
-  (let* ((current-dom (format-time-string "%d"))
-         (days (mapcar (lambda (n) (format "%02d" n)) (number-sequence 1 31)))
-         (day (completing-read
-               (format "Day of month (today is %s): " current-dom)
-               days nil t)))
-    (expand-file-name (concat "monthly/" day ".org") aj/templates-base-dir)))
-
-(defun aj/capture-yearly-file ()
-  "Prompt for MM-DD and return the template file path.
-Shows current date for reference."
-  (let* ((current-date (format-time-string "%m-%d"))
-         (date (read-string (format "Date MM-DD (today is %s): " current-date))))
-    (expand-file-name (concat "yearly/" date ".org") aj/templates-base-dir)))
-
-(setq org-capture-templates
-      '(("r" "recurring templates")
-        ("rd" "daily (every day)" plain
-         (file aj/capture-daily-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rk" "weekdays (Mon-Fri)" plain
-         (file aj/capture-weekdays-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("ra" "alternating (every other day)" plain
-         (file aj/capture-alternating-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rw" "weekly" plain
-         (file aj/capture-weekly-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rb" "biweekly (fortnightly)" plain
-         (file aj/capture-biweekly-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rm" "monthly" plain
-         (file aj/capture-monthly-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("ry" "yearly" plain
-         (file aj/capture-yearly-file)
-         "* TODO %?"
-         :empty-lines 0)))
-
 ;; Bind C-c c directly to org-capture
 (global-set-key (kbd "C-c c") #'org-capture)
 
@@ -342,13 +247,19 @@ Shows current date for reference."
 (with-eval-after-load 'ox-latex
   ;; Override default article to support 6 heading levels with custom formatting
   ;; Use Menlo for monospace to support Unicode box-drawing characters
-  (add-to-list 'org-latex-classes
-               '("article"
+  ;; Must delete first — add-to-list won't replace an existing "article" entry
+  (setq org-latex-classes (assoc-delete-all "article" org-latex-classes))
+  (push '("article"
                  "\\documentclass[11pt,a4paper]{article}
 [NO-DEFAULT-PACKAGES]
 \\usepackage{amsmath}
 \\usepackage{amssymb}
 \\usepackage{fontspec}
+\\directlua{luaotfload.add_fallback(\"mainfallback\", {
+  \"TeX Gyre Termes:mode=node;\",
+  \"Apple Color Emoji:mode=harf;\",
+})}
+\\setmainfont{Latin Modern Roman}[Ligatures=TeX, RawFeature={fallback=mainfallback}]
 \\setmonofont{Menlo}[Scale=0.9]
 \\usepackage{graphicx}
 \\usepackage{longtable}
@@ -380,23 +291,26 @@ Shows current date for reference."
                  ("\\subsection{%s}" . "\\subsection*{%s}")
                  ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
                  ("\\paragraph{%s}" . "\\paragraph*{%s}")
-                 ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-  (add-to-list 'org-latex-classes
-               '("standalone"
-                 "\\documentclass{standalone}"
-                 ("\\section{%s}" . "\\section*{%s}")
-                 ("\\subsection{%s}" . "\\subsection*{%s}")
-                 ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-                 ("\\paragraph{%s}" . "\\paragraph*{%s}")
-                 ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-  (add-to-list 'org-latex-classes
-               '("scrartcl"
-                 "\\documentclass{scrartcl}"
-                 ("\\section{%s}" . "\\section*{%s}")
-                 ("\\subsection{%s}" . "\\subsection*{%s}")
-                 ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-                 ("\\paragraph{%s}" . "\\paragraph*{%s}")
-                 ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))))
+                 ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))
+        org-latex-classes)
+  (setq org-latex-classes (assoc-delete-all "standalone" org-latex-classes))
+  (push '("standalone"
+          "\\documentclass{standalone}"
+          ("\\section{%s}" . "\\section*{%s}")
+          ("\\subsection{%s}" . "\\subsection*{%s}")
+          ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+          ("\\paragraph{%s}" . "\\paragraph*{%s}")
+          ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))
+        org-latex-classes)
+  (setq org-latex-classes (assoc-delete-all "scrartcl" org-latex-classes))
+  (push '("scrartcl"
+          "\\documentclass{scrartcl}"
+          ("\\section{%s}" . "\\section*{%s}")
+          ("\\subsection{%s}" . "\\subsection*{%s}")
+          ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+          ("\\paragraph{%s}" . "\\paragraph*{%s}")
+          ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))
+        org-latex-classes))
 
 ;; ---------------------------------------------------------------------------
 ;; LaTeX Preview Backends
@@ -1523,7 +1437,7 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
 
 ;; Use latexmk for automatic reference/bibliography resolution
 (setq org-latex-pdf-process
-      '("latexmk -lualatex -shell-escape -interaction=nonstopmode %f"))
+      '("latexmk -f -lualatex -shell-escape -interaction=nonstopmode %f"))
 
 ;; Note: xcolor, amssymb, and fontspec are loaded in the article class definition
 ;; to ensure proper ordering and Unicode monospace font support (Menlo)
@@ -1851,7 +1765,6 @@ Uses today's date with the time extracted from the heading."
   "Load org-gcal credentials from authinfo.gpg and initialize org-gcal."
   (unless aj/gcal-credentials-loaded
     (require 'auth-source)
-    (auth-source-forget-all-cached)
     (let ((auth (car (auth-source-search :host "calendar.google.com" :max 1))))
       (when auth
         (setq org-gcal-client-id (plist-get auth :user)
@@ -2018,17 +1931,20 @@ Uses today's date with the time extracted from the heading."
   (unless (bound-and-true-p org-capture-mode)
     (aj/gcal-maybe-push-at-point)))
 
-;; Push to gcal after capture finalization
+;; Push to gcal after capture finalization (appended so jump-prompt runs first)
 (defun aj/gcal-after-capture-finalize ()
   "Push newly captured item to Google Calendar if it has scheduling."
-  (when-let ((marker org-capture-last-stored-marker))
-    (when (marker-buffer marker)
-      (with-current-buffer (marker-buffer marker)
-        (save-excursion
-          (goto-char marker)
-          (aj/gcal-maybe-push-at-point))))))
+  (condition-case err
+      (when-let ((marker org-capture-last-stored-marker))
+        (when (marker-buffer marker)
+          (with-current-buffer (marker-buffer marker)
+            (save-excursion
+              (goto-char marker)
+              (aj/gcal-maybe-push-at-point)))))
+    (error
+     (message "org-gcal post failed: %s" (error-message-string err)))))
 
-(add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize)
+(add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize t)
 
 ;; Add advice after org is loaded
 (with-eval-after-load 'org
