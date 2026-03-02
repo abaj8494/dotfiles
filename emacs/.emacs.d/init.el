@@ -32,6 +32,9 @@
 ;; Load Org-mode configuration (includes LaTeX/preview setup)
 (require 'org-config)
 
+;; Load daily note configuration (recurring tasks, calendar, weather)
+(require 'daily-config)
+
 ;; Load Anki-editor configuration
 (require 'anki-config)
 

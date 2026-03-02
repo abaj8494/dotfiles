@@ -762,6 +762,14 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
   :config
   (setq auth-sources '("~/.authinfo.gpg")))
 
+;; Use GPG key for all encryption (single passphrase cached by gpg-agent for 24h)
+;; pinentry-mac handles prompts natively and caches via gpg-agent (no loopback)
+(setq epg-user-id "aayushbajaj7@gmail.com")
+
+;; Configure plstore to encrypt to GPG key (used by oauth2-auto for OAuth tokens)
+(require 'plstore)
+(setq plstore-encrypt-to "aayushbajaj7@gmail.com")
+
 ;; =============================================================================
 ;; Email status tracking
 ;; =============================================================================
