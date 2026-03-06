@@ -41,6 +41,23 @@
 ;; Enable visual-line-mode in text modes (including org-mode)
 (add-hook 'text-mode-hook #'visual-line-mode)
 
+;; ---------------------------------------------------------------------------
+;; Auto-close brackets, quotes, parens
+;; ---------------------------------------------------------------------------
+(electric-pair-mode 1)
+
+;; ---------------------------------------------------------------------------
+;; Indent guide lines (vertical bars at each indentation level)
+;; ---------------------------------------------------------------------------
+(use-package indent-bars
+  :straight (indent-bars :host github :repo "jdtsmith/indent-bars")
+  :hook ((python-mode python-ts-mode) . indent-bars-mode)
+  :config
+  (setq indent-bars-no-descend-string t
+        indent-bars-treesit-support t
+        indent-bars-prefer-character t)
+  (add-hook 'org-src-mode-hook #'indent-bars-mode))
+
 (use-package htmlize
   :straight t
   :defer nil)      ;; load eagerly so exporters find it
