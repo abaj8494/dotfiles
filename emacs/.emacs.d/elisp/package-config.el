@@ -68,11 +68,11 @@
 ;; Note: Not using consult/orderless since we're using Helm for completion
 
 
-(use-package elpy
-  :init
-  (elpy-enable)
-  :config
-  (setq elpy-shell-starting-directory 'current-directory)) ;; default is 'project-root
+(use-package lsp-pyright
+  :after lsp-mode
+  :hook ((python-mode python-ts-mode) . (lambda ()
+                                          (require 'lsp-pyright)
+                                          (lsp-deferred))))
 
 (use-package conda
   :custom
