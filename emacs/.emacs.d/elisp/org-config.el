@@ -321,7 +321,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; PDF->SVG via lualatex + inkscape (vector, crisp at any zoom)
-(add-to-list 'org-latex-preview-process-alist
+(add-to-list 'org-preview-latex-process-alist
              '(ajlua
                :programs ("lualatex" "inkscape")
                :description "pdf > svg (vector)"
@@ -338,7 +338,7 @@
                ("inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%O %f")))
 
 ;; PDF->PNG via lualatex + imagemagick (raster, scalable via density)
-(add-to-list 'org-latex-preview-process-alist
+(add-to-list 'org-preview-latex-process-alist
              '(luamagick
                :programs ("lualatex" "magick")
                :description "pdf > png (2x scale)"
@@ -354,8 +354,8 @@
 
 ;; Default to PNG (raster, scalable)
 
-(setq org-latex-preview-default-process 'luamagick)
-(setq org-latex-preview-directory "ltximg/")
+(setq org-preview-latex-default-process 'luamagick)
+(setq org-preview-latex-image-directory "ltximg/")
 (setq org-startup-with-inline-images t)
 
 (global-set-key (kbd "C-c L") #'aj/latex-preview-toggle)
@@ -367,13 +367,13 @@
 (defun aj/latex-preview-use-svg ()
   "Use SVG (vector) for LaTeX previews. Crisp but fixed size."
   (interactive)
-  (setq org-latex-preview-default-process 'ajlua)
+  (setq org-preview-latex-default-process 'ajlua)
   (message "LaTeX preview: SVG (vector, via inkscape)"))
 
 (defun aj/latex-preview-use-png ()
   "Use PNG (raster) for LaTeX previews. Scalable, 2x size."
   (interactive)
-  (setq org-latex-preview-default-process 'luamagick)
+  (setq org-preview-latex-default-process 'luamagick)
   (message "LaTeX preview: PNG (raster, 2x scale)"))
 
 (defvar aj/latex-preview-scale 1.0
@@ -392,14 +392,14 @@ With prefix ARG (\\[universal-argument]), prompt for a PNG scale factor instead.
   (if arg
       (let ((factor (read-number "LaTeX preview scale factor: " 2.0)))
         (aj/latex-preview-set-scale factor))
-    (if (eq org-latex-preview-default-process 'ajlua)
+    (if (eq org-preview-latex-default-process 'ajlua)
         (aj/latex-preview-use-png)
       (aj/latex-preview-use-svg))))
 
 (defun aj/latex-preview-status ()
   "Show current LaTeX preview backend."
   (interactive)
-  (message "LaTeX preview: %s" org-latex-preview-default-process))
+  (message "LaTeX preview: %s" org-preview-latex-default-process))
 
 ;; ---------------------------------------------------------------------------
 ;; Async Parallel LaTeX Preview
@@ -617,7 +617,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
-                           (if (eq org-latex-preview-default-process 'ajlua) ".svg" ".png")))
+                           (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
          (preamble (if use-buf-preamble
                        (aj/latex--buffer-preview-preamble extra-preamble)
                      (concat
@@ -641,7 +641,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
            (latex-cmd (format "lualatex -interaction=nonstopmode -output-directory=%s %s"
                               (shell-quote-argument temporary-file-directory)
                               (shell-quote-argument tex-file)))
-           (convert-cmd (if (eq org-latex-preview-default-process 'ajlua)
+           (convert-cmd (if (eq org-preview-latex-default-process 'ajlua)
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
@@ -789,7 +789,7 @@ If preview exists, remove it. Otherwise, render it."
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
-                           (if (eq org-latex-preview-default-process 'ajlua) ".svg" ".png")))
+                           (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
          (full-content (concat
                         "\\documentclass[border=2pt]{standalone}\n"
                         headers
@@ -806,7 +806,7 @@ If preview exists, remove it. Otherwise, render it."
            (latex-cmd (format "lualatex -interaction=nonstopmode -output-directory=%s %s"
                               (shell-quote-argument temporary-file-directory)
                               (shell-quote-argument tex-file)))
-           (convert-cmd (if (eq org-latex-preview-default-process 'ajlua)
+           (convert-cmd (if (eq org-preview-latex-default-process 'ajlua)
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
@@ -976,7 +976,7 @@ For chess blocks, EXTRA-PREAMBLE contains buffer #+LATEX_HEADER lines to use as 
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
-                           (if (eq org-latex-preview-default-process 'ajlua) ".svg" ".png")))
+                           (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
          (preamble (cond
                     (is-chess
                      ;; Chess: use buffer headers directly
@@ -1004,7 +1004,7 @@ For chess blocks, EXTRA-PREAMBLE contains buffer #+LATEX_HEADER lines to use as 
            (latex-cmd (format "lualatex -interaction=nonstopmode -output-directory=%s %s"
                               (shell-quote-argument temporary-file-directory)
                               (shell-quote-argument tex-file)))
-           (convert-cmd (if (eq org-latex-preview-default-process 'ajlua)
+           (convert-cmd (if (eq org-preview-latex-default-process 'ajlua)
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
@@ -1081,7 +1081,7 @@ because all fragments are compiled together."
          (tex-file (make-temp-file "region-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (img-file (concat (file-name-sans-extension tex-file)
-                           (if (eq org-latex-preview-default-process 'ajlua) ".svg" ".png")))
+                           (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
          ;; Extract just the LaTeX parts, strip org markup
          (latex-content (aj/latex--extract-math-from-region content))
          (preamble (concat
@@ -1111,7 +1111,7 @@ because all fragments are compiled together."
                               (shell-quote-argument tex-file)))
            ;; Run twice for refs
            (latex-cmd-twice (concat latex-cmd " && " latex-cmd))
-           (convert-cmd (if (eq org-latex-preview-default-process 'ajlua)
+           (convert-cmd (if (eq org-preview-latex-default-process 'ajlua)
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
