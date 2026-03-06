@@ -167,6 +167,18 @@ Fontifies directly with htmlize, bypassing org-babel entirely."
                             (concat (regexp-quote "\\]") "$")
                             "\\]")))))
 
+;; Export tikzpicture environments as [latex]...[/latex] instead of mathjax
+(with-eval-after-load 'anki-editor
+  (advice-add 'anki-editor--ox-latex :around
+              (lambda (orig-fn latex contents info)
+                "Use [latex] tags for tikzpicture environments instead of mathjax."
+                (let ((code (org-remove-indentation (org-element-property :value latex))))
+                  (if (and (eq (org-element-type latex) 'latex-environment)
+                           (string-match-p "\\\\begin{tikzpicture}" code))
+                      (let ((anki-editor-latex-style 'builtin))
+                        (funcall orig-fn latex contents info))
+                    (funcall orig-fn latex contents info))))))
+
 ;; Disable babel evaluation during anki-editor export (we want code, not results)
 (with-eval-after-load 'anki-editor
   (advice-add 'anki-editor--export-string :around
