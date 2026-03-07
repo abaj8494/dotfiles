@@ -14,12 +14,9 @@
 ;; Variables & Config
 ;; ---------------------------------------------------------------------------
 
-(defvar aj/templates-base-dir "~/Documents/new-site/content-org/templates/"
-  "Base directory for recurring task templates.")
-
-(defvar aj/daily-templates-dir
-  (expand-file-name "templates" org-roam-directory)
-  "Directory containing recurring task templates.")
+(defvar aj/tasks-file
+  (expand-file-name "daily/tasks.org" org-roam-directory)
+  "Path to tasks.org file for recurring task scheduling.")
 
 ;; Yearly file configuration for week transclusion
 (defvar aj/yearly-file-ids
@@ -59,126 +56,27 @@
 Format: LAT LON NAME (e.g., -33.8148 151.1029 West Ryde)")
 
 ;; ---------------------------------------------------------------------------
-;; Date/Phase Helpers
+;; Helpers (kept)
 ;; ---------------------------------------------------------------------------
-
-(defun aj/epoch-day (&optional time)
-  "Return the number of days since Unix epoch for TIME (default: now)."
-  (floor (/ (float-time (or time (current-time))) 86400)))
-
-(defun aj/alternating-phase (&optional time)
-  "Return alternating phase ('a' or 'b') for TIME based on epoch day parity."
-  (if (= 0 (% (aj/epoch-day time) 2)) "a" "b"))
-
-(defun aj/iso-week-parity (&optional time)
-  "Return ISO week parity ('odd' or 'even') for TIME."
-  (let ((week-num (string-to-number (format-time-string "%V" (or time (current-time))))))
-    (if (= 1 (% week-num 2)) "odd" "even")))
 
 (defun aj/iso-week-number (&optional time)
   "Return ISO week number for TIME."
   (string-to-number (format-time-string "%V" (or time (current-time)))))
 
-(defun aj/is-weekday-p (time)
-  "Return t if TIME is a weekday (Monday-Friday), nil otherwise."
-  (let ((dow (string-to-number (format-time-string "%u" time))))
-    (<= dow 5)))
-
 ;; ---------------------------------------------------------------------------
-;; Capture Template Path Functions
+;; Capture Templates (targeting tasks.org)
 ;; ---------------------------------------------------------------------------
-
-(defun aj/capture-daily-file ()
-  "Return the daily template file path."
-  (expand-file-name "daily.org" aj/templates-base-dir))
-
-(defun aj/capture-weekdays-file ()
-  "Return the weekdays template file path (Mon-Fri)."
-  (expand-file-name "weekdays.org" aj/templates-base-dir))
-
-(defun aj/capture-alternating-file ()
-  "Prompt for alternating phase and return the template file path.
-Shows current phase for reference."
-  (let* ((current-phase (aj/alternating-phase))
-         (phases '("a" "b"))
-         (phase (completing-read
-                 (format "Phase (today is '%s'): " current-phase)
-                 phases nil t)))
-    (expand-file-name (concat "alternating/" phase ".org") aj/templates-base-dir)))
-
-(defun aj/capture-weekly-file ()
-  "Prompt for day of week and return the template file path.
-Shows current day for reference."
-  (let* ((current-day (downcase (format-time-string "%A")))
-         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
-         (day (completing-read
-               (format "Day of week (today is %s): " current-day)
-               days nil t)))
-    (expand-file-name (concat "weekly/" day ".org") aj/templates-base-dir)))
-
-(defun aj/capture-biweekly-file ()
-  "Prompt for week parity and day, return the template file path.
-Shows current ISO week and parity for reference."
-  (let* ((current-week (aj/iso-week-number))
-         (current-parity (aj/iso-week-parity))
-         (current-day (downcase (format-time-string "%A")))
-         (parities '("odd" "even"))
-         (days '("monday" "tuesday" "wednesday" "thursday" "friday" "saturday" "sunday"))
-         (parity (completing-read
-                  (format "Week parity (week %d is %s): " current-week current-parity)
-                  parities nil t))
-         (day (completing-read
-               (format "Day of week (today is %s): " current-day)
-               days nil t)))
-    (expand-file-name (concat "biweekly/" parity "/" day ".org") aj/templates-base-dir)))
-
-(defun aj/capture-monthly-file ()
-  "Prompt for day of month and return the template file path.
-Shows current day for reference."
-  (let* ((current-dom (format-time-string "%d"))
-         (days (mapcar (lambda (n) (format "%02d" n)) (number-sequence 1 31)))
-         (day (completing-read
-               (format "Day of month (today is %s): " current-dom)
-               days nil t)))
-    (expand-file-name (concat "monthly/" day ".org") aj/templates-base-dir)))
-
-(defun aj/capture-yearly-file ()
-  "Prompt for MM-DD and return the template file path.
-Shows current date for reference."
-  (let* ((current-date (format-time-string "%m-%d"))
-         (date (read-string (format "Date MM-DD (today is %s): " current-date))))
-    (expand-file-name (concat "yearly/" date ".org") aj/templates-base-dir)))
 
 (setq org-capture-templates
-      '(("r" "recurring templates")
-        ("rd" "daily (every day)" plain
-         (file aj/capture-daily-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rk" "weekdays (Mon-Fri)" plain
-         (file aj/capture-weekdays-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("ra" "alternating (every other day)" plain
-         (file aj/capture-alternating-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rw" "weekly" plain
-         (file aj/capture-weekly-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rb" "biweekly (fortnightly)" plain
-         (file aj/capture-biweekly-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("rm" "monthly" plain
-         (file aj/capture-monthly-file)
-         "* TODO %?"
-         :empty-lines 0)
-        ("ry" "yearly" plain
-         (file aj/capture-yearly-file)
-         "* TODO %?"
-         :empty-lines 0)))
+      `(("r" "recurring templates")
+        ("rd" "daily task" entry (file ,aj/tasks-file)
+         "* TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a ++1d>\")")
+        ("rw" "weekly task" entry (file ,aj/tasks-file)
+         "* TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a +1w>\")")
+        ("rm" "monthly task" entry (file ,aj/tasks-file)
+         "* TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a ++1m>\")")
+        ("rc" "custom schedule" entry (file ,aj/tasks-file)
+         "* TODO %?\nSCHEDULED: %^{Schedule}")))
 
 ;; ---------------------------------------------------------------------------
 ;; Daily File Detection
@@ -256,96 +154,266 @@ linking to the week node followed by transclude directive."
                                 week-num file-id week-num file-name))))))))))
 
 ;; ---------------------------------------------------------------------------
-;; Recurring Task Management
+;; Recurring Task Management (tasks.org agenda-based)
 ;; ---------------------------------------------------------------------------
 
-(defun aj/read-template-file (subdir filename &optional time)
-  "Read template from SUBDIR/FILENAME under `aj/daily-templates-dir' if it exists.
-TIME is used to replace <TODAY ...> placeholders with actual dates.
-Returns the file contents with trailing whitespace trimmed, or nil if file doesn't exist."
-  (let ((path (expand-file-name
-               (if (string-empty-p subdir)
-                   filename
-                 (concat subdir "/" filename))
-               aj/daily-templates-dir)))
-    (when (file-exists-p path)
-      (with-temp-buffer
-        (insert-file-contents path)
-        ;; Only trim trailing whitespace to preserve internal blank lines
-        (let ((content (string-trim-right (buffer-string))))
-          (if time
-              (aj/replace-date-placeholders content time)
-            content))))))
+(defun aj/get-due-positions-for-date (date-time)
+  "Return set of heading positions in tasks.org that are due on DATE-TIME.
+Uses `org-agenda-get-day-entries' with :scheduled :sexp :deadline selectors.
+Resolves markers to their parent heading positions."
+  (let* ((file (expand-file-name aj/tasks-file))
+         (date (decode-time date-time))
+         (day (nth 3 date))
+         (month (nth 4 date))
+         (year (nth 5 date))
+         (date-list (list month day year))
+         (entries (org-agenda-get-day-entries file date-list :scheduled :sexp :deadline))
+         (positions (make-hash-table :test 'eq)))
+    (dolist (entry entries)
+      (let ((marker (get-text-property 0 'org-marker entry)))
+        (when marker
+          ;; Resolve marker to the heading that owns it
+          (let ((heading-pos
+                 (with-current-buffer (marker-buffer marker)
+                   (save-excursion
+                     (goto-char (marker-position marker))
+                     (if (org-at-heading-p)
+                         (line-beginning-position)
+                       ;; Marker is on a body line (e.g. diary sexp) — find parent heading
+                       (org-back-to-heading t)
+                       (line-beginning-position))))))
+            (puthash heading-pos t positions)))))
+    positions))
 
-(defun aj/replace-date-placeholders (content time)
-  "Replace <TODAY ...> placeholders in CONTENT with actual org timestamps for TIME."
-  (let ((date-str (format-time-string "%Y-%m-%d %a" time)))
-    ;; Replace <TODAY HH:MM> with <YYYY-MM-DD Day HH:MM>
-    (setq content (replace-regexp-in-string
-                   "<TODAY \\([0-9]\\{2\\}:[0-9]\\{2\\}\\)>"
-                   (lambda (match)
-                     (format "<%s %s>" date-str (match-string 1 match)))
-                   content))
-    ;; Replace bare <TODAY> with <YYYY-MM-DD Day>
-    (setq content (replace-regexp-in-string
-                   "<TODAY>"
-                   (format "<%s>" date-str)
-                   content))
-    content))
+(defun aj/subtree-has-due-position-p (start end due-set)
+  "Return non-nil if any position between START and END is in DUE-SET."
+  (catch 'found
+    (maphash (lambda (pos _)
+               (when (and (>= pos start) (< pos end))
+                 (throw 'found t)))
+             due-set)
+    nil))
 
-(defun aj/get-recurring-tasks-grouped (time)
-  "Return recurring tasks for TIME as an alist of (SOURCE-TYPE . CONTENT).
-SOURCE-TYPE is one of: daily-group, weekly, biweekly, monthly, yearly.
-daily-group combines daily.org, weekdays.org, and alternating templates.
-Only non-nil, non-empty entries are included."
-  (let* ((day-name (downcase (format-time-string "%A" time)))
-         (day-of-month (format-time-string "%d" time))
-         (month-day (format-time-string "%m-%d" time))
-         (alt-phase (aj/alternating-phase time))
-         (week-parity (aj/iso-week-parity time))
-         (daily-parts (delq nil (list
-                                 (aj/read-template-file "" "daily.org" time)
-                                 (when (aj/is-weekday-p time)
-                                   (aj/read-template-file "" "weekdays.org" time))
-                                 (aj/read-template-file "alternating" (concat alt-phase ".org") time))))
-         (daily-group (when daily-parts (string-join daily-parts "\n\n")))
-         (weekly (aj/read-template-file "weekly" (concat day-name ".org") time))
-         (biweekly (aj/read-template-file (concat "biweekly/" week-parity) (concat day-name ".org") time))
-         (monthly (aj/read-template-file "monthly" (concat day-of-month ".org") time))
-         (yearly (aj/read-template-file "yearly" (concat month-day ".org") time)))
-    (delq nil
-          (list
-           (when (and daily-group (not (string-empty-p daily-group)))
-             (cons 'daily-group daily-group))
-           (when (and weekly (not (string-empty-p weekly)))
-             (cons 'weekly weekly))
-           (when (and biweekly (not (string-empty-p biweekly)))
-             (cons 'biweekly biweekly))
-           (when (and monthly (not (string-empty-p monthly)))
-             (cons 'monthly monthly))
-           (when (and yearly (not (string-empty-p yearly)))
-             (cons 'yearly yearly))))))
+(defun aj/extract-filtered-subtree (buf pos due-set date-time)
+  "Extract filtered subtree from BUF at POS using DUE-SET.
+DATE-TIME is the target date for birthday/holiday evaluation.
+Returns content string with heading levels preserved as-is (relative to tasks.org)."
+  (with-current-buffer buf
+    (save-excursion
+      (goto-char pos)
+      (let* ((top-level (org-current-level))
+             (subtree-end (save-excursion (org-end-of-subtree t t) (point)))
+             (lines '()))
+        ;; Include the top-level heading line itself
+        (push (buffer-substring-no-properties (line-beginning-position) (line-end-position)) lines)
+        (forward-line 1)
+        ;; Include body text of top-level heading (everything before first child)
+        (while (and (< (point) subtree-end)
+                    (not (looking-at-p "^\\*+ ")))
+          (let ((line (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
+            (push line lines))
+          (forward-line 1))
+        ;; Process children
+        (while (< (point) subtree-end)
+          (if (looking-at-p "^\\*+ ")
+              (let* ((child-pos (point))
+                     (child-end (save-excursion (org-end-of-subtree t t) (point)))
+                     ;; Check if this child or any content in its subtree is due
+                     (child-due-p (aj/subtree-has-due-position-p child-pos child-end due-set))
+                     ;; Check if the child has a schedule at all (SCHEDULED, DEADLINE, or diary sexp)
+                     (child-has-schedule-p
+                      (save-excursion
+                        (forward-line 1)
+                        (or child-due-p
+                            (looking-at-p "^SCHEDULED:")
+                            (looking-at-p "^DEADLINE:")
+                            (looking-at-p "^%%")))))
+                (if (and child-has-schedule-p child-due-p)
+                    ;; Child is due: recursively extract its subtree
+                    (let ((child-content (aj/extract-filtered-subtree buf child-pos due-set date-time)))
+                      (dolist (line (split-string child-content "\n"))
+                        (push line lines)))
+                  ;; Child not due or has no schedule: skip
+                  )
+                (goto-char child-end))
+            (forward-line 1)))
+        (string-join (nreverse lines) "\n")))))
 
-(defun aj/get-recurring-tasks-for-date (time)
-  "Return recurring tasks string for TIME.
-Combines templates from all recurring sources."
-  (let ((groups (aj/get-recurring-tasks-grouped time)))
-    (string-join (mapcar #'cdr groups) "\n\n")))
+(defun aj/strip-scheduling-noise (content)
+  "Strip SCHEDULED lines without times, LAST_REPEAT, LOGBOOK drawers, PROPERTIES drawers.
+Keep SCHEDULED lines that have HH:MM (useful reminders).
+Keep PROPERTIES drawers that contain CATEGORY."
+  (let ((lines (split-string content "\n"))
+        (result '())
+        (in-logbook nil)
+        (in-properties nil)
+        (properties-lines '())
+        (properties-has-category nil))
+    (dolist (line lines)
+      (cond
+       ;; Start of LOGBOOK drawer
+       ((string-match-p "^:LOGBOOK:" line)
+        (setq in-logbook t))
+       ;; End of LOGBOOK drawer
+       ((and in-logbook (string-match-p "^:END:" line))
+        (setq in-logbook nil))
+       ;; Inside LOGBOOK: skip
+       (in-logbook nil)
+       ;; Start of PROPERTIES drawer
+       ((string-match-p "^:PROPERTIES:" line)
+        (setq in-properties t
+              properties-lines (list line)
+              properties-has-category nil))
+       ;; End of PROPERTIES drawer
+       ((and in-properties (string-match-p "^:END:" line))
+        (push line properties-lines)
+        (setq in-properties nil)
+        ;; Only keep if it has CATEGORY
+        (when properties-has-category
+          (dolist (pl (nreverse properties-lines))
+            (push pl result))))
+       ;; Inside PROPERTIES
+       (in-properties
+        (push line properties-lines)
+        (when (string-match-p "^:CATEGORY:" line)
+          (setq properties-has-category t)))
+       ;; LAST_REPEAT lines
+       ((string-match-p "^:LAST_REPEAT:" line) nil)
+       ;; State change log lines (outside drawers)
+       ((string-match-p "^- State \"" line) nil)
+       ;; SCHEDULED without time: strip
+       ((and (string-match-p "^SCHEDULED:" line)
+             (not (string-match-p "[0-9]\\{2\\}:[0-9]\\{2\\}" line)))
+        nil)
+       ;; SCHEDULED with time: keep but strip repeater for daily note
+       ((string-match-p "^SCHEDULED:" line)
+        (let ((cleaned (replace-regexp-in-string " \\+\\+?[0-9]+[dwmy]" "" line)))
+          (push cleaned result)))
+       ;; DEADLINE lines: strip entirely for daily notes
+       ((string-match-p "^DEADLINE:" line) nil)
+       ;; Normal line: keep
+       (t (push line result))))
+    (string-join (nreverse result) "\n")))
 
-(defun aj/daily-recurring-tasks ()
-  "Return recurring tasks for the capture date.
-Combines templates from:
-  - daily.org (every day)
-  - alternating/<a|b>.org (every other day, epoch-based)
-  - weekly/<dayname>.org (e.g., wednesday.org)
-  - biweekly/<odd|even>/<dayname>.org (fortnightly)
-  - monthly/<day>.org (e.g., 14.org for 14th of month)
-  - yearly/<mm-dd>.org (e.g., 01-14.org for January 14th)"
-  (let* ((capture-time (org-capture-get :default-time))
-         (combined (aj/get-recurring-tasks-for-date capture-time)))
-    (if (string-empty-p combined)
-        ""
-      (concat "\n" combined "\n"))))
+(defun aj/evaluate-birthday-lines (body date-time)
+  "Evaluate %%(org-anniversary ...) lines in BODY against DATE-TIME.
+Replace diary sexp with evaluated text, omit lines that produce no output."
+  (let ((date (decode-time date-time))
+        (lines (split-string body "\n"))
+        (result '()))
+    (dolist (line lines)
+      (if (string-match "^%%(org-anniversary \\([0-9]+\\)\\s-+\\([0-9]+\\)\\s-+\\([0-9]+\\))\\s-+\\(.*\\)" line)
+          (let* ((year (string-to-number (match-string 1 line)))
+                 (month (string-to-number (match-string 2 line)))
+                 (day (string-to-number (match-string 3 line)))
+                 (template (match-string 4 line))
+                 (target-month (nth 4 date))
+                 (target-day (nth 3 date))
+                 (target-year (nth 5 date)))
+            (when (and (= month target-month) (= day target-day))
+              (let* ((age (- target-year year))
+                     (text (replace-regexp-in-string "%d" (number-to-string age) template)))
+                (push text result))))
+        (push line result)))
+    (string-join (nreverse result) "\n")))
+
+(defun aj/evaluate-holidays-for-date (date-time)
+  "Return list of holiday names for DATE-TIME using `calendar-check-holidays'."
+  (require 'holidays)
+  (let* ((date (decode-time date-time))
+         (day (nth 3 date))
+         (month (nth 4 date))
+         (year (nth 5 date))
+         (calendar-date (list month day year)))
+    (calendar-check-holidays calendar-date)))
+
+(defun aj/get-tasks-for-date (date-time)
+  "Return list of (HEADING-NAME . CONTENT) for recurring tasks due on DATE-TIME.
+Main orchestrator replacing `aj/get-recurring-tasks-grouped'."
+  (let* ((file (expand-file-name aj/tasks-file))
+         (due-set (aj/get-due-positions-for-date date-time))
+         (buf (find-file-noselect file))
+         (results '()))
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char (point-min))
+        ;; Walk top-level headings
+        (while (re-search-forward "^\\* " nil t)
+          (let* ((heading-pos (line-beginning-position))
+                 (heading-end (save-excursion (org-end-of-subtree t t) (point))))
+            (when (gethash heading-pos due-set)
+              (let* ((raw-content (aj/extract-filtered-subtree buf heading-pos due-set date-time))
+                     ;; Strip scheduling noise
+                     (cleaned (aj/strip-scheduling-noise raw-content))
+                     ;; Get heading name from first line
+                     (first-line (car (split-string cleaned "\n")))
+                     (heading-name (aj/extract-heading-name first-line)))
+                ;; Special handling for headings with birthday/holiday content
+                (when heading-name
+                  (let ((processed cleaned))
+                    ;; Evaluate birthday lines (replace diary sexps with text)
+                    (when (string-match-p "%%(org-anniversary" processed)
+                      (setq processed (aj/evaluate-birthday-lines processed date-time)))
+                    ;; Evaluate holiday content (replace diary sexp with holiday names)
+                    (when (string-match-p "%%(org-calendar-holiday)" processed)
+                      (let ((holidays (aj/evaluate-holidays-for-date date-time)))
+                        (if holidays
+                            (setq processed
+                                  (replace-regexp-in-string
+                                   "%%(org-calendar-holiday).*"
+                                   (string-join holidays "\n")
+                                   processed))
+                          ;; No holidays: strip the sexp line (keep rest of content)
+                          (setq processed
+                                (replace-regexp-in-string
+                                 "%%(org-calendar-holiday).*\n?" ""
+                                 processed)))))
+                    (when processed
+                      (push (cons heading-name processed) results))))))
+            (goto-char heading-end)))))
+    (nreverse results)))
+
+(defun aj/get-carryforward-tasks (date-time)
+  "Return list of (HEADING-NAME . CONTENT) for priority tasks missed before DATE-TIME.
+A task is carried forward if it has [#A/B/C] priority and its LAST_REPEAT
+is older than the previous scheduled occurrence."
+  (let* ((file (expand-file-name aj/tasks-file))
+         (buf (find-file-noselect file))
+         (due-set (aj/get-due-positions-for-date date-time))
+         (results '()))
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward "^\\*+ .*\\[#[A-C]\\]" nil t)
+          (let* ((pos (line-beginning-position))
+                 (heading-line (buffer-substring-no-properties pos (line-end-position))))
+            ;; Skip if already due today
+            (unless (gethash pos due-set)
+              (save-excursion
+                (goto-char pos)
+                (forward-line 1)
+                (when (looking-at "SCHEDULED: <\\([^>]+\\)>")
+                  (let* ((sched-str (match-string 1))
+                         ;; Check for LAST_REPEAT
+                         (last-repeat
+                          (save-excursion
+                            (let ((subtree-end (save-excursion (org-end-of-subtree t t) (point))))
+                              (when (re-search-forward ":LAST_REPEAT: \\[\\([^]]+\\)\\]" subtree-end t)
+                                (match-string 1)))))
+                         (heading-name (aj/extract-heading-name heading-line)))
+                    ;; If there's a LAST_REPEAT, check if task was missed
+                    (when (and last-repeat heading-name
+                               (string-match-p "\\+[0-9]+[dwmy]" sched-str))
+                      ;; Parse last repeat time
+                      (let* ((last-time (org-time-string-to-time last-repeat))
+                             (target-time date-time)
+                             ;; If last repeat is before yesterday, task was likely missed
+                             (yesterday (time-subtract target-time (days-to-time 1))))
+                        (when (time-less-p last-time yesterday)
+                          (let* ((raw-content (aj/extract-filtered-subtree buf pos due-set date-time))
+                                 (cleaned (aj/strip-scheduling-noise raw-content)))
+                            (push (cons heading-name cleaned) results)))))))))))))
+    (nreverse results)))
 
 (defun aj/recurring-heading-exists-p (heading)
   "Check if HEADING already exists under * Recurring.
@@ -378,38 +446,9 @@ Matches regardless of TODO state (TODO/DONE/WAIT/CANCEL) or priority."
 (defvar aj/recurring-heading-order nil
   "Ordered list of recurring heading names, populated during refresh.")
 
-(defvar-local aj/recurring-heading-source-map nil
-  "Buffer-local alist mapping recurring heading names to their source types.
-Set during `aj/refresh-daily-recurring', used by post-capture hooks.")
-
-(defun aj/build-heading-source-map (grouped-tasks)
-  "Build alist mapping heading name -> source-type from GROUPED-TASKS.
-GROUPED-TASKS is an alist of (SOURCE-TYPE . CONTENT) as returned by
-`aj/get-recurring-tasks-grouped'.  Operates on raw template content
-\(level-1 headings, before incrementing)."
-  (let (result)
-    (dolist (group grouped-tasks)
-      (let ((source-type (car group))
-            (content (cdr group)))
-        (dolist (line (split-string content "\n"))
-          (when (string-match "^\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
-            (push (cons (match-string 1 line) source-type) result)))))
-    (nreverse result)))
-
-(defun aj/recurring-separator-for (prev-source curr-source)
-  "Return the separator string between headings from PREV-SOURCE and CURR-SOURCE.
-Returns single ----- for same group, double ----- for group boundary crossings."
-  (cond
-   ;; Same group (including daily-group): single
-   ((eq prev-source curr-source)
-    "-----\n")
-   ;; Different groups: double
-   (t
-    "-----\n-----\n")))
-
-(defun aj/clean-and-insert-recurring-separator (prev-heading-bol curr-heading-bol separator)
+(defun aj/clean-and-insert-recurring-separator (prev-heading-bol curr-heading-bol)
   "Clean existing separators between PREV-HEADING-BOL and CURR-HEADING-BOL.
-Then insert SEPARATOR (or nothing if nil)."
+Then insert a single ----- separator."
   (save-excursion
     (let ((zone-start (save-excursion
                         (goto-char prev-heading-bol)
@@ -426,28 +465,23 @@ Then insert SEPARATOR (or nothing if nil)."
       (dolist (pos positions)
         (delete-region (car pos) (cdr pos))
         (setq curr-heading-bol (- curr-heading-bol (- (cdr pos) (car pos)))))
-      ;; Insert the correct separator before curr heading
-      (when separator
-        (goto-char curr-heading-bol)
-        ;; Walk backwards past blank lines
-        (forward-line -1)
-        (while (and (> (point) zone-start) (looking-at-p "^[ \t]*$"))
-          (forward-line -1))
-        (forward-line 1)
-        ;; Remove excess blank lines
-        (let ((blank-start (point)))
-          (while (and (< (point) curr-heading-bol) (looking-at-p "^[ \t]*$"))
-            (forward-line 1))
-          (when (> (point) blank-start)
-            (delete-region blank-start (point))))
-        (insert "\n" separator "\n")))))
+      ;; Insert single separator before curr heading
+      (goto-char curr-heading-bol)
+      ;; Walk backwards past blank lines
+      (forward-line -1)
+      (while (and (> (point) zone-start) (looking-at-p "^[ \t]*$"))
+        (forward-line -1))
+      (forward-line 1)
+      ;; Remove excess blank lines
+      (let ((blank-start (point)))
+        (while (and (< (point) curr-heading-bol) (looking-at-p "^[ \t]*$"))
+          (forward-line 1))
+        (when (> (point) blank-start)
+          (delete-region blank-start (point))))
+      (insert "\n-----\n\n"))))
 
-(defun aj/ensure-recurring-separators (heading-source-map)
-  "Ensure correct separators between ** headings under * Recurring.
-HEADING-SOURCE-MAP is an alist of (HEADING-NAME . SOURCE-TYPE).
-Separator rules:
-  - Within same group (including daily-group): single -----
-  - Between different groups: double -----"
+(defun aj/ensure-recurring-separators ()
+  "Ensure single ----- separators between ** headings under * Recurring."
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^\\* Recurring\\b" nil t)
@@ -468,19 +502,9 @@ Separator rules:
           (when (>= len 2)
             (dotimes (j (1- len))
               (let* ((i (- len 1 j))
-                     (curr-name (car (nth i headings)))
-                     (curr-bol (cdr (nth i headings)))
-                     (prev-name (car (nth (1- i) headings)))
-                     (prev-source (cdr (assoc prev-name heading-source-map)))
-                     (curr-source (cdr (assoc curr-name heading-source-map)))
-                     (separator (aj/recurring-separator-for prev-source curr-source)))
+                     (curr-bol (cdr (nth i headings))))
                 (aj/clean-and-insert-recurring-separator
-                 (cdr (nth (1- i) headings)) curr-bol separator)))))))))
-
-(defun aj/ensure-recurring-separators-from-cache ()
-  "Re-apply recurring separators using cached heading-source-map."
-  (when aj/recurring-heading-source-map
-    (aj/ensure-recurring-separators aj/recurring-heading-source-map)))
+                 (cdr (nth (1- i) headings)) curr-bol)))))))))
 
 (defun aj/find-recurring-insert-point (heading-name)
   "Find correct insertion point for HEADING-NAME under * Recurring.
@@ -531,7 +555,7 @@ Ensures exactly one blank line before the heading."
 
 (defun aj/refresh-daily-recurring ()
   "Refresh recurring tasks in the current daily note.
-Parses date from #+title: line, fetches all recurring templates.
+Parses date from #+title: line, queries tasks.org via org-agenda.
 Only ADDS new tasks - does not replace or modify existing ones.
 Maintains template order even when some headings already exist."
   (interactive)
@@ -544,51 +568,51 @@ Maintains template order even when some headings already exist."
                (month (string-to-number (nth 1 parts)))
                (day (string-to-number (nth 2 parts)))
                (date-time (encode-time 0 0 0 day month year))
-               (grouped (aj/get-recurring-tasks-grouped date-time))
-               (tasks-raw (string-join (mapcar #'cdr grouped) "\n\n"))
-               ;; Increment all heading levels by 1 (subheadings under * Recurring)
-               (tasks (replace-regexp-in-string "^\\(\\*+\\) " "*\\1 " tasks-raw))
-               ;; Build heading-source-map from raw (pre-increment) content
-               (heading-source-map (aj/build-heading-source-map grouped))
+               (task-pairs (aj/get-tasks-for-date date-time))
+               (carryforward (aj/get-carryforward-tasks date-time))
+               (all-pairs (append task-pairs carryforward))
                (added-count 0))
-          (if (string-empty-p tasks)
+          (if (null all-pairs)
               (message "No recurring tasks for %s" date-str)
-            ;; Cache the source map buffer-locally
-            (setq aj/recurring-heading-source-map heading-source-map)
-            ;; Populate heading order for correct insertion positions
-            (setq aj/recurring-heading-order (aj/extract-heading-order tasks))
-            ;; Ensure Recurring heading exists at correct position
-            (aj/ensure-heading-exists "Recurring")
-            ;; Parse each task block and only add if not already present
-            (let ((task-lines (split-string tasks "\n"))
-                  (current-heading nil)
-                  (current-block nil))
-              ;; Group lines by heading
-              (dolist (line task-lines)
-                (cond
-                 ;; New heading found
-                 ((string-match "^\\*\\* " line)
-                  ;; Process previous block if exists
+            ;; Build tasks string: increment heading levels by 1 for each pair
+            (let ((all-contents
+                   (mapcar (lambda (pair)
+                             (replace-regexp-in-string "^\\(\\*+\\) " "*\\1 " (cdr pair)))
+                           all-pairs)))
+              ;; Populate heading order for correct insertion positions
+              (setq aj/recurring-heading-order
+                    (mapcar #'car all-pairs))
+              ;; Ensure Recurring heading exists at correct position
+              (aj/ensure-heading-exists "Recurring")
+              ;; Insert each task block if not already present
+              (dolist (content all-contents)
+                (let ((task-lines (split-string content "\n"))
+                      (current-heading nil)
+                      (current-block nil))
+                  ;; Group lines by top-level (** level) heading
+                  (dolist (line task-lines)
+                    (cond
+                     ((string-match "^\\*\\* " line)
+                      ;; Process previous block
+                      (when (and current-heading
+                                 (not (aj/recurring-heading-exists-p
+                                       (aj/extract-heading-name current-heading))))
+                        (aj/insert-recurring-block current-heading (nreverse current-block))
+                        (setq added-count (1+ added-count)))
+                      (setq current-heading line
+                            current-block nil))
+                     (t (push line current-block))))
+                  ;; Process final block
                   (when (and current-heading
                              (not (aj/recurring-heading-exists-p
                                    (aj/extract-heading-name current-heading))))
                     (aj/insert-recurring-block current-heading (nreverse current-block))
-                    (setq added-count (1+ added-count)))
-                  (setq current-heading line
-                        current-block nil))
-                 ;; Content line
-                 (t (push line current-block))))
-              ;; Process final block
-              (when (and current-heading
-                         (not (aj/recurring-heading-exists-p
-                               (aj/extract-heading-name current-heading))))
-                (aj/insert-recurring-block current-heading (nreverse current-block))
-                (setq added-count (1+ added-count))))
-            ;; Apply recurring separators after all headings are inserted
-            (aj/ensure-recurring-separators heading-source-map)
-            (if (> added-count 0)
-                (message "Added %d recurring task(s) for %s" added-count date-str)
-              (message "All recurring tasks already present for %s" date-str))))
+                    (setq added-count (1+ added-count)))))
+              ;; Apply recurring separators
+              (aj/ensure-recurring-separators)
+              (if (> added-count 0)
+                  (message "Added %d recurring task(s) for %s" added-count date-str)
+                (message "All recurring tasks already present for %s" date-str)))))
       (message "Not a daily note (no date in title)"))))
 
 ;; ---------------------------------------------------------------------------
@@ -660,7 +684,7 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
         (aj/ensure-heading-has-statistics-cookie heading))
       ;; Ensure ----- separators between level-1 headings
       (aj/ensure-heading-separators)
-      (aj/ensure-recurring-separators-from-cache))))
+      (aj/ensure-recurring-separators))))
 
 (defun aj/ensure-heading-separators ()
   "Ensure triple ----- separators immediately before each level-1 heading except the first.
@@ -956,7 +980,7 @@ Entries are placed under * Capture by the capture template."
         ;; 4b. Re-run heading separators after recurring content is inserted
         ;; (recurring tasks may have displaced the separators)
         (aj/ensure-heading-separators)
-        (aj/ensure-recurring-separators-from-cache)
+        (aj/ensure-recurring-separators)
         ;; 5. Move captured entry if user chose a Recurring target
         (when (and aj/--dailies-capture-target
                    aj/--dailies-capture-heading
@@ -965,7 +989,7 @@ Entries are placed under * Capture by the capture template."
            aj/--dailies-capture-target
            aj/--dailies-capture-heading)
           (aj/ensure-heading-separators)
-          (aj/ensure-recurring-separators-from-cache)
+          (aj/ensure-recurring-separators)
           (org-update-statistics-cookies t))
         ;; 5b. Insert calendar content
         (save-excursion
@@ -1469,7 +1493,7 @@ syncs data, then inserts."
                     (aj/insert-hourly-weather-table buffer date-str)
                     (with-current-buffer buffer
                       (aj/ensure-heading-separators)
-                      (aj/ensure-recurring-separators-from-cache))
+                      (aj/ensure-recurring-separators))
                     (message "Weather: done for %s ✓" name))))))))))))
 
 ;; ---------------------------------------------------------------------------
@@ -1755,7 +1779,7 @@ For all files: enables transclusion, refreshes recurring tasks and calendar."
       (aj/ensure-daily-structure)
       (aj/refresh-daily-recurring)
       (aj/ensure-heading-separators)
-      (aj/ensure-recurring-separators-from-cache)
+      (aj/ensure-recurring-separators)
       (aj/refresh-daily-calendar))
     ;; Enable org-transclusion-mode to render transcludes
     (when (and (fboundp 'org-transclusion-mode)
@@ -1862,6 +1886,65 @@ Preserves transclusion state in current buffer."
           (lambda ()
             (when (equal org-state "DONE")
               (my/org-roam-copy-todo-to-today))))
+
+;; ---------------------------------------------------------------------------
+;; Propagate DONE to tasks.org
+;; ---------------------------------------------------------------------------
+
+(defun aj/propagate-done-to-tasks ()
+  "When a heading is marked DONE/CANCEL under * Recurring in a daily note,
+find the corresponding heading in tasks.org and mark it DONE there too.
+This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
+  (when (and (member org-state '("DONE" "CANCEL"))
+             (aj/daily-date-file-p)
+             (aj/under-heading-p "^\\* Recurring\\b"))
+    (let* ((heading-text (org-get-heading t t t t))
+           ;; Build parent chain for disambiguation
+           (parent-chain
+            (save-excursion
+              (let ((chain (list heading-text)))
+                (while (org-up-heading-safe)
+                  (let ((h (org-get-heading t t t t)))
+                    (unless (string= h "Recurring")
+                      (push h chain))))
+                chain)))
+           (tasks-buf (find-file-noselect (expand-file-name aj/tasks-file))))
+      (when tasks-buf
+        (with-current-buffer tasks-buf
+          (save-excursion
+            (goto-char (point-min))
+            (let ((found nil))
+              ;; Try to find matching heading by walking the parent chain
+              (if (= (length parent-chain) 1)
+                  ;; Simple case: top-level child of Recurring (now * in tasks.org)
+                  (when (re-search-forward
+                         (format "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                                 (regexp-quote heading-text))
+                         nil t)
+                    (setq found t))
+                ;; Multi-level: walk the chain
+                (catch 'found
+                  (goto-char (point-min))
+                  ;; Find each level of the parent chain
+                  (dolist (parent (butlast parent-chain))
+                    (unless (re-search-forward
+                             (format "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                                     (regexp-quote parent))
+                             nil t)
+                      (throw 'found nil)))
+                  ;; Now find the target heading within the parent subtree
+                  (let ((subtree-end (save-excursion (org-end-of-subtree t t) (point))))
+                    (when (re-search-forward
+                           (format "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                                   (regexp-quote heading-text))
+                           subtree-end t)
+                      (setq found t)))))
+              (when found
+                (beginning-of-line)
+                (org-todo "DONE")
+                (save-buffer)))))))))
+
+(add-hook 'org-after-todo-state-change-hook #'aj/propagate-done-to-tasks)
 
 ;; ---------------------------------------------------------------------------
 ;; Keybindings

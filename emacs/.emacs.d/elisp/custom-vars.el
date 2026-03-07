@@ -12,7 +12,7 @@
    '("e27c9668d7eddf75373fa6b07475ae2d6892185f07ebed037eedf783318761d7"
      default))
  '(org-agenda-files
-   '("/Users/aayushbajaj/Documents/new-site/content-org/daily/"))
+   '("/Users/aayushbajaj/Documents/new-site/content-org/daily/tasks.org"))
  '(org-export-with-drawers nil)
  '(org-format-latex-options
    '(:foreground default :background "Transparent" :scale 2.0

@@ -202,7 +202,7 @@
   (setq org-log-done 'time)
   (setq org-log-into-drawer t)
   (setq org-directory "/Users/aayushbajaj/Documents/new-site/content-org/daily/")
-  (setq org-agenda-files (list org-directory))
+  (setq org-agenda-files (list (expand-file-name "tasks.org" org-directory)))
   (setq org-todo-keywords
         '((sequence "TODO(t)" "WAIT(w!)" "|" "CANCEL(c!)" "DONE(d!)")))
 
