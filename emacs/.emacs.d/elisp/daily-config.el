@@ -413,7 +413,125 @@ is older than the previous scheduled occurrence."
                           (let* ((raw-content (aj/extract-filtered-subtree buf pos due-set date-time))
                                  (cleaned (aj/strip-scheduling-noise raw-content)))
                             (push (cons heading-name cleaned) results)))))))))))))
+    ;; Tag carryforward headings with :overdue:
+    (mapcar (lambda (pair)
+              (cons (car pair)
+                    (aj/tag-headings-overdue (cdr pair))))
+            (nreverse results))))
+
+(defun aj/tag-headings-overdue (content)
+  "Add :overdue: tag to all heading lines in CONTENT."
+  (let ((lines (split-string content "\n")))
+    (string-join
+     (mapcar (lambda (line)
+               (if (string-match "^\\(\\*+ .+?\\)\\([ \t]*\\)$" line)
+                   (let ((heading (match-string 1 line)))
+                     (if (string-match-p ":[a-zA-Z_@]+:$" heading)
+                         ;; Already has tags — append overdue
+                         (replace-regexp-in-string
+                          ":\\([a-zA-Z_@]+:\\)$"
+                          ":overdue:\\1"
+                          heading)
+                       (concat heading " :overdue:")))
+                 line))
+             lines)
+     "\n")))
+
+(defun aj/get-overdue-captures (date-str)
+  "Return list of overdue TODO subtrees from * Capture in previous daily notes.
+Scans backwards from the day before DATE-STR. Stops at the first day with
+no Capture TODOs (assumes older days were already carried forward).
+Returns list of (HEADING-TEXT . SUBTREE-CONTENT) pairs, tagged :overdue:."
+  (let* ((parts (split-string date-str "-"))
+         (year (string-to-number (nth 0 parts)))
+         (month (string-to-number (nth 1 parts)))
+         (day (string-to-number (nth 2 parts)))
+         (current-time (encode-time 0 0 0 day month year))
+         (daily-dir (expand-file-name
+                     (or org-roam-dailies-directory "daily")
+                     org-roam-directory))
+         (results '())
+         (days-back 0)
+         (max-days 30))
+    (while (< days-back max-days)
+      (setq days-back (1+ days-back))
+      (let* ((prev-time (time-subtract current-time (days-to-time days-back)))
+             (prev-date (format-time-string "%Y-%m-%d" prev-time))
+             (prev-file (expand-file-name (concat prev-date ".org") daily-dir)))
+        (when (file-exists-p prev-file)
+          (with-temp-buffer
+            (insert-file-contents prev-file)
+            (goto-char (point-min))
+            (when (re-search-forward "^\\* Capture" nil t)
+              (let ((section-end (save-excursion
+                                   (if (re-search-forward "^\\* " nil t)
+                                       (line-beginning-position)
+                                     (point-max)))))
+                (while (re-search-forward "^\\*\\* \\(TODO\\|WAIT\\) " section-end t)
+                  (let* ((heading-start (line-beginning-position))
+                         (subtree-end
+                          (save-excursion
+                            (forward-line 1)
+                            (if (re-search-forward "^\\*\\* " section-end t)
+                                (line-beginning-position)
+                              section-end)))
+                         (subtree (string-trim-right
+                                   (buffer-substring-no-properties heading-start subtree-end)))
+                         (heading-line (car (split-string subtree "\n")))
+                         (heading-text (aj/extract-heading-name heading-line)))
+                    (when heading-text
+                      (let ((cleaned (replace-regexp-in-string
+                                      "\\(\n*-+\n*\\)+\\'" "" subtree)))
+                        (push (cons heading-text (aj/tag-headings-overdue cleaned))
+                              results)))))))))))
     (nreverse results)))
+
+(defun aj/capture-heading-exists-p (heading)
+  "Check if HEADING already exists under * Capture.
+Matches regardless of TODO state, priority, or tags."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Capture\\b" nil t)
+      (let ((section-end (save-excursion
+                           (if (re-search-forward "^\\* " nil t)
+                               (line-beginning-position)
+                             (point-max)))))
+        (re-search-forward
+         (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s"
+                 (regexp-quote heading))
+         section-end t)))))
+
+(defun aj/bring-forward-overdue-captures ()
+  "Bring forward TODO items from previous days' * Capture into today's * Capture.
+Items are tagged :overdue: and only added if not already present."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+      (let* ((date-str (match-string 1))
+             (overdue (aj/get-overdue-captures date-str))
+             (added 0))
+        (when overdue
+          (aj/ensure-heading-exists "Capture")
+          (dolist (pair overdue)
+            (unless (aj/capture-heading-exists-p (car pair))
+              ;; Find end of Capture section to insert
+              (goto-char (point-min))
+              (when (re-search-forward "^\\* Capture" nil t)
+                (let ((section-end (save-excursion
+                                     (forward-line 1)
+                                     (if (re-search-forward "^\\* " nil t)
+                                         (line-beginning-position)
+                                       (point-max)))))
+                  (goto-char section-end)
+                  ;; Insert before next heading
+                  (unless (bolp) (insert "\n"))
+                  (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                    (insert "\n"))
+                  (insert (cdr pair) "\n")
+                  (setq added (1+ added)))))))
+        (when (> added 0)
+          (message "Brought forward %d overdue capture(s) for %s" added date-str))))))
 
 (defun aj/recurring-heading-exists-p (heading)
   "Check if HEADING already exists under * Recurring.
@@ -981,6 +1099,8 @@ Entries are placed under * Capture by the capture template."
         ;; (recurring tasks may have displaced the separators)
         (aj/ensure-heading-separators)
         (aj/ensure-recurring-separators)
+        ;; 4c. Bring forward overdue captures from previous days
+        (aj/bring-forward-overdue-captures)
         ;; 5. Move captured entry if user chose a Recurring target
         (when (and aj/--dailies-capture-target
                    aj/--dailies-capture-heading
@@ -1746,6 +1866,8 @@ Inserts transclude, ensures headings, populates recurring and calendar."
   (aj/ensure-daily-structure)
   ;; 3. Refresh recurring tasks
   (aj/refresh-daily-recurring)
+  ;; 3b. Bring forward overdue captures from previous days
+  (aj/bring-forward-overdue-captures)
   ;; 4. Update statistics cookies
   (save-excursion
     (dolist (heading aj/headings-with-statistics)
@@ -1778,6 +1900,7 @@ For all files: enables transclusion, refreshes recurring tasks and calendar."
       ;; For existing files, refresh recurring and calendar content
       (aj/ensure-daily-structure)
       (aj/refresh-daily-recurring)
+      (aj/bring-forward-overdue-captures)
       (aj/ensure-heading-separators)
       (aj/ensure-recurring-separators)
       (aj/refresh-daily-calendar))
