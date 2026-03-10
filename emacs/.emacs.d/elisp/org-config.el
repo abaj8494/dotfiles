@@ -1828,6 +1828,9 @@ Uses today's date with the time extracted from the heading."
 (defvar aj/gcal-auto-push t
   "When non-nil, automatically push scheduled/deadline items to Google Calendar.")
 
+(defvar aj/--gcal-scheduled-during-capture nil
+  "Non-nil if `org-schedule' was called during the current capture.")
+
 (defun aj/gcal-maybe-push-at-point ()
   "Push current headline to Google Calendar if it has scheduling and isn't already synced."
   (when (and aj/gcal-auto-push
@@ -1845,21 +1848,25 @@ Uses today's date with the time extracted from the heading."
 
 (defun aj/gcal-after-schedule (&rest _)
   "Hook to push to Google Calendar after scheduling."
-  (unless (bound-and-true-p org-capture-mode)
+  (if (bound-and-true-p org-capture-mode)
+      ;; During capture, just record that org-schedule was used
+      (setq aj/--gcal-scheduled-during-capture t)
     (aj/gcal-maybe-push-at-point)))
 
-;; Push to gcal after capture finalization (appended so jump-prompt runs first)
+;; Push to gcal after capture finalization only if C-c C-s was used during capture
 (defun aj/gcal-after-capture-finalize ()
-  "Push newly captured item to Google Calendar if it has scheduling."
-  (condition-case err
-      (when-let ((marker org-capture-last-stored-marker))
-        (when (marker-buffer marker)
-          (with-current-buffer (marker-buffer marker)
-            (save-excursion
-              (goto-char marker)
-              (aj/gcal-maybe-push-at-point)))))
-    (error
-     (message "org-gcal post failed: %s" (error-message-string err)))))
+  "Push newly captured item to Google Calendar if scheduled via `org-schedule'."
+  (when aj/--gcal-scheduled-during-capture
+    (setq aj/--gcal-scheduled-during-capture nil)
+    (condition-case err
+        (when-let ((marker org-capture-last-stored-marker))
+          (when (marker-buffer marker)
+            (with-current-buffer (marker-buffer marker)
+              (save-excursion
+                (goto-char marker)
+                (aj/gcal-maybe-push-at-point)))))
+      (error
+       (message "org-gcal post failed: %s" (error-message-string err))))))
 
 (add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize t)
 
