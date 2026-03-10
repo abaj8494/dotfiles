@@ -26,6 +26,19 @@ In dired buffers, copies the current directory path."
 
 (define-key my/yank-map (kbd "f") #'my/yank-file-path)
 
+;; ---------------------------------------------------------------------------
+;; Dired: open PDF in sioyek
+;; ---------------------------------------------------------------------------
+
+(defun aj/dired-open-in-sioyek ()
+  "Open the file at point in sioyek."
+  (interactive)
+  (let ((file (dired-get-file-for-visit)))
+    (start-process "sioyek" nil "sioyek" file)))
+
+(with-eval-after-load 'dired
+  (define-key dired-mode-map (kbd "V") #'aj/dired-open-in-sioyek))
+
 (provide 'aj-bindings)
 
 ;;; aj-bindings.el ends here
