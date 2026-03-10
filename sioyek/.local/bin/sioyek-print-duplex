@@ -1,0 +1,2 @@
+#!/bin/bash
+lp -d Brother_HL_L2460DW -o sides=two-sided-long-edge "$1"
