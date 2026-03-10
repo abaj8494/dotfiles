@@ -12,6 +12,11 @@
 ;; Add elisp directory to load path
 (add-to-list 'load-path (expand-file-name "elisp" user-emacs-directory))
 
+;; Add local info directory for manually built manuals (magit, etc.)
+(with-eval-after-load 'info
+  (add-to-list 'Info-additional-directory-list
+               (expand-file-name "info" user-emacs-directory)))
+
 ;; Bootstrap straight.el package manager
 (require 'bootstrap)
 
