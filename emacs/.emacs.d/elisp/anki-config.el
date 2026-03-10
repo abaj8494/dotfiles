@@ -92,15 +92,24 @@ Only does anything when `anki-editor-mode' is enabled in the current buffer."
 ;; ---------------------------------------------------------------------------
 
 (with-eval-after-load 'ox-html
+  (defvar aj/org-src-lang-aliases
+    '(("sh" . "bash"))
+    "Alist mapping org-exported language names to highlight.js names.")
+
   (defun aj/org-html-src-block-to-pre-code (text backend info)
     "Wrap HTML src blocks in <pre><code> for highlight.js / Anki.
 
-TEXT is the HTML for a single src-block."
+TEXT is the full HTML for a single src-block, typically wrapped in a
+<div class=\"org-src-container\"> … </div>.  Extract the <pre> body,
+strip any htmlize spans (highlight.js will re-highlight), and emit
+a clean <pre><code class=\"language-LANG\"> block."
     (if (and (org-export-derived-backend-p backend 'html)
-             (string-match "\\`<pre class=\"src src-\\([^\"\n]+\\)\">" text))
-        (let* ((lang (match-string 1 text))
+             (string-match "<pre class=\"src src-\\([^\"\n]+\\)\">" text))
+        (let* ((raw-lang (match-string 1 text))
+               (lang (or (cdr (assoc raw-lang aj/org-src-lang-aliases))
+                         raw-lang))
                (body-start (match-end 0))
-               (body-end   (string-match "</pre>\\'" text))
+               (body-end   (string-match "</pre>" text body-start))
                (body       (substring text body-start body-end)))
           (format "<pre><code class=\"language-%s\">%s</code></pre>"
                   lang body))
