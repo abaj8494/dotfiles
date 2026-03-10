@@ -67,16 +67,43 @@ Format: LAT LON NAME (e.g., -33.8148 151.1029 West Ryde)")
 ;; Capture Templates (targeting tasks.org)
 ;; ---------------------------------------------------------------------------
 
+(defun aj/tasks-goto-heading ()
+  "Prompt for a top-level heading in tasks.org and go to end of its subtree.
+Used as a `file+function' target for capture templates."
+  (let* ((headings '())
+         (_ (save-excursion
+              (goto-char (point-min))
+              (while (re-search-forward "^\\* \\(.+\\)" nil t)
+                (let ((raw (match-string-no-properties 1)))
+                  ;; Strip org links to show clean names
+                  (push (replace-regexp-in-string
+                         "\\[\\[[^]]*\\]\\[\\([^]]*\\)\\]\\]" "\\1" raw)
+                        headings)))))
+         (chosen (completing-read "Under heading: " (nreverse headings) nil t)))
+    ;; Find the chosen heading and go to end of its subtree
+    (goto-char (point-min))
+    (catch 'found
+      (while (re-search-forward "^\\* \\(.+\\)" nil t)
+        (let ((raw (match-string-no-properties 1)))
+          (when (string= chosen
+                         (replace-regexp-in-string
+                          "\\[\\[[^]]*\\]\\[\\([^]]*\\)\\]\\]" "\\1" raw))
+            ;; Stay inside the subtree so org-capture inserts at child level
+            (org-end-of-subtree t)
+            (throw 'found t)))))))
+
 (setq org-capture-templates
       `(("r" "recurring templates")
-        ("rd" "daily task" entry (file ,aj/tasks-file)
-         "* TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a ++1d>\")")
-        ("rw" "weekly task" entry (file ,aj/tasks-file)
-         "* TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a +1w>\")")
-        ("rm" "monthly task" entry (file ,aj/tasks-file)
-         "* TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a ++1m>\")")
-        ("rc" "custom schedule" entry (file ,aj/tasks-file)
-         "* TODO %?\nSCHEDULED: %^{Schedule}")))
+        ("rd" "daily task" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
+         "** TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a ++1d>\")")
+        ("rw" "weekly task" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
+         "** TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a +1w>\")")
+        ("rm" "monthly task" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
+         "** TODO %?\nSCHEDULED: %(format-time-string \"<%Y-%m-%d %a ++1m>\")")
+        ("rc" "custom schedule" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
+         "** TODO %?\nSCHEDULED: %^{Schedule}")
+        ("t" "deferred task (one-off)" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
+         "** TODO %?\nSCHEDULED: %^{When}t")))
 
 ;; ---------------------------------------------------------------------------
 ;; Daily File Detection
@@ -170,7 +197,8 @@ Resolves markers to their parent heading positions."
          (entries (org-agenda-get-day-entries file date-list :scheduled :sexp :deadline))
          (positions (make-hash-table :test 'eq)))
     (dolist (entry entries)
-      (let ((marker (get-text-property 0 'org-marker entry)))
+      (let ((marker (get-text-property 0 'org-marker entry))
+            (entry-type (get-text-property 0 'type entry)))
         (when marker
           ;; Resolve marker to the heading that owns it
           (let ((heading-pos
@@ -182,7 +210,17 @@ Resolves markers to their parent heading positions."
                        ;; Marker is on a body line (e.g. diary sexp) — find parent heading
                        (org-back-to-heading t)
                        (line-beginning-position))))))
-            (puthash heading-pos t positions)))))
+            ;; For past-scheduled entries, only include ++ or .+ repeaters
+            ;; (which mean "do regularly / catch up").  Skip bare + repeaters
+            ;; (which are tied to a specific day); those are handled by
+            ;; `aj/get-carryforward-tasks' if they have priority.
+            (when (or (not (equal entry-type "past-scheduled"))
+                      (with-current-buffer (marker-buffer marker)
+                        (save-excursion
+                          (goto-char heading-pos)
+                          (forward-line 1)
+                          (looking-at "^SCHEDULED: <[^>]*\\(?:\\+\\+\\|\\.\\+\\)"))))
+              (puthash heading-pos t positions))))))
     positions))
 
 (defun aj/subtree-has-due-position-p (start end due-set)
@@ -239,9 +277,10 @@ Returns content string with heading levels preserved as-is (relative to tasks.or
             (forward-line 1)))
         (string-join (nreverse lines) "\n")))))
 
-(defun aj/strip-scheduling-noise (content)
+(defun aj/strip-scheduling-noise (content &optional date-time)
   "Strip SCHEDULED lines without times, LAST_REPEAT, LOGBOOK drawers, PROPERTIES drawers.
 Keep SCHEDULED lines that have HH:MM (useful reminders).
+When DATE-TIME is provided, replace the date in kept SCHEDULED lines with it.
 Keep PROPERTIES drawers that contain CATEGORY."
   (let ((lines (split-string content "\n"))
         (result '())
@@ -285,9 +324,16 @@ Keep PROPERTIES drawers that contain CATEGORY."
        ((and (string-match-p "^SCHEDULED:" line)
              (not (string-match-p "[0-9]\\{2\\}:[0-9]\\{2\\}" line)))
         nil)
-       ;; SCHEDULED with time: keep but strip repeater for daily note
+       ;; SCHEDULED with time: keep but strip repeater and update date for daily note
        ((string-match-p "^SCHEDULED:" line)
-        (let ((cleaned (replace-regexp-in-string " \\+\\+?[0-9]+[dwmy]" "" line)))
+        (let ((cleaned (replace-regexp-in-string " \\.?\\+\\+?[0-9]+[dwmy]" "" line)))
+          ;; Replace the date with the target date, preserving the time
+          (when date-time
+            (let ((target-date (format-time-string "%Y-%m-%d %a" date-time)))
+              (setq cleaned (replace-regexp-in-string
+                             "<[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\} [A-Za-z]\\{2,3\\}"
+                             (concat "<" target-date)
+                             cleaned))))
           (push cleaned result)))
        ;; DEADLINE lines: strip entirely for daily notes
        ((string-match-p "^DEADLINE:" line) nil)
@@ -343,8 +389,8 @@ Main orchestrator replacing `aj/get-recurring-tasks-grouped'."
                  (heading-end (save-excursion (org-end-of-subtree t t) (point))))
             (when (gethash heading-pos due-set)
               (let* ((raw-content (aj/extract-filtered-subtree buf heading-pos due-set date-time))
-                     ;; Strip scheduling noise
-                     (cleaned (aj/strip-scheduling-noise raw-content))
+                     ;; Strip scheduling noise, updating dates to target day
+                     (cleaned (aj/strip-scheduling-noise raw-content date-time))
                      ;; Get heading name from first line
                      (first-line (car (split-string cleaned "\n")))
                      (heading-name (aj/extract-heading-name first-line)))
@@ -411,7 +457,7 @@ is older than the previous scheduled occurrence."
                              (yesterday (time-subtract target-time (days-to-time 1))))
                         (when (time-less-p last-time yesterday)
                           (let* ((raw-content (aj/extract-filtered-subtree buf pos due-set date-time))
-                                 (cleaned (aj/strip-scheduling-noise raw-content)))
+                                 (cleaned (aj/strip-scheduling-noise raw-content date-time)))
                             (push (cons heading-name cleaned) results)))))))))))))
     ;; Tag carryforward headings with :overdue:
     (mapcar (lambda (pair)
@@ -426,13 +472,17 @@ is older than the previous scheduled occurrence."
      (mapcar (lambda (line)
                (if (string-match "^\\(\\*+ .+?\\)\\([ \t]*\\)$" line)
                    (let ((heading (match-string 1 line)))
-                     (if (string-match-p ":[a-zA-Z_@]+:$" heading)
-                         ;; Already has tags — append overdue
-                         (replace-regexp-in-string
-                          ":\\([a-zA-Z_@]+:\\)$"
-                          ":overdue:\\1"
-                          heading)
-                       (concat heading " :overdue:")))
+                     (cond
+                      ;; Already has :overdue: — leave as-is
+                      ((string-match-p ":overdue:" heading) heading)
+                      ;; Has other tags — prepend overdue
+                      ((string-match-p ":[a-zA-Z_@]+:$" heading)
+                       (replace-regexp-in-string
+                        ":\\([a-zA-Z_@]+:\\)$"
+                        ":overdue:\\1"
+                        heading))
+                      ;; No tags — append
+                      (t (concat heading "  :overdue:"))))
                  line))
              lines)
      "\n")))
@@ -480,10 +530,15 @@ Returns list of (HEADING-TEXT . SUBTREE-CONTENT) pairs, tagged :overdue:."
                          (heading-line (car (split-string subtree "\n")))
                          (heading-text (aj/extract-heading-name heading-line)))
                     (when heading-text
-                      (let ((cleaned (replace-regexp-in-string
-                                      "\\(\n*-+\n*\\)+\\'" "" subtree)))
-                        (push (cons heading-text (aj/tag-headings-overdue cleaned))
-                              results)))))))))))
+                      ;; Skip items with a SCHEDULED date strictly in the future
+                      (let ((future-p
+                             (and (string-match "SCHEDULED: <\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" subtree)
+                                  (string> (match-string 1 subtree) date-str))))
+                        (unless future-p
+                          (let ((cleaned (replace-regexp-in-string
+                                          "\\(\n*-+\n*\\)+\\'" "" subtree)))
+                            (push (list heading-text (aj/tag-headings-overdue cleaned) prev-file)
+                                  results)))))))))))))
     (nreverse results)))
 
 (defun aj/capture-heading-exists-p (heading)
@@ -514,22 +569,42 @@ Items are tagged :overdue: and only added if not already present."
         (when overdue
           (aj/ensure-heading-exists "Capture")
           (dolist (pair overdue)
-            (unless (aj/capture-heading-exists-p (car pair))
-              ;; Find end of Capture section to insert
-              (goto-char (point-min))
-              (when (re-search-forward "^\\* Capture" nil t)
-                (let ((section-end (save-excursion
-                                     (forward-line 1)
-                                     (if (re-search-forward "^\\* " nil t)
-                                         (line-beginning-position)
-                                       (point-max)))))
-                  (goto-char section-end)
-                  ;; Insert before next heading
-                  (unless (bolp) (insert "\n"))
-                  (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
-                    (insert "\n"))
-                  (insert (cdr pair) "\n")
-                  (setq added (1+ added)))))))
+            (let ((heading-text (car pair))
+                  (content (nth 1 pair))
+                  (source-file (nth 2 pair)))
+              (unless (aj/capture-heading-exists-p heading-text)
+                ;; Find end of Capture section to insert
+                (goto-char (point-min))
+                (when (re-search-forward "^\\* Capture" nil t)
+                  (let ((section-end (save-excursion
+                                       (forward-line 1)
+                                       (if (re-search-forward "^\\* " nil t)
+                                           (line-beginning-position)
+                                         (point-max)))))
+                    (goto-char section-end)
+                    ;; Insert before next heading
+                    (unless (bolp) (insert "\n"))
+                    (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                      (insert "\n"))
+                    (insert content "\n")
+                    (setq added (1+ added))
+                    ;; Mark source item as CANCEL to prevent re-scanning
+                    (when source-file
+                      (with-current-buffer (find-file-noselect source-file)
+                        (save-excursion
+                          (goto-char (point-min))
+                          (when (re-search-forward "^\\* Capture" nil t)
+                            (let ((src-end (save-excursion
+                                             (if (re-search-forward "^\\* " nil t)
+                                                 (line-beginning-position)
+                                               (point-max)))))
+                              (when (re-search-forward
+                                     (format "^\\*\\* \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
+                                             (regexp-quote heading-text))
+                                     src-end t)
+                                (beginning-of-line)
+                                (org-todo "CANCEL")))))
+                        (save-buffer)))))))))
         (when (> added 0)
           (message "Brought forward %d overdue capture(s) for %s" added date-str))))))
 
@@ -549,9 +624,13 @@ Matches regardless of TODO state (TODO/DONE/WAIT/CANCEL) or priority."
          section-end t)))))
 
 (defun aj/extract-heading-name (line)
-  "Extract heading name from LINE, stripping TODO keywords and priority."
+  "Extract heading name from LINE, stripping TODO keywords, priority, and tags."
   (when (string-match "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?\\(.+\\)$" line)
-    (match-string 1 line)))
+    (let ((name (match-string 1 line)))
+      ;; Strip trailing org tags (e.g. " :overdue:" or "  :tag1:tag2:")
+      (if (string-match "\\(.*?\\)\\s-+:[a-zA-Z_@:]+:\\s-*$" name)
+          (match-string 1 name)
+        (string-trim-right name)))))
 
 (defun aj/extract-heading-order (tasks)
   "Extract ordered list of heading names from TASKS string."
@@ -2045,27 +2124,27 @@ This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
                                  (regexp-quote heading-text))
                          nil t)
                     (setq found t))
-                ;; Multi-level: walk the chain
+                ;; Multi-level: walk the chain, constraining each step to the parent subtree
                 (catch 'found
                   (goto-char (point-min))
-                  ;; Find each level of the parent chain
-                  (dolist (parent (butlast parent-chain))
-                    (unless (re-search-forward
-                             (format "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
-                                     (regexp-quote parent))
-                             nil t)
-                      (throw 'found nil)))
-                  ;; Now find the target heading within the parent subtree
-                  (let ((subtree-end (save-excursion (org-end-of-subtree t t) (point))))
+                  (let ((search-end (point-max)))
+                    (dolist (parent (butlast parent-chain))
+                      (unless (re-search-forward
+                               (format "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                                       (regexp-quote parent))
+                               search-end t)
+                        (throw 'found nil))
+                      (setq search-end (save-excursion (org-end-of-subtree t t) (point))))
                     (when (re-search-forward
                            (format "^\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
                                    (regexp-quote heading-text))
-                           subtree-end t)
+                           search-end t)
                       (setq found t)))))
               (when found
                 (beginning-of-line)
                 (org-todo "DONE")
-                (save-buffer)))))))))
+                (save-buffer)
+                (message "Propagated DONE to tasks.org: %s" heading-text)))))))))
 
 (add-hook 'org-after-todo-state-change-hook #'aj/propagate-done-to-tasks)
 
@@ -2094,13 +2173,15 @@ This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
     (let ((pos (point)))
       (goto-char (point-min))
       (and (re-search-forward heading-re nil t)
-           (let ((start (line-beginning-position))
-                 (end (save-excursion
-                        (forward-line 1)
-                        (if (re-search-forward "^\\*+ " nil t)
-                            (line-beginning-position)
-                          (point-max)))))
-             (<= start pos end))))))
+           (let* ((start (line-beginning-position))
+                  (level (org-current-level))
+                  (end-re (format "^\\*\\{1,%d\\} " level))
+                  (end (save-excursion
+                         (forward-line 1)
+                         (if (re-search-forward end-re nil t)
+                             (line-beginning-position)
+                           (point-max)))))
+             (and (>= pos start) (< pos end)))))))
 
 (define-key aj/daily-refresh-map (kbd "c")
   (lambda () (interactive)
