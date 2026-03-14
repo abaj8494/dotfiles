@@ -1106,5 +1106,12 @@ With prefix ARG, search from current directory instead of project root."
   (org-shop-setup))
 
 
+;; ---------------------------------------------------------------------------
+;; Beancount - plain-text double-entry accounting
+;; ---------------------------------------------------------------------------
+(use-package beancount
+  :straight (:type git :host github :repo "beancount/beancount-mode")
+  :mode ("\\.beancount\\'" . beancount-mode))
+
 (provide 'package-config)
 ;;; package-config.el ends here
