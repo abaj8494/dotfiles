@@ -82,6 +82,7 @@
  '((shell   . t)
    (python  . t)
    (markdown . t)
+   (js . t)
    (jupyter . t)
    (latex   . t)
    (C       . t)
