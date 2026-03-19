@@ -102,6 +102,26 @@
 (add-hook 'org-src-mode-hook
           (lambda () (setq indent-tabs-mode nil)))
 
+;;; LSP in Org python src blocks --------------------------------
+;; Make Org's python edit buffer look like a real file so pyright can attach.
+(with-eval-after-load 'org
+  (defun ab/org-babel-edit-prep:python (_info)
+    (let* ((org-dir (expand-file-name
+                     (or (and (buffer-file-name)
+                              (file-name-directory (buffer-file-name)))
+                         default-directory)))
+           (fake-file (expand-file-name ".org-src-OrgPython.py" org-dir)))
+      (setq-local default-directory org-dir)
+      (setq-local buffer-file-name fake-file)
+      (setq-local lsp-buffer-uri (lsp--path-to-uri fake-file))
+      (when (and (fboundp 'lsp-workspace-root)
+                 (null (lsp-workspace-root org-dir)))
+        (lsp-workspace-folders-add org-dir))
+      (unless (bound-and-true-p lsp-mode)
+        (require 'lsp-pyright)
+        (lsp-deferred))))
+  (defalias 'org-babel-edit-prep:python #'ab/org-babel-edit-prep:python))
+
 ;; Jupyter-python mode mapping
 (add-to-list 'org-src-lang-modes '("jupyter-python" . python))
 (add-to-list 'org-src-lang-modes '("chess" . latex))
