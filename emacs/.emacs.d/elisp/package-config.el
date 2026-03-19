@@ -657,7 +657,7 @@ With prefix ARG, search from current directory instead of project root."
         ;; Performance tuning
         helm-candidate-number-limit 500
         helm-input-idle-delay 0.01
-        helm-exit-idle-delay 0)
+        helm-exit-idle-delay 0.05)
   :bind (("M-x" . helm-M-x)
          ("C-x C-f" . helm-find-files)
          ("C-x b" . helm-mini)
