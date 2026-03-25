@@ -52,7 +52,7 @@ vim.keymap.set("n", "<leader>q", "<cmd>q<cr>", { silent = false, desc = "Quit cu
 
 -- Map Oil to <leader>e
 vim.keymap.set("n", "<leader>e", function()
-	require("oil").toggle_float()
+	require("oil").open()
 end, { desc = "Toggle Oil file explorer" })
 
 -- Map Undotree
@@ -348,5 +348,9 @@ vim.keymap.set("n", "<Esc>t", ":tabn<CR>", opts)
 vim.keymap.set("n", "<Esc>h", ":tabp<CR>", opts)
 vim.keymap.set("n", "<Esc>x", ":tabclose<CR>", opts)
 vim.keymap.set("n", "<Esc>e", ":tabnew<CR>", opts)
+vim.keymap.set("n", "<Esc>H", ":-tabmove<CR>", opts)
+vim.keymap.set("n", "<Esc>L", ":+tabmove<CR>", opts)
+vim.keymap.set("n", "<Esc>s", ":vsplit<CR>", opts)
+vim.keymap.set("n", "<Esc>-", ":split<CR>", opts)
 
 return M
