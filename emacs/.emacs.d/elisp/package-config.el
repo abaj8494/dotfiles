@@ -115,6 +115,10 @@
 (use-package sqlite3
   :straight (:host github :repo "pekingduck/emacs-sqlite3-api"))
 
+;; Add gensymb for \degree and other unit symbols in inline LaTeX
+(with-eval-after-load 'org
+  (add-to-list 'org-latex-packages-alist '("" "gensymb" t)))
+
 (use-package anki-editor
   :straight (:host github :repo "anki-editor/anki-editor")
   :custom
@@ -1111,7 +1115,77 @@ With prefix ARG, search from current directory instead of project root."
 ;; ---------------------------------------------------------------------------
 (use-package beancount
   :straight (:type git :host github :repo "beancount/beancount-mode")
-  :mode ("\\.beancount\\'" . beancount-mode))
+  :mode ("\\.beancount\\'" . beancount-mode)
+  :commands (beancount-check beancount-query beancount-insert-date
+             beancount-insert-account beancount-transaction-clear
+             beancount-transaction-flag beancount-align-numbers
+             beancount-align-to-previous-number beancount-date-up-day
+             beancount-date-down-day beancount-context beancount-linked
+             beancount-fava)
+  :init
+  (defun aj/beancount-root-ledger ()
+    "Find the root ledger file for the current buffer.
+If editing aayush/2026.org, returns .../ledger/aayush.org.
+If already in aayush.org, returns it directly."
+    (when buffer-file-name
+      (let ((file (expand-file-name buffer-file-name)))
+        (cond
+         ;; Already a root file (ledger/aayush.org or ledger/kiyomi.org)
+         ((string-match "/beancount/ledger/[^/]+\\.org\\'" file) file)
+         ;; A year file (ledger/aayush/2026.org) — go up to parent
+         ((string-match "\\(/beancount/ledger/\\)\\([^/]+\\)/" file)
+          (let ((root (concat (match-string 1 file)
+                              (match-string 2 file) ".org")))
+            (if (file-exists-p root) root file)))
+         (t file)))))
+
+  (defun aj/beancount-check ()
+    "Run bean-check on the root ledger file."
+    (interactive)
+    (require 'beancount)
+    (let* ((root (aj/beancount-root-ledger))
+           (default-directory (file-name-directory root))
+           (compilation-read-command nil))
+      (beancount--run beancount-check-program
+                      (file-relative-name root))))
+
+  (defun aj/beancount-query ()
+    "Run bean-query interactively in a comint shell."
+    (interactive)
+    (require 'beancount)
+    (let* ((root (aj/beancount-root-ledger))
+           (default-directory (file-name-directory root))
+           (buf (make-comint "bean-query" beancount-query-program nil
+                             (file-relative-name root))))
+      (pop-to-buffer buf)))
+
+  (defun aj/beancount-org-setup ()
+    "Add beancount syntax highlighting and keybindings to org ledger files."
+    (when (and buffer-file-name
+               (string-match-p "/beancount/ledger/" buffer-file-name))
+      (require 'beancount)
+      ;; Add beancount font-lock keywords on top of org's
+      (font-lock-add-keywords nil beancount-font-lock-keywords 'append)
+      ;; Keybindings under C-c b prefix
+      (let ((map (make-sparse-keymap)))
+        (define-key map (kbd "c") #'aj/beancount-check)
+        (define-key map (kbd "q") #'aj/beancount-query)
+        (define-key map (kbd "d") #'beancount-insert-date)
+        (define-key map (kbd "'") #'beancount-insert-account)
+        (define-key map (kbd "*") #'beancount-transaction-clear)
+        (define-key map (kbd "f") #'beancount-transaction-flag)
+        (define-key map (kbd ";") #'beancount-align-to-previous-number)
+        (define-key map (kbd ":") #'beancount-align-numbers)
+        (define-key map (kbd "<left>") #'beancount-date-down-day)
+        (define-key map (kbd "<right>") #'beancount-date-up-day)
+        (define-key map (kbd "x") #'beancount-context)
+        (define-key map (kbd "k") #'beancount-linked)
+        (define-key map (kbd "v") #'beancount-fava)
+        (local-set-key (kbd "C-c b") map))
+      ;; Enable completion of account names
+      (add-hook 'completion-at-point-functions
+                #'beancount-completion-at-point nil t)))
+  (add-hook 'org-mode-hook #'aj/beancount-org-setup))
 
 (provide 'package-config)
 ;;; package-config.el ends here
