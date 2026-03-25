@@ -1,0 +1,107 @@
+#!/bin/bash
+# system-health-monitor: Log system health metrics and warn on dangerous trends
+# Designed to catch conditions leading to watchdog timeout kernel panics
+#
+# Logs: ~/Library/Logs/system-health/health.log (rolling 24h window)
+# Alerts via osascript notification when thresholds exceeded
+
+set -uo pipefail
+
+export PATH="/usr/sbin:/usr/bin:/bin:/sbin:$PATH"
+
+LOG_DIR="$HOME/Library/Logs/system-health"
+LOG_FILE="$LOG_DIR/health.log"
+ALERT_LOG="$LOG_DIR/alerts.log"
+MAX_AGE_HOURS=24
+MAX_LOG_LINES=10000
+
+# Thresholds
+SWAP_WARN_GB=8          # warn if swap exceeds this
+MEM_PRESSURE_WARN=70    # warn if memory pressure % exceeds this
+LOAD_WARN_FACTOR=2.0    # warn if 5min load avg exceeds (ncpu * factor)
+
+mkdir -p "$LOG_DIR"
+
+# Rotate: keep only last 24h of logs
+if [[ -f "$LOG_FILE" ]]; then
+    cutoff=$(date -v-${MAX_AGE_HOURS}H +%s 2>/dev/null || date -d "${MAX_AGE_HOURS} hours ago" +%s)
+    tmp=$(mktemp)
+    while IFS= read -r line; do
+        ts=$(echo "$line" | grep -oE '^\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' | tr -d '[')
+        if [[ -n "$ts" ]]; then
+            line_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$ts" +%s 2>/dev/null || echo 0)
+            if (( line_epoch >= cutoff )); then
+                echo "$line" >> "$tmp"
+            fi
+        fi
+    done < "$LOG_FILE"
+    mv "$tmp" "$LOG_FILE"
+fi
+
+# Collect metrics
+timestamp=$(date +%Y-%m-%dT%H:%M:%S%z)
+load_avg=$(sysctl -n vm.loadavg | awk '{print $2, $3, $4}')
+load_1=$(echo "$load_avg" | awk '{print $1}')
+load_5=$(echo "$load_avg" | awk '{print $2}')
+load_15=$(echo "$load_avg" | awk '{print $3}')
+ncpu=$(sysctl -n hw.ncpu)
+
+# Memory info (kern.memorystatus_level = % free, so pressure = 100 - level)
+mem_free_pct=$(sysctl -n kern.memorystatus_level 2>/dev/null || echo 100)
+mem_pressure=$((100 - mem_free_pct))
+
+# Swap usage
+swap_info=$(sysctl -n vm.swapusage)
+swap_used=$(echo "$swap_info" | grep -oE 'used = [0-9.]+[A-Z]' | awk '{print $3}' | tr -d 'M')
+swap_used_gb=$(echo "scale=2; ${swap_used:-0} / 1024" | bc 2>/dev/null || echo "0")
+
+# VM stats
+vm_stats=$(vm_stat 2>/dev/null)
+pageins=$(echo "$vm_stats" | awk '/Pageins/{gsub(/\./,""); print $2}')
+pageouts=$(echo "$vm_stats" | awk '/Pageouts/{gsub(/\./,""); print $2}')
+compressor=$(echo "$vm_stats" | awk '/stored in compressor/{gsub(/\./,""); print $NF}')
+swapins=$(echo "$vm_stats" | awk '/Swapins/{gsub(/\./,""); print $2}')
+swapouts=$(echo "$vm_stats" | awk '/Swapouts/{gsub(/\./,""); print $2}')
+
+# Top 5 memory consumers
+top_mem=$(ps -eo pid,rss,comm -r 2>/dev/null | head -6 | tail -5 | awk '{printf "%s(%dMB) ", $3, $2/1024}')
+
+# Top 5 CPU consumers
+top_cpu=$(ps -eo pid,%cpu,comm -r 2>/dev/null | head -6 | tail -5 | awk '{printf "%s(%.0f%%) ", $3, $2}')
+
+# Thermal pressure
+thermal=$(pmset -g therm 2>/dev/null | grep -i "cpu.*speed" | head -1 || echo "n/a")
+
+# Write log entry
+log_entry="[${timestamp}] load=${load_1}/${load_5}/${load_15} ncpu=${ncpu} mem_pressure=${mem_pressure}% swap=${swap_used_gb}GB pageins=${pageins:-0} pageouts=${pageouts:-0} compressor_pages=${compressor:-0} swapins=${swapins:-0} swapouts=${swapouts:-0} | top_mem: ${top_mem}| top_cpu: ${top_cpu}| thermal: ${thermal}"
+echo "$log_entry" >> "$LOG_FILE"
+
+# Tail log to max lines
+if [[ $(wc -l < "$LOG_FILE") -gt $MAX_LOG_LINES ]]; then
+    tail -n $MAX_LOG_LINES "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+fi
+
+# Alert checks
+alerts=""
+
+# Check swap
+if (( $(echo "$swap_used_gb > $SWAP_WARN_GB" | bc -l 2>/dev/null || echo 0) )); then
+    alerts="${alerts}SWAP HIGH: ${swap_used_gb}GB (threshold: ${SWAP_WARN_GB}GB). "
+fi
+
+# Check memory pressure
+if [[ -n "$mem_pressure" ]] && (( mem_pressure > MEM_PRESSURE_WARN )); then
+    alerts="${alerts}MEMORY PRESSURE: ${mem_pressure}% (threshold: ${MEM_PRESSURE_WARN}%). "
+fi
+
+# Check load average (5min)
+load_threshold=$(echo "$ncpu * $LOAD_WARN_FACTOR" | bc -l 2>/dev/null || echo 999)
+if (( $(echo "$load_5 > $load_threshold" | bc -l 2>/dev/null || echo 0) )); then
+    alerts="${alerts}LOAD HIGH: 5min=${load_5} (threshold: ${load_threshold}, ncpu=${ncpu}). "
+fi
+
+# Send notification if alerts
+if [[ -n "$alerts" ]]; then
+    echo "[${timestamp}] ALERT: ${alerts}" >> "$ALERT_LOG"
+    osascript -e "display notification \"${alerts}\" with title \"System Health Warning\" subtitle \"Kernel panic risk\"" 2>/dev/null || true
+fi

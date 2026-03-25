@@ -1,0 +1,80 @@
+#!/bin/bash
+# system-health-summary: Show recent health trends at a glance
+# Usage: system-health-summary [hours=4]
+
+set -euo pipefail
+
+LOG_FILE="$HOME/Library/Logs/system-health/health.log"
+ALERT_LOG="$HOME/Library/Logs/system-health/alerts.log"
+HOURS="${1:-4}"
+
+if [[ ! -f "$LOG_FILE" ]]; then
+    echo "No health log found yet. Monitor hasn't run."
+    exit 0
+fi
+
+cutoff=$(date -v-${HOURS}H +%s 2>/dev/null || date -d "${HOURS} hours ago" +%s)
+
+echo "=== System Health Summary (last ${HOURS}h) ==="
+echo ""
+
+# Extract recent entries and compute stats
+awk '
+BEGIN { n=0; max_load=0; max_swap=0; max_pressure=0; sum_load=0; sum_swap=0; sum_pressure=0 }
+{
+    # Extract load (1min) from load=X.XX/...
+    load = 0; swap = 0; pressure = 0
+    for (i=1; i<=NF; i++) {
+        if ($i ~ /^load=/) {
+            split($i, a, "[=/]")
+            load = a[2] + 0
+        }
+        if ($i ~ /^swap=/) {
+            sub(/swap=/, "", $i)
+            sub(/GB/, "", $i)
+            swap = $i + 0
+        }
+        if ($i ~ /^mem_pressure=/) {
+            sub(/mem_pressure=/, "", $i)
+            sub(/%/, "", $i)
+            pressure = $i + 0
+        }
+    }
+
+    if (load > 0 || swap > 0) {
+        n++
+        sum_load += load
+        sum_swap += swap
+        sum_pressure += pressure
+        if (load > max_load) max_load = load
+        if (swap > max_swap) max_swap = swap
+        if (pressure > max_pressure) max_pressure = pressure
+    }
+}
+END {
+    if (n == 0) { print "No data in window"; exit }
+    printf "Samples: %d (every 5min)\n", n
+    printf "\n"
+    printf "Load Average (1min):   avg=%.1f  max=%.1f\n", sum_load/n, max_load
+    printf "Memory Pressure:       avg=%d%%   max=%d%%\n", sum_pressure/n, max_pressure
+    printf "Swap Usage:            avg=%.1fGB max=%.1fGB\n", sum_swap/n, max_swap
+}' "$LOG_FILE"
+
+echo ""
+
+# Show recent alerts
+if [[ -f "$ALERT_LOG" ]]; then
+    recent_alerts=$(tail -10 "$ALERT_LOG" 2>/dev/null || true)
+    if [[ -n "$recent_alerts" ]]; then
+        echo "=== Recent Alerts ==="
+        echo "$recent_alerts"
+    else
+        echo "No recent alerts."
+    fi
+else
+    echo "No alerts recorded."
+fi
+
+echo ""
+echo "=== Latest 5 Entries ==="
+tail -5 "$LOG_FILE"
