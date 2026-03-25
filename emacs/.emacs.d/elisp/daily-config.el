@@ -103,7 +103,20 @@ Used as a `file+function' target for capture templates."
         ("rc" "custom schedule" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
          "** TODO %?\nSCHEDULED: %^{Schedule}")
         ("t" "deferred task (one-off)" entry (file+function ,aj/tasks-file aj/tasks-goto-heading)
-         "** TODO %?\nSCHEDULED: %^{When}t")))
+         "** TODO %?\nSCHEDULED: %^{When}t")
+        ("l" "ledger templates")
+        ("lc" "cash expense" plain
+         (file+headline ,(concat "~/Documents/Finances/beancount/ledger/aayush/"
+                                 (format-time-string "%Y") ".org")
+                        "Cash")
+         "%(format-time-string \"%Y-%m-%d\") * \"%^{Payee}\"\n  Expenses:%^{Category|Food:Groceries|Food:Dining|Food:Takeaway|Food:Coffee|Shopping:General|Transport:Fuel|Transport:PublicTransit|Health:Medical|Entertainment:Events|Gifts|Cash|Uncategorized}  %^{Amount} AUD\n  Assets:Cash\n"
+         :empty-lines 1)
+        ("li" "cash income" plain
+         (file+headline ,(concat "~/Documents/Finances/beancount/ledger/aayush/"
+                                 (format-time-string "%Y") ".org")
+                        "Cash")
+         "%(format-time-string \"%Y-%m-%d\") * \"%^{Source}\"\n  Assets:Cash  %^{Amount} AUD\n  Income:%^{Category|Other|Reimbursement|Tutoring}\n"
+         :empty-lines 1)))
 
 ;; ---------------------------------------------------------------------------
 ;; Daily File Detection
@@ -621,6 +634,183 @@ Items are tagged :overdue: and only added if not already present."
                         (save-buffer)))))))))
         (when (> added 0)
           (message "Brought forward %d overdue capture(s) for %s" added date-str))))))
+
+(defun aj/get-overdue-recurring-tasks (date-str)
+  "Return overdue priority TODO subtrees from * Recurring in previous daily notes.
+Scans backwards from the day before DATE-STR up to 30 days.
+Returns list of (PARENT-NAME HEADING-TEXT CONTENT SOURCE-FILE) tuples, tagged :overdue:."
+  (let* ((parts (split-string date-str "-"))
+         (year (string-to-number (nth 0 parts)))
+         (month (string-to-number (nth 1 parts)))
+         (day (string-to-number (nth 2 parts)))
+         (current-time (encode-time 0 0 0 day month year))
+         (daily-dir (expand-file-name
+                     (or org-roam-dailies-directory "daily")
+                     org-roam-directory))
+         (results '())
+         (days-back 0)
+         (max-days 30))
+    (while (< days-back max-days)
+      (setq days-back (1+ days-back))
+      (let* ((prev-time (time-subtract current-time (days-to-time days-back)))
+             (prev-date (format-time-string "%Y-%m-%d" prev-time))
+             (prev-file (expand-file-name (concat prev-date ".org") daily-dir)))
+        (when (file-exists-p prev-file)
+          (with-temp-buffer
+            (insert-file-contents prev-file)
+            (goto-char (point-min))
+            (when (re-search-forward "^\\* Recurring\\b" nil t)
+              (let ((section-end (save-excursion
+                                   (forward-line 1)
+                                   (if (re-search-forward "^\\* " nil t)
+                                       (line-beginning-position)
+                                     (point-max)))))
+                ;; Walk ** parent headings
+                (while (re-search-forward "^\\*\\* " section-end t)
+                  (let* ((parent-start (line-beginning-position))
+                         (parent-line (buffer-substring-no-properties
+                                       parent-start (line-end-position)))
+                         (parent-name (aj/extract-heading-name parent-line))
+                         (parent-end (save-excursion
+                                       (forward-line 1)
+                                       (if (re-search-forward "^\\*\\* " section-end t)
+                                           (line-beginning-position)
+                                         section-end))))
+                    ;; Find ***+ TODO/WAIT [#A-C] children within this parent
+                    (save-excursion
+                      (goto-char parent-start)
+                      (while (re-search-forward
+                              "^\\(\\*\\*\\*+\\) \\(TODO\\|WAIT\\) \\[#[A-C]\\]"
+                              parent-end t)
+                        (let* ((stars (match-string 1))
+                               (level (length stars))
+                               (heading-start (line-beginning-position))
+                               (subtree-end
+                                (save-excursion
+                                  (forward-line 1)
+                                  (if (re-search-forward
+                                       (format "^\\*\\{2,%d\\} " level)
+                                       parent-end t)
+                                      (line-beginning-position)
+                                    parent-end)))
+                               (subtree (string-trim-right
+                                         (buffer-substring-no-properties
+                                          heading-start subtree-end)))
+                               ;; Normalize to *** level if deeper
+                               (subtree (if (> level 3)
+                                            (let ((shift (- level 3)))
+                                              (replace-regexp-in-string
+                                               (format "^\\(\\*\\{%d,\\}\\)" level)
+                                               (lambda (m)
+                                                 (make-string (- (length (match-string 1 m)) shift) ?*))
+                                               subtree))
+                                          subtree))
+                               (heading-line (car (split-string subtree "\n")))
+                               (heading-text (aj/extract-heading-name heading-line)))
+                          (when (and heading-text parent-name)
+                            ;; Strip SCHEDULED lines, CLOSED lines, and trailing separators
+                            (let ((cleaned subtree))
+                              (setq cleaned (replace-regexp-in-string
+                                             "\\(\n*-+\n*\\)+\\'" "" cleaned))
+                              (setq cleaned (replace-regexp-in-string
+                                             "\nSCHEDULED: <[^>]+>" "" cleaned))
+                              (setq cleaned (replace-regexp-in-string
+                                             "\nCLOSED: \\[[^]]+\\]" "" cleaned))
+                              (push (list parent-name heading-text
+                                          (aj/tag-headings-overdue cleaned)
+                                          prev-file)
+                                    results))))))))))))))
+    (nreverse results)))
+
+(defun aj/recurring-child-exists-p (parent-name child-heading)
+  "Check if CHILD-HEADING exists under ** PARENT-NAME in * Recurring.
+Matches regardless of TODO state, priority, or tags."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let ((section-end (save-excursion
+                           (forward-line 1)
+                           (if (re-search-forward "^\\* " nil t)
+                               (line-beginning-position)
+                             (point-max)))))
+        ;; Find the parent heading
+        (when (re-search-forward
+               (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                       (regexp-quote parent-name))
+               section-end t)
+          (let ((parent-end (save-excursion
+                              (forward-line 1)
+                              (if (re-search-forward "^\\*\\* " section-end t)
+                                  (line-beginning-position)
+                                section-end))))
+            (re-search-forward
+             (format "^\\*\\*\\*+ \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                     (regexp-quote child-heading))
+             parent-end t)))))))
+
+(defun aj/bring-forward-overdue-recurring ()
+  "Bring forward priority TODO items from previous days' * Recurring sections.
+Items are tagged :overdue: and placed under the same parent heading.
+Source items are marked as CANCEL to prevent re-scanning."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+      (let* ((date-str (match-string 1))
+             (overdue (aj/get-overdue-recurring-tasks date-str))
+             (added 0))
+        (when overdue
+          (dolist (entry overdue)
+            (let ((parent-name (nth 0 entry))
+                  (heading-text (nth 1 entry))
+                  (content (nth 2 entry))
+                  (source-file (nth 3 entry)))
+              (unless (aj/recurring-child-exists-p parent-name heading-text)
+                ;; Find parent heading under * Recurring
+                (goto-char (point-min))
+                (when (re-search-forward "^\\* Recurring\\b" nil t)
+                  (let ((section-end (save-excursion
+                                       (forward-line 1)
+                                       (if (re-search-forward "^\\* " nil t)
+                                           (line-beginning-position)
+                                         (point-max)))))
+                    (when (re-search-forward
+                           (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                                   (regexp-quote parent-name))
+                           section-end t)
+                      ;; Find end of this parent's subtree
+                      (let ((parent-end (save-excursion
+                                          (forward-line 1)
+                                          (if (re-search-forward "^\\*\\* " section-end t)
+                                              (line-beginning-position)
+                                            section-end))))
+                        (goto-char parent-end)
+                        ;; Insert before next ** heading (separators will be cleaned up)
+                        (unless (bolp) (insert "\n"))
+                        (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                          (insert "\n"))
+                        (insert content "\n")
+                        (setq added (1+ added))
+                        ;; Mark source item as CANCEL to prevent re-scanning
+                        (when source-file
+                          (with-current-buffer (find-file-noselect source-file)
+                            (save-excursion
+                              (goto-char (point-min))
+                              (when (re-search-forward "^\\* Recurring\\b" nil t)
+                                (let ((src-end (save-excursion
+                                                 (forward-line 1)
+                                                 (if (re-search-forward "^\\* " nil t)
+                                                     (line-beginning-position)
+                                                   (point-max)))))
+                                  (when (re-search-forward
+                                         (format "^\\*\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
+                                                 (regexp-quote heading-text))
+                                         src-end t)
+                                    (beginning-of-line)
+                                    (org-todo "CANCEL")))))
+                            (save-buffer))))))))))
+          (when (> added 0)
+            (message "Brought forward %d overdue recurring task(s) for %s" added date-str)))))))
 
 (defun aj/recurring-heading-exists-p (heading)
   "Check if HEADING already exists under * Recurring.
@@ -1194,6 +1384,9 @@ Entries are placed under * Capture by the capture template."
         (aj/ensure-recurring-separators)
         ;; 4c. Bring forward overdue captures from previous days
         (aj/bring-forward-overdue-captures)
+        ;; 4d. Bring forward overdue priority tasks from previous days' Recurring
+        (aj/bring-forward-overdue-recurring)
+        (aj/ensure-recurring-separators)
         ;; 5. Move captured entry if user chose a Recurring target
         (when (and aj/--dailies-capture-target
                    aj/--dailies-capture-heading
@@ -1961,6 +2154,9 @@ Inserts transclude, ensures headings, populates recurring and calendar."
   (aj/refresh-daily-recurring)
   ;; 3b. Bring forward overdue captures from previous days
   (aj/bring-forward-overdue-captures)
+  ;; 3c. Bring forward overdue priority tasks from previous days' Recurring
+  (aj/bring-forward-overdue-recurring)
+  (aj/ensure-recurring-separators)
   ;; 4. Update statistics cookies
   (save-excursion
     (dolist (heading aj/headings-with-statistics)
@@ -1995,6 +2191,7 @@ For all files: enables transclusion, refreshes recurring tasks and calendar."
       (aj/ensure-daily-structure)
       (aj/refresh-daily-recurring)
       (aj/bring-forward-overdue-captures)
+      (aj/bring-forward-overdue-recurring)
       (aj/ensure-heading-separators)
       (aj/ensure-recurring-separators)
       (aj/refresh-daily-calendar))
