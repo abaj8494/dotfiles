@@ -2187,14 +2187,13 @@ For all files: enables transclusion, refreshes recurring tasks and calendar."
     ;; Check if this is a new file that needs setup
     (if (aj/daily-needs-setup-p)
         (aj/setup-daily-file)
-      ;; For existing files, refresh recurring and calendar content
+      ;; For existing files, refresh recurring and overdue content
       (aj/ensure-daily-structure)
       (aj/refresh-daily-recurring)
       (aj/bring-forward-overdue-captures)
       (aj/bring-forward-overdue-recurring)
       (aj/ensure-heading-separators)
-      (aj/ensure-recurring-separators)
-      (aj/refresh-daily-calendar))
+      (aj/ensure-recurring-separators))
     ;; Enable org-transclusion-mode to render transcludes
     (when (and (fboundp 'org-transclusion-mode)
                (not (bound-and-true-p org-transclusion-mode)))
@@ -2405,6 +2404,15 @@ This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
         (org-beginning-of-line)))))
 (define-key aj/daily-refresh-map (kbd "r") #'aj/refresh-daily-recurring)
 (define-key aj/daily-refresh-map (kbd "w") #'aj/refresh-daily-week)
+(define-key aj/daily-refresh-map (kbd "o")
+  (lambda () (interactive)
+    (aj/bring-forward-overdue-captures)
+    (aj/bring-forward-overdue-recurring)
+    (aj/ensure-heading-separators)
+    (aj/ensure-recurring-separators)
+    (when (buffer-modified-p)
+      (save-buffer))
+    (message "Overdue items refreshed")))
 (define-key aj/daily-refresh-map (kbd "a")
   (lambda () (interactive)
     (aj/insert-anki-review-chart)
