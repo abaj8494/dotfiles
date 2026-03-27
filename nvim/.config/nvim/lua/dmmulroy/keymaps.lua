@@ -166,7 +166,9 @@ end, { desc = "Open diagnostic float with rounded border" })
 vim.keymap.set("n", "<leader>cd", copy_line_diagnostics_to_clipboard, { desc = "[C]opy line [D]iagnostics" })
 
 vim.keymap.set("n", "<leader>Yf", function()
-	vim.fn.setreg("+", vim.api.nvim_buf_get_name(0))
+	local path = vim.api.nvim_buf_get_name(0)
+	vim.fn.setreg("+", path)
+	vim.notify("Yanked: " .. path, vim.log.levels.INFO)
 end, { desc = "[Y]ank [F]ile full path to clipboard" })
 
 vim.keymap.set("n", "<leader>ld", vim.diagnostic.setqflist, { desc = "Populate quickfix list with diagnostics" })

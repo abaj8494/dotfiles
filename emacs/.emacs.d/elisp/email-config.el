@@ -642,7 +642,7 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
   (defun my/email-cycle-identity ()
     "Cycle through email identities, updating From, Fcc, and SMTP settings."
     (interactive)
-    (unless (derived-mode-p 'message-mode 'notmuch-message-mode)
+    (unless (derived-mode-p 'message-mode 'notmuch-message-mode 'org-msg-edit-mode)
       (user-error "Not in a compose buffer"))
     (let* ((current-from (message-fetch-field "from"))
            (current-email (my/email-extract-address current-from))
@@ -1010,7 +1010,8 @@ Skips sync if user was marking emails in the last 10 seconds."
     (define-key org-msg-edit-mode-map (kbd "C-c C-f C-c") #'message-goto-cc)
     (define-key org-msg-edit-mode-map (kbd "C-c C-f C-b") #'message-goto-bcc)
     (define-key org-msg-edit-mode-map (kbd "C-c C-f C-s") #'message-goto-subject)
-    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-f") #'message-goto-from))
+    (define-key org-msg-edit-mode-map (kbd "C-c C-f C-f") #'message-goto-from)
+    (define-key org-msg-edit-mode-map (kbd "C-c C-i") #'my/email-cycle-identity))
 
   (org-msg-mode))
 

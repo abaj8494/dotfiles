@@ -88,6 +88,10 @@ cmd open_selected ${{
 
 
 cmd yank-path $printf '%s' "$fx" | pbcopy
+cmd yank-filepath &{{
+    printf '%s' "$f" | pbcopy
+    lf -remote "send $id echo \"Copied: $f\""
+}}
 # the below 2 do not work as the head command on osx cannot handle negative
 # values. you will need to use some text manipulation trickery with tail / sed 
 # / awk to get this to work. nffs.
@@ -168,4 +172,5 @@ map grr cd "/"
 
 
 # Path
-map Y yank-path 
+map Y yank-path
+map Yf yank-filepath

@@ -146,6 +146,44 @@ alias lrc='nvim ~/.config/lf/lfrc'
 alias zrc='nvim ~/.config/zsh/.zshrc'
 alias nrc='nvim ~/.config/nvim/'
 
+# clip.abaj.ai integration via television
+clip() {
+  local CLIP_BASE="https://clip.abaj.ai"
+  case "${1:-pages}" in
+    pages|p)
+      tv clip-pages
+      ;;
+    download|d)
+      CLIP_PAGE="${2:-shared}" tv clip-files
+      ;;
+    upload|u)
+      CLIP_PAGE="${2:-shared}" tv clip-upload
+      ;;
+    edit|e)
+      local page="${2:-shared}"
+      local tmpfile=$(mktemp "/tmp/clip-${page}.XXXXXX")
+      curl -s "${CLIP_BASE}/view/${page}" \
+        | sed -n '/<div id="contentBody"/,/<\/div>/p' \
+        | sed 's/.*id="contentBody"[^>]*>//;s/<\/div>//' \
+        | python3 -c "import sys,html; print(html.unescape(sys.stdin.read()),end='')" \
+        > "$tmpfile"
+      nvim "$tmpfile"
+      if [ -s "$tmpfile" ]; then
+        curl -s -X POST --data-urlencode "body@${tmpfile}" "${CLIP_BASE}/save/${page}"
+        echo "Saved to ${page}"
+      fi
+      rm -f "$tmpfile"
+      ;;
+    *)
+      echo "Usage: clip [pages|download|upload|edit] [page]"
+      echo "  clip              - browse all pages"
+      echo "  clip download [p] - download files (default: shared)"
+      echo "  clip upload [p]   - upload files (default: shared)"
+      echo "  clip edit [p]     - edit page text in nvim (default: shared)"
+      ;;
+  esac
+}
+
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
 [ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion

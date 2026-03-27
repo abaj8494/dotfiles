@@ -19,7 +19,6 @@ return {
 					"lua",
 					"markdown",
 					"markdown_inline",
-					"org",
 					"ocaml",
 					"ocaml_interface",
 					"rust",

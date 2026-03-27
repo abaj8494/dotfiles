@@ -87,10 +87,25 @@ return {
 			}
 
 			local manually_installed_servers = { "ocamllsp", "gleam", "rust_analyzer", "cf_lsp" }
-			local mason_tools_to_install = vim.tbl_keys(vim.tbl_deep_extend("force", {}, servers, formatters))
-			local ensure_installed = vim.tbl_filter(function(name)
-				return not vim.tbl_contains(manually_installed_servers, name)
-			end, mason_tools_to_install)
+			-- mason-tool-installer needs Mason package names, not lspconfig names
+			local lspconfig_to_mason = {
+				bashls = "bash-language-server",
+				cssls = "css-lsp",
+				eslint = "eslint-lsp",
+				html = "html-lsp",
+				jsonls = "json-lsp",
+				lua_ls = "lua-language-server",
+				tailwindcss = "tailwindcss-language-server",
+				yamlls = "yaml-language-server",
+				svelte = "svelte-language-server",
+				rust_analyzer = "rust-analyzer",
+			}
+			local ensure_installed = {}
+			for name, _ in pairs(vim.tbl_deep_extend("force", {}, servers, formatters)) do
+				if not vim.tbl_contains(manually_installed_servers, name) then
+					table.insert(ensure_installed, lspconfig_to_mason[name] or name)
+				end
+			end
 
 			require("mason-tool-installer").setup({
 				auto_update = true,

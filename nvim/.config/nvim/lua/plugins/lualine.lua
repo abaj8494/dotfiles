@@ -2,6 +2,7 @@ return {
 	{
 		"nvim-lualine/lualine.nvim",
 		event = "VeryLazy",
+		dependencies = { "catppuccin/nvim" },
 		config = function()
 			local harpoon = require("harpoon.mark")
 
@@ -40,7 +41,7 @@ return {
 
 			require("lualine").setup({
 				options = {
-					theme = "catppuccin",
+					theme = "catppuccin-macchiato",
 					globalstatus = true,
 					component_separators = { left = "", right = "" },
 					section_separators = { left = "█", right = "█" },
