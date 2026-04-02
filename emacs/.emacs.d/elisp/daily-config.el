@@ -18,6 +18,11 @@
   (expand-file-name "daily/tasks.org" org-roam-directory)
   "Path to tasks.org file for recurring task scheduling.")
 
+(defvar aj/daily-hook-suppress nil
+  "When non-nil, `aj/daily-file-open-hook' is suppressed.
+Used to prevent side-effects (overdue bring-forward, calendar refresh, etc.)
+when files are opened during org-capture.")
+
 ;; Yearly file configuration for week transclusion
 (defvar aj/yearly-file-ids
   '((2026 . "51fe6c3d-45e2-4655-bc1c-9358f989d02a"))
@@ -197,6 +202,47 @@ linking to the week node followed by transclude directive."
 ;; Recurring Task Management (tasks.org agenda-based)
 ;; ---------------------------------------------------------------------------
 
+(defun aj/date-is-repeat-occurrence-p (scheduled-str target-time)
+  "Return non-nil if TARGET-TIME is an occurrence of the repeater in SCHEDULED-STR.
+SCHEDULED-STR is the content of a SCHEDULED timestamp (e.g. \"<2026-03-17 Tue +2w>\").
+Handles +Nd, +Nw, +Nm, +Ny repeaters (and ++ / .+ variants)."
+  (when (string-match "<\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)[^>]*\\(?:\\+\\+\\|\\.\\+\\|\\+\\)\\([0-9]+\\)\\([dwmy]\\)>" scheduled-str)
+    (let* ((sched-date-str (match-string 1 scheduled-str))
+           (n (string-to-number (match-string 2 scheduled-str)))
+           (unit (match-string 3 scheduled-str))
+           (sched-time (org-time-string-to-time sched-date-str))
+           (sched-decoded (decode-time sched-time))
+           (target-decoded (decode-time target-time))
+           (sched-day (nth 3 sched-decoded))
+           (sched-month (nth 4 sched-decoded))
+           (sched-year (nth 5 sched-decoded))
+           (target-day (nth 3 target-decoded))
+           (target-month (nth 4 target-decoded))
+           (target-year (nth 5 target-decoded)))
+      (cond
+       ;; Daily: (target - scheduled) in days must be divisible by N
+       ((string= unit "d")
+        (let ((diff (- (time-to-days target-time) (time-to-days sched-time))))
+          (and (>= diff 0) (= 0 (mod diff n)))))
+       ;; Weekly: (target - scheduled) in days must be divisible by N*7
+       ((string= unit "w")
+        (let ((diff (- (time-to-days target-time) (time-to-days sched-time))))
+          (and (>= diff 0) (= 0 (mod diff (* n 7))))))
+       ;; Monthly: same day-of-month, month difference divisible by N
+       ((string= unit "m")
+        (and (= target-day sched-day)
+             (let ((month-diff (+ (* 12 (- target-year sched-year))
+                                  (- target-month sched-month))))
+               (and (>= month-diff 0) (= 0 (mod month-diff n))))))
+       ;; Yearly: same day and month, year difference divisible by N
+       ((string= unit "y")
+        (and (= target-day sched-day)
+             (= target-month sched-month)
+             (let ((year-diff (- target-year sched-year)))
+               (and (>= year-diff 0) (= 0 (mod year-diff n))))))
+       ;; Unknown unit: include to be safe
+       (t t)))))
+
 (defun aj/get-due-positions-for-date (date-time)
   "Return set of heading positions in tasks.org that are due on DATE-TIME.
 Uses `org-agenda-get-day-entries' with :scheduled :sexp :deadline selectors.
@@ -223,16 +269,17 @@ Resolves markers to their parent heading positions."
                        ;; Marker is on a body line (e.g. diary sexp) — find parent heading
                        (org-back-to-heading t)
                        (line-beginning-position))))))
-            ;; For past-scheduled entries, only include ++ or .+ repeaters
-            ;; (which mean "do regularly / catch up").  Skip bare + repeaters
-            ;; (which are tied to a specific day); those are handled by
-            ;; `aj/get-carryforward-tasks' if they have priority.
+            ;; For past-scheduled entries, verify the target date is an
+            ;; actual occurrence of the repeat cycle (handles +, ++, .+).
             (when (or (not (equal entry-type "past-scheduled"))
                       (with-current-buffer (marker-buffer marker)
                         (save-excursion
                           (goto-char heading-pos)
                           (forward-line 1)
-                          (looking-at "^SCHEDULED: <[^>]*\\(?:\\+\\+\\|\\.\\+\\)"))))
+                          (when (looking-at "^SCHEDULED: \\(<[^>]+>\\)")
+                            (aj/date-is-repeat-occurrence-p
+                             (match-string 1)
+                             date-time)))))
               (puthash heading-pos t positions))))))
     positions))
 
@@ -443,7 +490,7 @@ is older than the previous scheduled occurrence."
     (with-current-buffer buf
       (save-excursion
         (goto-char (point-min))
-        (while (re-search-forward "^\\*+ .*\\[#[A-C]\\]" nil t)
+        (while (re-search-forward "^\\*+ \\(?:TODO\\|WAIT\\) .*\\[#[A-C]\\]" nil t)
           (let* ((pos (line-beginning-position))
                  (heading-line (buffer-substring-no-properties pos (line-end-position))))
             ;; Skip if already due today
@@ -2182,18 +2229,21 @@ Inserts transclude, ensures headings, populates recurring and calendar."
 (defun aj/daily-file-open-hook ()
   "Hook for opening daily files.
 For new/bare files: runs full setup (transclude, headings, recurring, calendar).
-For all files: enables transclusion, refreshes recurring tasks and calendar."
-  (when (aj/daily-date-file-p)
+For all files: enables transclusion, refreshes recurring tasks and calendar.
+Skipped during org-capture to avoid side-effects (e.g. cancelling source items)."
+  (when (and (aj/daily-date-file-p)
+             (not aj/daily-hook-suppress))
     ;; Check if this is a new file that needs setup
     (if (aj/daily-needs-setup-p)
         (aj/setup-daily-file)
-      ;; For existing files, refresh recurring and overdue content
+      ;; For existing files, refresh recurring, overdue, and calendar content
       (aj/ensure-daily-structure)
       (aj/refresh-daily-recurring)
       (aj/bring-forward-overdue-captures)
       (aj/bring-forward-overdue-recurring)
       (aj/ensure-heading-separators)
-      (aj/ensure-recurring-separators))
+      (aj/ensure-recurring-separators)
+      (aj/refresh-daily-calendar))
     ;; Enable org-transclusion-mode to render transcludes
     (when (and (fboundp 'org-transclusion-mode)
                (not (bound-and-true-p org-transclusion-mode)))
@@ -2353,7 +2403,11 @@ This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
                       (setq found t)))))
               (when found
                 (beginning-of-line)
-                (org-todo "DONE")
+                ;; Auto-confirm the "N repeater intervals" prompt that org
+                ;; shows when SCHEDULED is far behind today.
+                (cl-letf (((symbol-function 'y-or-n-p)
+                           (lambda (&rest _) t)))
+                  (org-todo "DONE"))
                 (save-buffer)
                 (message "Propagated DONE to tasks.org: %s" heading-text)))))))))
 
@@ -2439,6 +2493,15 @@ This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
 ;; ---------------------------------------------------------------------------
 
 (advice-add 'org-roam-capture--find-or-create-olp :around #'aj/strip-cookies-for-olp)
+
+;; Suppress daily-file-open-hook during org-capture to prevent side-effects
+;; (e.g. bring-forward-overdue cancelling source items while capturing)
+(defun aj/suppress-daily-hook-during-capture (orig-fn &rest args)
+  "Advise org-capture to suppress `aj/daily-file-open-hook'."
+  (let ((aj/daily-hook-suppress t))
+    (apply orig-fn args)))
+(advice-add 'org-capture :around #'aj/suppress-daily-hook-during-capture)
+(advice-add 'org-roam-dailies--capture :around #'aj/suppress-daily-hook-during-capture)
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-store-capture-marker)
@@ -2816,6 +2879,26 @@ plot \"%s\" using 1:2 with linespoints ls 1\n"
   (expand-file-name "~/.emacs.d/scripts/garmin-route-map.py")
   "Path to garmin-route-map.py script.")
 
+(defvar aj/garmin-dashboard-script
+  (expand-file-name "~/.emacs.d/scripts/garmin-activity-dashboard.py")
+  "Path to garmin-activity-dashboard.py script.")
+
+(defvar aj/garmin-active-gear
+  '((:name "Brooks Adrenaline GTS25" :sport "running" :start-date "2026-03-27"))
+  "List of active gear plists. Each has :name, :sport, and :start-date (YYYY-MM-DD).
+Mileage is computed by summing activity distance from :start-date onwards.")
+
+(defun aj/garmin-gear-mileage (sport start-date date-str)
+  "Return total distance (km) for SPORT from START-DATE up to DATE-STR (inclusive)."
+  (let* ((db (expand-file-name "~/HealthData/DBs/garmin_activities.db"))
+         (result (string-trim
+                  (shell-command-to-string
+                   (format "sqlite3 '%s' \"SELECT COALESCE(SUM(distance), 0) FROM activities WHERE sport = '%s' AND date(start_time) >= '%s' AND date(start_time) <= '%s';\""
+                           db sport start-date date-str)))))
+    (if (and result (not (string-empty-p result)))
+        (string-to-number result)
+      0.0)))
+
 (defvar aj/garmin-sync-stderr-name "*garmin-sync-errors*"
   "Buffer name for garmindb async sync stderr.")
 
@@ -2892,11 +2975,19 @@ Returns a plist with sleep, vitals, and HRV data."
       (setq result (plist-put result :resting-hr rhr-raw)))
     result))
 
+(defun aj/garmin-daily-img-dir (date-str)
+  "Return the image directory for DATE-STR's daily note: daily/img/DATE-STR/.
+Uses the buffer's file path to find the daily directory."
+  (let* ((daily-dir (file-name-directory (buffer-file-name)))
+         (img-dir (expand-file-name (concat "img/" date-str "/") daily-dir)))
+    (make-directory img-dir t)
+    img-dir))
+
 (defun aj/garmin-self-generate-chart (date-str)
   "Generate a 7-day stacked sleep bar chart ending on DATE-STR.
-Output to ~/.cache/emacs/garmin-self.png."
+Output to daily/img/DATE-STR/garmin-self.png."
   (let* ((db (expand-file-name "~/HealthData/DBs/garmin.db"))
-         (cache-dir (expand-file-name "~/.cache/emacs/"))
+         (cache-dir (aj/garmin-daily-img-dir date-str))
          (png-file (expand-file-name "garmin-self.png" cache-dir))
          (dat-file (make-temp-file "garmin-self-" nil ".dat"))
          (gp-file (make-temp-file "garmin-self-" nil ".gp"))
@@ -2961,10 +3052,12 @@ plot \"%s\" using 2:xtic(1) title \"Deep\" lc rgb \"%s\", \
           nil)))))
 
 (defun aj/garmin-self-generate-route-map (date-str)
-  "Generate a route map PNG for any GPS activity on DATE-STR.
-Returns a plist (:file PNG-PATH :sport SPORT :name NAME) or nil."
+  "Generate route map PNG(s) for GPS activities on DATE-STR.
+Returns a list of plists ((:file PNG :sport SPORT :name NAME :activity-id ID) ...)
+or nil if no activities."
   (let* ((dark-p (eq (gruber-themes--get-current-variant) 'dark))
-         (route-file (expand-file-name "~/.cache/emacs/garmin-route.png"))
+         (route-file (expand-file-name "garmin-route.png"
+                                       (aj/garmin-daily-img-dir date-str)))
          (output (string-trim
                   (shell-command-to-string
                    (format "%s %s %s --output %s %s 2>/dev/null"
@@ -2976,10 +3069,16 @@ Returns a plist (:file PNG-PATH :sport SPORT :name NAME) or nil."
     (when (and output
                (not (string-empty-p output))
                (not (string= output "NO_ACTIVITY")))
-      (let ((parts (split-string output "|")))
-        (list :file route-file
-              :sport (nth 0 parts)
-              :name (nth 1 parts))))))
+      (let ((lines (split-string output "\n" t))
+            (result nil))
+        (dolist (line lines)
+          (let ((parts (split-string line "|")))
+            (push (list :file route-file
+                        :sport (nth 1 parts)
+                        :name (nth 2 parts)
+                        :activity-id (nth 0 parts))
+                  result)))
+        (nreverse result)))))
 
 (defun aj/garmin-self--insert-content (date-str)
   "Insert or replace ** Self content under * Journal for DATE-STR.
@@ -2996,43 +3095,44 @@ This is the synchronous core that queries the DB and writes into the buffer."
                      (aj/garmin-self-data yesterday))
                  data))
          (png-file (aj/garmin-self-generate-chart date-str))
-         (route (ignore-errors (aj/garmin-self-generate-route-map date-str)))
+         (png-rel (when png-file
+                    (format "img/%s/garmin-self.png" date-str)))
+         (routes (ignore-errors (aj/garmin-self-generate-route-map date-str)))
+         (route-rel (when routes
+                      (format "img/%s/garmin-route.png" date-str)))
          ;; Format values
-         (yest-mark (if using-yesterday " *" ""))
          (or-na (lambda (val &optional suffix)
                   (if (and val (not (string-empty-p val)))
-                      (concat (if suffix (concat val suffix) val) yest-mark)
+                      (if suffix (concat val suffix) val)
                     "N/A")))
          (sleep-score (let ((score (plist-get data :sleep-score))
                             (qual (plist-get data :sleep-qualifier)))
                         (if (and score (not (string-empty-p score)))
-                            (concat (format "%s (%s)" score (or qual "")) yest-mark)
+                            (format "%s (%s)" score (or qual ""))
                           "N/A")))
          (total-sleep (let ((m (aj/parse-garmin-time-to-minutes (plist-get data :total-sleep))))
-                        (concat (aj/format-minutes-as-hm m) yest-mark)))
+                        (aj/format-minutes-as-hm m)))
          (deep (let ((m (aj/parse-garmin-time-to-minutes (plist-get data :deep-sleep))))
-                 (concat (aj/format-minutes-as-hm m) yest-mark)))
+                 (aj/format-minutes-as-hm m)))
          (rem (let ((m (aj/parse-garmin-time-to-minutes (plist-get data :rem-sleep))))
-                (concat (aj/format-minutes-as-hm m) yest-mark)))
+                (aj/format-minutes-as-hm m)))
          (rhr (funcall or-na (plist-get data :rhr) " bpm"))
          (hrv-val (let ((weekly (plist-get data :hrv-weekly))
                         (status (plist-get data :hrv-status)))
                     (if (and weekly (not (string-empty-p weekly)))
-                        (concat (format "%s ms (%s)" weekly
-                                        (or (and status (substring status 0 3)) ""))
-                                yest-mark)
+                        (format "%s ms (%s)" weekly
+                                (or (and status (substring status 0 3)) ""))
                       "N/A")))
          (steps (let ((s (plist-get data :steps)))
                   (if (and s (not (string-empty-p s)))
-                      (concat (replace-regexp-in-string
-                               "\\([0-9]\\)\\([0-9]\\{3\\}\\)\\'" "\\1,\\2" s)
-                              yest-mark)
+                      (replace-regexp-in-string
+                       "\\([0-9]\\)\\([0-9]\\{3\\}\\)\\'" "\\1,\\2" s)
                     "N/A")))
          (stress (funcall or-na (plist-get data :stress-avg)))
          (bb (let ((mx (plist-get data :bb-max))
                    (mn (plist-get data :bb-min)))
                (if (and mx mn (not (string-empty-p mx)) (not (string-empty-p mn)))
-                   (concat (format "%s - %s" mn mx) yest-mark)
+                   (format "%s - %s" mn mx)
                  "N/A")))
          (spo2 (funcall or-na (plist-get data :spo2-avg) "%")))
     ;; Insert under * Journal as ** Self
@@ -3064,10 +3164,10 @@ This is the synchronous core that queries the DB and writes into the buffer."
               (insert "\n"))
             ;; Insert ** Self content
             (insert "\n** Self\n\n")
-            (when png-file
+            (when png-rel
               (insert "#+ATTR_ORG: :width 600\n")
               (insert "#+ATTR_LATEX: :width 0.8\\linewidth\n")
-              (insert (format "[[file:%s]]\n\n" png-file)))
+              (insert (format "[[file:%s]]\n\n" png-rel)))
             (when using-yesterday
               (insert "#+CAPTION: Yesterday's Data\n"))
             (let ((table-start (point)))
@@ -3087,19 +3187,74 @@ This is the synchronous core that queries the DB and writes into the buffer."
               (save-excursion
                 (goto-char table-start)
                 (org-table-align)))
-            ;; Route map if activity exists
-            (when route
-              (insert (format "\n*** %s\n\n"
-                              (or (plist-get route :name)
-                                  (capitalize (or (plist-get route :sport) "Activity")))))
-              (insert "#+ATTR_ORG: :width 600\n")
-              (insert "#+ATTR_LATEX: :width 0.8\\linewidth\n")
-              (insert (format "[[file:%s]]\n" (plist-get route :file))))
+            ;; Gear mileage for relevant sports
+            (when routes
+              (let ((sports (delete-dups (mapcar (lambda (r) (plist-get r :sport)) routes))))
+                (dolist (gear aj/garmin-active-gear)
+                  (when (member (plist-get gear :sport) sports)
+                    (let ((km (aj/garmin-gear-mileage
+                               (plist-get gear :sport)
+                               (plist-get gear :start-date)
+                               date-str)))
+                      (insert (format "\n*Gear: %s* --- %.1f km\n"
+                                      (plist-get gear :name) km)))))))
+            ;; Route maps if activities exist
+            (when routes
+              (if (= (length routes) 1)
+                  ;; Single activity
+                  (let ((r (car routes)))
+                    (insert (format "\n*** %s\n\n"
+                                    (or (plist-get r :name)
+                                        (capitalize (or (plist-get r :sport) "Activity")))))
+                    (insert "#+ATTR_ORG: :width 600\n")
+                    (insert "#+ATTR_LATEX: :width 0.8\\linewidth\n")
+                    (insert (format "[[garmin-activity:%s][file:%s]]\n"
+                                    (plist-get r :activity-id) route-rel))
+                    (insert (format "[[elisp:(aj/garmin-open-activity-dashboard \"%s\")][View activity dashboard]]\n"
+                                    (plist-get r :activity-id))))
+                ;; Multiple activities: composite grid image + per-activity links
+                (insert "\n*** Activities\n\n")
+                (insert "#+ATTR_ORG: :width 800\n")
+                (insert "#+ATTR_LATEX: :width 1.0\\linewidth\n")
+                (insert (format "[[file:%s]]\n\n" route-rel))
+                (dolist (r routes)
+                  (insert (format "- [[elisp:(aj/garmin-open-activity-dashboard \"%s\")][%s]] (%s)\n"
+                                  (plist-get r :activity-id)
+                                  (or (plist-get r :name)
+                                      (capitalize (or (plist-get r :sport) "Activity")))
+                                  (plist-get r :sport))))))
             ;; Separator before next heading
             (insert "\n-----\n"))
         (user-error "No Journal heading found in this daily note")))
     ;; Render inline images
     (org-display-inline-images)))
+
+(defun aj/garmin-open-activity-dashboard (activity-id)
+  "Generate and open an HTML dashboard for ACTIVITY-ID in the browser."
+  (interactive "sActivity ID: ")
+  (let* ((dark-p (eq (gruber-themes--get-current-variant) 'dark))
+         (output (string-trim
+                  (shell-command-to-string
+                   (format "%s %s --activity-id %s %s"
+                           (shell-quote-argument (expand-file-name "~/miniconda3/bin/python3"))
+                           (shell-quote-argument aj/garmin-dashboard-script)
+                           (shell-quote-argument activity-id)
+                           (if dark-p "--dark" ""))))))
+    (if (and output (file-exists-p output))
+        (browse-url (concat "file://" output))
+      (user-error "Failed to generate dashboard for activity %s" activity-id))))
+
+;; Register garmin-activity: org link type so C-c C-o on route map opens dashboard
+(org-link-set-parameters
+ "garmin-activity"
+ :follow (lambda (activity-id _)
+           (aj/garmin-open-activity-dashboard activity-id))
+ :export (lambda (activity-id desc backend _)
+           (let ((url (format "https://connect.garmin.com/modern/activity/%s" activity-id)))
+             (pcase backend
+               ('html (format "<a href=\"%s\">%s</a>" url (or desc activity-id)))
+               ('latex (format "\\href{%s}{%s}" url (or desc activity-id)))
+               (_ (or desc url))))))
 
 (defun aj/garmin-sync-running-p ()
   "Return non-nil if a garmindb sync process is currently running."
