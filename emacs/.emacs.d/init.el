@@ -17,6 +17,10 @@
   (add-to-list 'Info-additional-directory-list
                (expand-file-name "info" user-emacs-directory)))
 
+;; Ensure TeX binaries are visible (macOS GUI Emacs doesn't inherit shell PATH)
+(add-to-list 'exec-path "/Library/TeX/texbin")
+(setenv "PATH" (concat "/Library/TeX/texbin:" (getenv "PATH")))
+
 ;; Bootstrap straight.el package manager
 (require 'bootstrap)
 

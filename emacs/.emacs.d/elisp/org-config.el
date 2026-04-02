@@ -122,6 +122,61 @@
         (lsp-deferred))))
   (defalias 'org-babel-edit-prep:python #'ab/org-babel-edit-prep:python))
 
+;;; AUCTeX completion in Org latex src blocks --------------------------------
+;; Use AUCTeX's LaTeX-mode (not Emacs built-in latex-mode) for src blocks.
+(add-to-list 'org-src-lang-modes '("latex" . LaTeX))
+
+;; Load AUCTeX style hooks for packages from the parent org buffer,
+;; and bind TAB to complete macros/environments.
+(with-eval-after-load 'org
+  (defun ab/org-babel-edit-prep:latex (_info)
+    ;; Ensure we're in AUCTeX's LaTeX-mode, not Emacs built-in latex-mode
+    (unless (derived-mode-p 'LaTeX-mode)
+      (require 'latex)
+      (LaTeX-mode)
+      ;; Restore org-src-mode bindings clobbered by mode switch
+      (org-src-mode))
+    (setq TeX-master t)
+    ;; Load style files for packages used in the parent org buffer's
+    ;; #+LATEX_HEADER lines (e.g. amsthm, enumitem, mathtools, etc.)
+    (when-let* ((org-buf (org-src-source-buffer))
+                (headers (with-current-buffer org-buf
+                           (org-collect-keywords '("LATEX_HEADER")))))
+      (dolist (hdr (cdr (assoc "LATEX_HEADER" headers)))
+        (when (string-match "\\\\usepackage\\(?:\\[.*?\\]\\)?{\\([^}]+\\)}" hdr)
+          (dolist (pkg (split-string (match-string 1 hdr) ","))
+            (TeX-run-style-hooks (string-trim pkg))))))
+    (local-set-key (kbd "TAB") #'ab/latex-tab-complete))
+  (defalias 'org-babel-edit-prep:latex #'ab/org-babel-edit-prep:latex))
+
+(defun ab/latex-tab-complete ()
+  "Complete TeX macro or environment at point, or indent."
+  (interactive)
+  (cond
+   ;; Inside \begin{ or \end{ — complete environment name
+   ((save-excursion
+      (skip-chars-backward "a-zA-Z*")
+      (looking-back "\\\\\\(begin\\|end\\){" (line-beginning-position)))
+    (completion-at-point))
+   ;; Partial \begin or \end — expand and open brace
+   ((save-excursion
+      (skip-chars-backward "a-zA-Z")
+      (and (eq (char-before) ?\\)
+           (looking-at-p "\\(beg\\|begin\\|en\\|end\\)\\>")))
+    (let ((start (save-excursion (skip-chars-backward "a-zA-Z") (point)))
+          (cmd (save-excursion
+                 (skip-chars-backward "a-zA-Z")
+                 (if (looking-at-p "b") "begin{" "end{"))))
+      (delete-region start (point))
+      (insert cmd)))
+   ;; After backslash — complete macro
+   ((save-excursion
+      (skip-chars-backward "a-zA-Z@*")
+      (eq (char-before) ?\\))
+    (completion-at-point))
+   ;; Default — indent
+   (t (indent-for-tab-command))))
+
 ;; Jupyter-python mode mapping
 (add-to-list 'org-src-lang-modes '("jupyter-python" . python))
 (add-to-list 'org-src-lang-modes '("chess" . latex))
@@ -169,6 +224,7 @@
                        body
                        "\n\\end{document}\n"))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (_mkdir (make-directory temporary-file-directory t))
          (tex-file (make-temp-file "chess-babel-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (is-svg (string-suffix-p ".svg" out-file))
@@ -223,7 +279,7 @@
   (setq org-log-done 'time)
   (setq org-log-into-drawer t)
   (setq org-directory "/Users/aayushbajaj/Documents/new-site/content-org/daily/")
-  (setq org-agenda-files (list (expand-file-name "tasks.org" org-directory)))
+  (setq org-agenda-files nil)
   (setq org-todo-keywords
         '((sequence "TODO(t)" "WAIT(w!)" "|" "CANCEL(c!)" "DONE(d!)")))
 
@@ -634,6 +690,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
          (packages (unless use-buf-preamble
                      (or (plist-get env-config :packages) '())))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (_mkdir (make-directory temporary-file-directory t))
          (tex-file (make-temp-file "latex-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
@@ -806,6 +863,7 @@ If preview exists, remove it. Otherwise, render it."
 (defun aj/latex--render-chess-preview (content beg end headers)
   "Render chess CONTENT with HEADERS as preamble."
   (let* ((temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (_mkdir (make-directory temporary-file-directory t))
          (tex-file (make-temp-file "chess-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
@@ -993,6 +1051,7 @@ For chess blocks, EXTRA-PREAMBLE contains buffer #+LATEX_HEADER lines to use as 
          (packages (unless (or is-chess use-buf-preamble)
                      (or (plist-get env-config :packages) '())))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (_mkdir (make-directory temporary-file-directory t))
          (tex-file (make-temp-file "latex-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
@@ -1099,6 +1158,7 @@ because all fragments are compiled together."
          (end (region-end))
          (content (buffer-substring-no-properties beg end))
          (temporary-file-directory (expand-file-name "ltximg/" default-directory))
+         (_mkdir (make-directory temporary-file-directory t))
          (tex-file (make-temp-file "region-" nil ".tex"))
          (pdf-file (concat (file-name-sans-extension tex-file) ".pdf"))
          (img-file (concat (file-name-sans-extension tex-file)
@@ -1450,6 +1510,7 @@ Only applies to LaTeX-based backends."
 ;; Exports use their own class templates; adding packages globally causes hyperref clashes
 (setq org-format-latex-header
       (concat org-format-latex-header
+              "\n\\usepackage{geometry}"
               "\n\\usepackage{tikz}"
               "\n\\usepackage{pgfplots}"
               "\n\\usepackage{xcolor}"
