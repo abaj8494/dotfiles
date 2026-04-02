@@ -7,15 +7,15 @@
   <property name="zoomGesturesEnabled" value="true"/>
   <property name="selectedToolbar" value="Right hand Note Taking"/>
   <property name="lastSavePath" value="/Users/aayushbajaj/Documents/Google Drive/1. - goodnotes/11. - tuition/111. - students/111.22 - Vivan Sharma"/>
-  <property name="lastOpenPath" value="/Users/aayushbajaj/Documents/Google Drive/1. - goodnotes/11. - tuition/112. - resources/1120. - high school/11200. - mathematics/112004. - year 10/1120042. - normo/Topic 3 - Functions"/>
+  <property name="lastOpenPath" value="/Users/aayushbajaj/Downloads"/>
   <property name="lastImagePath" value=""/>
   <property name="edgePanSpeed" value="20"/>
   <property name="edgePanMaxMult" value="5"/>
   <property name="zoomStep" value="4"/>
   <property name="zoomStepScroll" value="2"/>
   <property name="displayDpi" value="72"/>
-  <property name="mainWndWidth" value="1888"/>
-  <property name="mainWndHeight" value="1015"/>
+  <property name="mainWndWidth" value="1904"/>
+  <property name="mainWndHeight" value="1013"/>
   <property name="maximized" value="false"/>
   <property name="showToolbar" value="true"/>
   <property name="showSidebar" value="true"/>
@@ -214,7 +214,7 @@
       <attribute name="drawingType" type="string" value="default"/>
       <attribute name="fill" type="int" value="0"/>
       <attribute name="fillAlpha" type="int" value="128"/>
-      <attribute name="size" type="string" value="BIG"/>
+      <attribute name="size" type="string" value="THIN"/>
     </data>
     <data name="image">
       <attribute name="drawingType" type="string" value="default"/>
