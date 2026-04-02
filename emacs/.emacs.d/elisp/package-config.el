@@ -1187,5 +1187,18 @@ If already in aayush.org, returns it directly."
                 #'beancount-completion-at-point nil t)))
   (add-hook 'org-mode-hook #'aj/beancount-org-setup))
 
+
+;; ---------------------------------------------------------------------------
+;; vterm
+;; ---------------------------------------------------------------------------
+(use-package vterm
+  :ensure t)
+
+(add-hook 'vterm-mode-hook
+  (lambda ()
+    (set (make-local-variable 'buffer-face-mode-face)
+         '(:family "MonaspiceAr Nerd Font" :height 140))
+    (buffer-face-mode t)))
+
 (provide 'package-config)
 ;;; package-config.el ends here
