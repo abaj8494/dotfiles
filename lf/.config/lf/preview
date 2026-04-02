@@ -10,6 +10,10 @@ if ! [ -f "$FILE_PATH" ] && ! [ -h "$FILE_PATH" ]; then
   exit
 fi
 
+if [ -n "$INSIDE_EMACS" ] || [ "$TERM" != "xterm-kitty" ]; then
+  NO_IMAGE_PREVIEW=1
+fi
+
 FILE_EXTENSION="${FILE_PATH##*.}"
 FILE_EXTENSION_LOWER="$(printf "%s" "${FILE_EXTENSION}" | tr '[:upper:]' '[:lower:]')"
 MIME_TYPE="$(file --dereference --brief --mime-type -- "${FILE_PATH}")"
@@ -22,6 +26,7 @@ hash() {
     "$(gstat --printf '%n\0%i\0%F\0%s\0%W\0%Y' -- "$(readlink -f "$1")" | md5 -q | awk '{print $1}')"
 }
 
+mkdir -p "$HOME/.cache/lf"
 IMAGE_CACHE_PATH="$(hash "$FILE_PATH")" # Full path that should be used to cache image preview
 
 handle_image() {
@@ -94,7 +99,7 @@ handle_image() {
       -scale-to-x "${DEFAULT_SIZE%x*}" \
       -scale-to-y -1 \
       -singlefile \
-      -jpeg -tiffcompression jpeg \
+      -jpeg \
       -- "${FILE_PATH}" "${IMAGE_CACHE_PATH%.*}" &&
       return 6 || return 1
     ;;
@@ -253,7 +258,7 @@ else
   esac
 fi
 
-if [ -n "$image" ]; then
+if [ -n "$image" ] && [ -z "$NO_IMAGE_PREVIEW" ]; then
   draw "$image"
 else
   fallback

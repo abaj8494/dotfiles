@@ -152,6 +152,7 @@ map w wall
 map gH cd "~"
 map gW cd "~/Downloads"
 map gD cd "~/Documents"
+map gdf cd "/Users/aayushbajaj/Documents/Finances/beancount/ledger/"
 map gdu cd "~/Documents/uni"
 map gds cd "~/Documents/new-site"
 map gdc cd "~/Documents/code-share"
