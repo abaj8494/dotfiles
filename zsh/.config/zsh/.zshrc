@@ -153,33 +153,17 @@ clip() {
     pages|p)
       tv clip-pages
       ;;
-    download|d)
+    files|f)
       CLIP_PAGE="${2:-shared}" tv clip-files
       ;;
-    upload|u)
-      CLIP_PAGE="${2:-shared}" tv clip-upload
-      ;;
     edit|e)
-      local page="${2:-shared}"
-      local tmpfile=$(mktemp "/tmp/clip-${page}.XXXXXX")
-      curl -s "${CLIP_BASE}/view/${page}" \
-        | sed -n '/<div id="contentBody"/,/<\/div>/p' \
-        | sed 's/.*id="contentBody"[^>]*>//;s/<\/div>//' \
-        | python3 -c "import sys,html; print(html.unescape(sys.stdin.read()),end='')" \
-        > "$tmpfile"
-      nvim "$tmpfile"
-      if [ -s "$tmpfile" ]; then
-        curl -s -X POST --data-urlencode "body@${tmpfile}" "${CLIP_BASE}/save/${page}"
-        echo "Saved to ${page}"
-      fi
-      rm -f "$tmpfile"
+      clip-edit "${2:-shared}"
       ;;
     *)
-      echo "Usage: clip [pages|download|upload|edit] [page]"
-      echo "  clip              - browse all pages"
-      echo "  clip download [p] - download files (default: shared)"
-      echo "  clip upload [p]   - upload files (default: shared)"
-      echo "  clip edit [p]     - edit page text in nvim (default: shared)"
+      echo "Usage: clip [pages|files|edit] [page]"
+      echo "  clip          - browse all pages"
+      echo "  clip files [p] - browse files (Ctrl-S: switch download/upload)"
+      echo "  clip edit [p]  - edit page text in nvim (default: shared)"
       ;;
   esac
 }
