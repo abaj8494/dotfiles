@@ -3333,42 +3333,58 @@ This is the synchronous core that queries the DB and writes into the buffer."
               (save-excursion
                 (goto-char table-start)
                 (org-table-align)))
-            ;; Gear mileage for relevant sports
+            ;; Route maps if activities exist.
+            ;;
+            ;; Each image is a plain `[[file:...]]' link (no hyperlink
+            ;; wrapper) so the LaTeX exporter produces a proper
+            ;; `\begin{figure}\centering\includegraphics\caption{}\end{figure}'
+            ;; — centered and captioned. Gear info for the sport becomes
+            ;; `#+CAPTION:' attached to the image. Affiliated keywords
+            ;; (ATTR_* and CAPTION) MUST precede the link element in org
+            ;; for the exporter to pick them up, so emit them first even
+            ;; though the visual reading order puts the caption below.
             (when routes
-              (let ((sports (delete-dups (mapcar (lambda (r) (plist-get r :sport)) routes))))
-                (dolist (gear aj/garmin-active-gear)
-                  (when (member (plist-get gear :sport) sports)
-                    (let ((km (aj/garmin-gear-mileage
-                               (plist-get gear :sport)
-                               (plist-get gear :start-date)
-                               date-str)))
-                      (insert (format "\n*Gear: %s* --- %.1f km\n"
-                                      (plist-get gear :name) km)))))))
-            ;; Route maps if activities exist
-            (when routes
-              (if (= (length routes) 1)
-                  ;; Single activity
-                  (let ((r (car routes)))
-                    (insert (format "\n*** %s\n\n"
-                                    (or (plist-get r :name)
-                                        (capitalize (or (plist-get r :sport) "Activity")))))
-                    (insert "#+ATTR_ORG: :width 600\n")
-                    (insert "#+ATTR_LATEX: :width 0.8\\linewidth\n")
-                    (insert (format "[[garmin-activity:%s][file:%s]]\n"
-                                    (plist-get r :activity-id) route-rel))
-                    (insert (format "[[elisp:(aj/garmin-open-activity-dashboard \"%s\")][View activity dashboard]]\n"
-                                    (plist-get r :activity-id))))
-                ;; Multiple activities: composite grid image + per-activity links
-                (insert "\n*** Activities\n\n")
-                (insert "#+ATTR_ORG: :width 800\n")
-                (insert "#+ATTR_LATEX: :width 1.0\\linewidth\n")
-                (insert (format "[[file:%s]]\n\n" route-rel))
-                (dolist (r routes)
-                  (insert (format "- [[elisp:(aj/garmin-open-activity-dashboard \"%s\")][%s]] (%s)\n"
-                                  (plist-get r :activity-id)
-                                  (or (plist-get r :name)
-                                      (capitalize (or (plist-get r :sport) "Activity")))
-                                  (plist-get r :sport))))))
+              (let ((gear-captions
+                     (lambda (sport)
+                       (let (caps)
+                         (dolist (gear aj/garmin-active-gear)
+                           (when (string= (plist-get gear :sport) sport)
+                             (let ((km (aj/garmin-gear-mileage
+                                        sport
+                                        (plist-get gear :start-date)
+                                        date-str)))
+                               (push (format "#+CAPTION: *Gear: %s* --- %.1f km\n"
+                                             (plist-get gear :name) km)
+                                     caps))))
+                         (nreverse caps)))))
+                (if (= (length routes) 1)
+                    ;; Single activity
+                    (let* ((r (car routes))
+                           (sport (plist-get r :sport)))
+                      (insert (format "\n*** %s\n\n"
+                                      (or (plist-get r :name)
+                                          (capitalize (or sport "Activity")))))
+                      (insert "#+ATTR_ORG: :width 600\n")
+                      (insert "#+ATTR_LATEX: :width 0.7\\linewidth :placement [ht]\n")
+                      (dolist (c (funcall gear-captions sport)) (insert c))
+                      (insert (format "[[file:%s]]\n\n" route-rel))
+                      (insert (format "[[elisp:(aj/garmin-open-activity-dashboard \"%s\")][View activity dashboard]]\n"
+                                      (plist-get r :activity-id))))
+                  ;; Multiple activities: composite grid image + per-activity links
+                  (let ((sports (delete-dups
+                                 (mapcar (lambda (r) (plist-get r :sport)) routes))))
+                    (insert "\n*** Activities\n\n")
+                    (insert "#+ATTR_ORG: :width 800\n")
+                    (insert "#+ATTR_LATEX: :width 1.0\\linewidth :placement [ht]\n")
+                    (dolist (sp sports)
+                      (dolist (c (funcall gear-captions sp)) (insert c)))
+                    (insert (format "[[file:%s]]\n\n" route-rel))
+                    (dolist (r routes)
+                      (insert (format "- [[elisp:(aj/garmin-open-activity-dashboard \"%s\")][%s]] (%s)\n"
+                                      (plist-get r :activity-id)
+                                      (or (plist-get r :name)
+                                          (capitalize (or (plist-get r :sport) "Activity")))
+                                      (plist-get r :sport))))))))
             ;; Separator before next heading
             (insert "\n-----\n"))
         (user-error "No Journal heading found in this daily note")))
@@ -3391,15 +3407,47 @@ This is the synchronous core that queries the DB and writes into the buffer."
       (user-error "Failed to generate dashboard for activity %s" activity-id))))
 
 ;; Register garmin-activity: org link type so C-c C-o on route map opens dashboard
+;;
+;; On export, we handle two description shapes:
+;;   1. Plain text — renders as a hyperlink with that text.
+;;   2. `file:path/to/image.png' — renders as an image that is itself a
+;;      hyperlink to the Garmin activity page. This is how route-map
+;;      inserts generate their links (see `aj/refresh-daily-recurring').
+;;
+;; `#+ATTR_LATEX' above the link is ignored by org for custom link types,
+;; so the LaTeX width is hardcoded here. Change `aj/garmin-latex-img-width'
+;; if the default 0.8\linewidth is wrong.
+(defvar aj/garmin-latex-img-width "0.8\\linewidth"
+  "LaTeX width used when exporting garmin-activity: links whose description
+is a file: image reference.")
+
+(defun aj/garmin--desc-image-path (desc)
+  "If DESC is `file:PATH' to an image, return PATH. Otherwise nil."
+  (when (and desc
+             (string-match
+              "\\`file:\\(.+\\.\\(?:png\\|jpe?g\\|gif\\|svg\\|pdf\\)\\)\\'"
+              desc))
+    (match-string 1 desc)))
+
 (org-link-set-parameters
  "garmin-activity"
  :follow (lambda (activity-id _)
            (aj/garmin-open-activity-dashboard activity-id))
- :export (lambda (activity-id desc backend _)
-           (let ((url (format "https://connect.garmin.com/modern/activity/%s" activity-id)))
+ :export (lambda (activity-id desc backend _info)
+           (let* ((url (format "https://connect.garmin.com/modern/activity/%s"
+                               activity-id))
+                  (img (aj/garmin--desc-image-path desc)))
              (pcase backend
-               ('html (format "<a href=\"%s\">%s</a>" url (or desc activity-id)))
-               ('latex (format "\\href{%s}{%s}" url (or desc activity-id)))
+               ('html
+                (if img
+                    (format "<a href=\"%s\"><img src=\"%s\" alt=\"activity %s\"/></a>"
+                            url img activity-id)
+                  (format "<a href=\"%s\">%s</a>" url (or desc activity-id))))
+               ('latex
+                (if img
+                    (format "\\href{%s}{\\includegraphics[width=%s]{%s}}"
+                            url aj/garmin-latex-img-width img)
+                  (format "\\href{%s}{%s}" url (or desc activity-id))))
                (_ (or desc url))))))
 
 (defun aj/garmin-sync-running-p ()
