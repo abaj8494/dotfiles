@@ -2226,31 +2226,72 @@ Inserts transclude, ensures headings, populates recurring and calendar."
   )
 
 ;; Hook for file open - sets up new files and enables transclusion
+(defvar aj/daily-hook-log-threshold 0.5
+  "If `aj/daily-file-open-hook' takes longer than this (seconds),
+log per-step timings to *Messages*. Set to 0 to always log.")
+
+(defvar aj/daily-hook-debug nil
+  "When non-nil, always log per-step timings for `aj/daily-file-open-hook',
+regardless of `aj/daily-hook-log-threshold'.")
+
+(defmacro aj/daily-time-step (timings name &rest body)
+  "Run BODY, push (NAME . elapsed-seconds) onto TIMINGS."
+  (declare (indent 2))
+  `(let ((aj--t0 (float-time)))
+     (prog1 (progn ,@body)
+       (push (cons ,name (- (float-time) aj--t0)) ,timings))))
+
 (defun aj/daily-file-open-hook ()
   "Hook for opening daily files.
 For new/bare files: runs full setup (transclude, headings, recurring, calendar).
 For all files: enables transclusion, refreshes recurring tasks and calendar.
-Skipped during org-capture to avoid side-effects (e.g. cancelling source items)."
+Skipped during org-capture to avoid side-effects (e.g. cancelling source items).
+
+Per-step timings are logged to *Messages* when the total exceeds
+`aj/daily-hook-log-threshold' or when `aj/daily-hook-debug' is non-nil."
   (when (and (aj/daily-date-file-p)
              (not aj/daily-hook-suppress))
-    ;; Check if this is a new file that needs setup
-    (if (aj/daily-needs-setup-p)
-        (aj/setup-daily-file)
-      ;; For existing files, refresh recurring, overdue, and calendar content
-      (aj/ensure-daily-structure)
-      (aj/refresh-daily-recurring)
-      (aj/bring-forward-overdue-captures)
-      (aj/bring-forward-overdue-recurring)
-      (aj/ensure-heading-separators)
-      (aj/ensure-recurring-separators)
-      (aj/refresh-daily-calendar))
-    ;; Enable org-transclusion-mode to render transcludes
-    (when (and (fboundp 'org-transclusion-mode)
-               (not (bound-and-true-p org-transclusion-mode)))
-      (org-transclusion-mode 1))
-    ;; Save if we did setup
-    (when (buffer-modified-p)
-      (save-buffer))))
+    (let ((aj--hook-start (float-time))
+          (aj--timings nil))
+      ;; Check if this is a new file that needs setup
+      (if (aj/daily-needs-setup-p)
+          (aj/daily-time-step aj--timings "setup-daily-file"
+            (aj/setup-daily-file))
+        ;; For existing files, refresh recurring, overdue, and calendar content
+        (aj/daily-time-step aj--timings "ensure-daily-structure"
+          (aj/ensure-daily-structure))
+        (aj/daily-time-step aj--timings "refresh-daily-recurring"
+          (aj/refresh-daily-recurring))
+        (aj/daily-time-step aj--timings "bring-forward-overdue-captures"
+          (aj/bring-forward-overdue-captures))
+        (aj/daily-time-step aj--timings "bring-forward-overdue-recurring"
+          (aj/bring-forward-overdue-recurring))
+        (aj/daily-time-step aj--timings "ensure-heading-separators"
+          (aj/ensure-heading-separators))
+        (aj/daily-time-step aj--timings "ensure-recurring-separators"
+          (aj/ensure-recurring-separators))
+        (aj/daily-time-step aj--timings "refresh-daily-calendar"
+          (aj/refresh-daily-calendar)))
+      ;; Enable org-transclusion-mode to render transcludes
+      (when (and (fboundp 'org-transclusion-mode)
+                 (not (bound-and-true-p org-transclusion-mode)))
+        (aj/daily-time-step aj--timings "org-transclusion-mode"
+          (org-transclusion-mode 1)))
+      ;; Save if we did setup
+      (when (buffer-modified-p)
+        (aj/daily-time-step aj--timings "save-buffer"
+          (save-buffer)))
+      ;; Log timings if slow or debug is on
+      (let ((total (- (float-time) aj--hook-start)))
+        (when (or aj/daily-hook-debug
+                  (>= total aj/daily-hook-log-threshold))
+          (message "[daily-hook] %.3fs total for %s: %s"
+                   total
+                   (file-name-nondirectory (or buffer-file-name "?"))
+                   (mapconcat (lambda (cell)
+                                (format "%s=%.3fs" (car cell) (cdr cell)))
+                              (nreverse aj--timings)
+                              " ")))))))
 
 ;; Strip statistics cookies from olp headings in daily files before org-roam
 ;; does heading matching, so that "* Capture [4/4]" still matches olp "Capture".
@@ -2641,13 +2682,21 @@ via `edge-tts' so you can react without switching windows."
 (advice-add 'org-roam-capture--find-or-create-olp :around #'aj/strip-cookies-for-olp)
 
 ;; Suppress daily-file-open-hook during org-capture to prevent side-effects
-;; (e.g. bring-forward-overdue cancelling source items while capturing)
+;; (e.g. bring-forward-overdue cancelling source items while capturing).
+;; Only suppressed for actual captures, not goto (C-c d d) operations.
 (defun aj/suppress-daily-hook-during-capture (orig-fn &rest args)
   "Advise org-capture to suppress `aj/daily-file-open-hook'."
   (let ((aj/daily-hook-suppress t))
     (apply orig-fn args)))
 (advice-add 'org-capture :around #'aj/suppress-daily-hook-during-capture)
-(advice-add 'org-roam-dailies--capture :around #'aj/suppress-daily-hook-during-capture)
+
+(defun aj/suppress-daily-hook-during-roam-capture (orig-fn time &optional goto-p &rest args)
+  "Advise `org-roam-dailies--capture' to suppress hook only for captures, not gotos."
+  (if goto-p
+      (apply orig-fn time goto-p args)
+    (let ((aj/daily-hook-suppress t))
+      (apply orig-fn time goto-p args))))
+(advice-add 'org-roam-dailies--capture :around #'aj/suppress-daily-hook-during-roam-capture)
 
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-track-file)
 (add-hook 'org-capture-before-finalize-hook #'aj/dailies-store-capture-marker)
