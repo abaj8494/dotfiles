@@ -2345,9 +2345,18 @@ Preserves transclusion state in current buffer."
         (unless (bound-and-true-p org-transclusion-mode)
           (org-transclusion-mode 1))))))
 
+;; Copy DONE headings to today's Tasks — but ONLY when the state change
+;; happens inside a daily file under * Recurring or * Capture.  Without
+;; this guard the hook also fires when `aj/propagate-done-to-tasks' marks
+;; the corresponding heading DONE in tasks.org, which parasitically copies
+;; the tasks.org version back into the daily's * Tasks (wrong metadata,
+;; duplicates, stale CLOSED dates from other days).
 (add-hook 'org-after-todo-state-change-hook
           (lambda ()
-            (when (equal org-state "DONE")
+            (when (and (equal org-state "DONE")
+                       (aj/daily-date-file-p)
+                       (or (aj/under-heading-p "^\\* Recurring\\b")
+                           (aj/under-heading-p "^\\* Capture\\b")))
               (my/org-roam-copy-todo-to-today))))
 
 ;; ---------------------------------------------------------------------------
