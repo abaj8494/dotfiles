@@ -1,0 +1,143 @@
+# Emacs Configuration — Development Guide
+
+## Installation
+
+Emacs is installed and built through **MacPorts** at `/Applications/MacPorts/Emacs.app`. Key binaries:
+
+| Binary | Path |
+|--------|------|
+| Emacs | `/Applications/MacPorts/Emacs.app/Contents/MacOS/Emacs` |
+| emacsclient | `/Applications/MacPorts/Emacs.app/Contents/MacOS/bin/emacsclient` |
+
+## Daemon Setup
+
+Emacs runs as a **launchd daemon** that starts at login and stays alive in the background. GUI frames are attached via `emacsclient -c`.
+
+### Architecture
+
+```
+launchd (at login)
+  └─ Emacs --fg-daemon          ← headless, loads full config, runs server
+       ├─ emacsclient -c -n     ← GUI frames (opened from Spotlight or terminal)
+       ├─ emacsclient --eval    ← cron jobs (sync-daily.sh, etc.)
+       └─ server socket         ← /tmp/emacs501/server
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/Library/LaunchAgents/org.gnu.emacs.daemon.plist` | launchd agent — starts daemon at login, restarts on crash |
+| `~/Applications/EmacsClient.app` | Spotlight-launchable wrapper — runs `emacsclient -c -n` |
+| `~/Library/Logs/emacs-daemon.log` | Daemon stdout/stderr log |
+
+### Operations
+
+| Task | Command |
+|------|---------|
+| Open a GUI frame | Spotlight → "EmacsClient", or `emacsclient -c -n` |
+| Close a frame (daemon stays) | `C-x 5 0` |
+| Full restart | `M-x kill-emacs`, then launchd auto-restarts |
+| Force restart | `launchctl kickstart -k gui/501/org.gnu.emacs.daemon` |
+| Check daemon status | `emacsclient --eval '(emacs-pid)'` |
+| View daemon log | `tail -f ~/Library/Logs/emacs-daemon.log` |
+| Reload config (no restart) | `C-c R` (`aj/reload-config`) |
+
+### Gotchas
+
+- **Don't launch Emacs.app from Spotlight** — that starts a second independent Emacs with a server socket conflict. Use "EmacsClient" instead.
+- **`(server-start)` in init.el** is guarded by `(unless (server-running-p) ...)` so it's a no-op when running as `--fg-daemon` (which starts the server automatically).
+- **PATH in the daemon** is set explicitly in the plist (`EnvironmentVariables`) because launchd doesn't inherit shell PATH. If you add a new tool (e.g. a new Python), update the plist PATH too.
+- **KeepAlive** is set to `SuccessfulExit: false` — the daemon restarts on crash but NOT on clean `M-x kill-emacs` (exit 0).
+
+## Config Structure
+
+```
+~/.emacs.d/
+  init.el                    ← Entry point, loads modules via (require 'name)
+  elisp/
+    bootstrap.el             ← straight.el package manager bootstrap
+    package-config.el        ← Package declarations (Helm, org-roam, gptel, conda, jupyter, etc.)
+    ui-config.el             ← Theme (gruber), fonts, splash screen
+    org-config.el            ← Org-mode settings, LaTeX export config, link types
+    daily-config.el          ← Daily note system (org-roam-dailies hooks, recurring tasks,
+                                calendar, weather, Garmin integration, rMPP push)
+    anki-config.el           ← Anki-editor integration
+    email-config.el          ← mu4e with mbsync/gmail-lieer
+    aj-bindings.el           ← Custom keybindings (C-c Y prefix)
+    magit-bindings.el        ← Magit keybindings
+    ox-hugo-bindings.el      ← ox-hugo export keybindings
+    auto-save-config.el      ← Auto-save configuration
+    ob-markdown.el           ← Org-babel markdown support
+    java-lsp.el              ← Java LSP (eglot + openjdk@21)
+    gruber-themes.el         ← Custom theme
+    ink.el                   ← Ink integration
+    my-home.el               ← Quick-access Dired paths
+    custom-vars.el           ← custom-set-variables/faces (auto-generated)
+```
+
+All modules use `lexical-binding: t`.
+
+## Key Subsystems
+
+### Daily Notes (`daily-config.el`)
+
+This is the largest config file (~3400 lines). It manages org-roam daily notes with auto-populated structure.
+
+**Hook chain**: `org-roam-dailies-find-file-hook` → `aj/daily-file-open-hook` which:
+1. Detects bare files (`aj/daily-needs-setup-p` — checks for missing `* Journal`)
+2. For new files: inserts week transclude, ensures heading structure, populates recurring tasks, calendar
+3. For existing files: refreshes recurring, brings forward overdue captures, refreshes calendar
+4. Enables `org-transclusion-mode`, saves buffer
+
+**Keybindings** (all under `C-c d` = `org-roam-dailies-map`):
+
+| Key | Function |
+|-----|----------|
+| `C-c d d` | Go to today's daily |
+| `C-c d g` | Go to date (pick from calendar) |
+| `C-c d p` | Pull highlights from rMPP + export + push today's daily PDF |
+| `C-c d r r` | Refresh recurring tasks |
+| `C-c d r c` | Refresh calendar |
+| `C-c d r w` | Refresh week overview |
+| `C-c d r o` | Bring forward overdue items |
+| `C-c d r a` | Insert Anki review chart |
+| `C-c d r j` | Refresh Garmin journal data (`C-u` to force sync) |
+| `C-c d w` | Insert week transclude |
+| `C-c d F` / `B` | Next / previous day |
+
+**rMPP push** (`C-c d p` → `aj/rmpp-push-daily`):
+- Step 1: `make remarkable-pull` (KOReader highlights → sioyek)
+- Step 2: `scripts/sync-daily.sh` (emacsclient populates → batch LaTeX export → scp → xochitl)
+- Output goes to hidden buffer ` *rmpp-push-daily*`
+- Success: Glass.aiff chime
+- Failure: Basso.aiff + edge-tts speaks the error
+- PATH is overridden per-step to include `~/miniconda3/bin` (for pymupdf/fitz)
+
+**Garmin integration**:
+- `aj/garmin-active-gear` — tracks active gear (shoes, etc.) with sport + start date
+- `aj/garmin-gear-mileage` — computes cumulative km from Garmin CSV data
+- `garmin-activity:` link type — on export, renders as `\includegraphics` if description is a `file:` image
+- `aj/garmin-open-activity-dashboard` — generates HTML dashboard via `~/.emacs.d/scripts/garmin-activity-dashboard.py`
+- Route maps become centered captioned figures in LaTeX (`#+CAPTION: *Gear: ...* --- N km`)
+
+### Headless Batch Export
+
+`~/Documents/remarkable-paper-pro/scripts/batch-pdf-init.el` is a minimal init for `Emacs --batch -Q` that loads only what's needed for org→PDF export:
+- org, org-transclusion, org-roam (from straight's build dirs)
+- lualatex via latexmk
+- Custom link types (`garmin-activity:`, `elisp:`) so they don't become BROKEN LINK markers
+- Smart quotes, 6 headline levels, RedViolet hyperlinks
+
+This file must be kept in sync with `daily-config.el` and `org-config.el` for any export-affecting settings. The `sync-daily.sh` cron uses emacsclient to populate daily files (triggers hooks) then batch Emacs for the heavy LaTeX compilation.
+
+### Package Manager
+
+Uses **straight.el** (not package.el). Packages are cloned to `~/.emacs.d/straight/repos/` and built to `~/.emacs.d/straight/build/`. The batch init adds build dirs to `load-path` manually.
+
+### Org-roam
+
+- Directory: `~/Documents/new-site/content-org/`
+- Database: `~/.emacs.d/org-roam.db`
+- Dailies directory: `~/Documents/new-site/content-org/daily/`
+- ID resolution: `org-roam-id.el` advises `org-id-find` to query `org-roam.db`, loaded automatically via `(require 'org-roam)`
