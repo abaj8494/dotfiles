@@ -1,10 +1,10 @@
 [metadata]
 name = "c-pick"
-description = "Pick a repo under ~/c and open it as a sesh session (main: nvim, split window: lazygit via the ~/c/* wildcard)."
+description = "Pick a code repo under ~/c or ~/Documents/code-archived and open it as a sesh session (main: nvim, split window: lazygit via the matching wildcard)."
 requirements = ["fd", "sesh"]
 
 [source]
-command = "fd -t d -d 2 . ~/c"
+command = "fd -t d -d 2 . ~/c ~/Documents/code-archived"
 display = "{split:/:-2..}"
 
 [preview]

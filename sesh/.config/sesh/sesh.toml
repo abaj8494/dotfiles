@@ -93,8 +93,13 @@ path = "~/Downloads"
 startup_command = "lc"
 
 [[session]]
-name = "repositories (c)"
+name = "code (~/c)"
 path = "~/c"
+startup_command = "l"
+
+[[session]]
+name = "code (archived)"
+path = "~/Documents/code-archived"
 startup_command = "l"
 
 [[session]]
@@ -203,6 +208,10 @@ startup_script = "lazygit"
 
 [[wildcard]]
 pattern = "~/c/*"
+windows = ["lazygit"]
+
+[[wildcard]]
+pattern = "~/Documents/code-archived/*"
 windows = ["lazygit"]
 
 # projects
