@@ -58,6 +58,7 @@ When **adding** a config:
   - `Prefix+K` → gum popup sesh picker
   - `Prefix+T` → themed fzf-tmux sesh picker (calls `~/.config/sesh/scripts/picker.sh`)
   - `Prefix+C-t` → tv channel picker in a popup
+  - **Popup PATH gotcha**: `display-popup -E` runs commands under a stripped PATH (`~/.opencode/bin:/opt/homebrew/bin:/bin:/usr/bin`) — `~/.local/bin` is *not* included. Binaries installed there (e.g. `tv`) must be invoked by absolute path or wrapped, otherwise the popup snaps shut with a silent "command not found".
 - **`zsh`** — oh-my-zsh + powerlevel10k. Note: the `z` plugin is loaded by oh-my-zsh, then `unalias z` + `eval "$(zoxide init zsh)"` replaces it with zoxide (while keeping `z` as the invocation). The old z database (`zsh/.config/zsh/.z`) was imported into zoxide via `zoxide import --from=z --merge`.
 - **`watchdog`** — LaunchAgents only. Contains `com.aayushbajaj.watchdog-serve.plist` that runs the local watchdog dashboard server (port 9847) under launchd with `KeepAlive`. The `collect` agent (sampling every 5min) was set up outside this repo and lives as a plain file in `~/Library/LaunchAgents/com.aayushbajaj.system-health-monitor.plist`.
 - **`nvim-archived-20251209/`** — snapshot of a previous nvim config, kept for reference; not meant to be stowed.
