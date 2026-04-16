@@ -234,6 +234,27 @@ name = "remarkable"
 path = "~/Documents/remarkable-paper-pro"
 startup_script = "~/.config/sesh/scripts/remarkable_prep.sh"
 
+[[session]]
+name = "monitoring"
+path = "~"
+startup_script = "~/.config/sesh/scripts/monitoring_prep.sh"
+
+[[session]]
+name = "flashcards"
+path = "~/Documents/new-site/content-org/flashcards"
+
+[[session]]
+name = "configs"
+path = "~/.config"
+
+[[session]]
+name = "Finances"
+path = "~/Documents/Finances"
+
+[[session]]
+name = "jobsync"
+path = "~/Documents/code-private/jobsync"
+
 # [[session]]
 # name = "leaderkey config"
 # path = "nvim ~/c/dotfiles/.config/leaderkey/config.json"
