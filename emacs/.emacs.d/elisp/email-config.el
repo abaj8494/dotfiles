@@ -63,11 +63,12 @@
           (:name "Gmail" :query "path:gmail-lieer/** and tag:inbox" :key "g" :sort-order newest-first)
           (:name "Abaj" :query "folder:abaj/Inbox" :key "b" :sort-order newest-first)
           (:name "UNSW" :query "folder:unsw/Inbox" :key "n" :sort-order newest-first)
+          (:name "School" :query "folder:unsw-school/Inbox" :key "S" :sort-order newest-first)
           ;; Gmail labels
           (:name "Starred" :query "path:gmail-lieer/** and (tag:flagged or tag:YELLOW_STAR)" :key "f" :sort-order newest-first)
           (:name "Finance" :query "path:gmail-lieer/** and tag:Finance" :key "$" :sort-order newest-first)
           (:name "Orders" :query "path:gmail-lieer/** and tag:Orders" :key "o" :sort-order newest-first)
-          (:name "Sent" :query "tag:sent or folder:abaj/Sent or folder:\"unsw/Sent Items\"" :key "s" :sort-order newest-first)
+          (:name "Sent" :query "tag:sent or folder:abaj/Sent or folder:\"unsw/Sent Items\" or folder:\"unsw-school/Sent Items\"" :key "s" :sort-order newest-first)
           (:name "Trash" :query "tag:trash" :key "x" :sort-order newest-first)))
 
   ;; Show counts in hello screen
@@ -86,13 +87,34 @@
   (setq notmuch-identities
         '("Aayush Bajaj <aayushbajaj7@gmail.com>"
           "Aayush Bajaj <j@abaj.ai>"
-          "Aayush Bajaj <z5362216@zmail.unsw.edu.au>"))
+          "Aayush Bajaj <z5362216@zmail.unsw.edu.au>"
+          "Aayush Bajaj <aayush.bajaj@student.unsw.edu.au>"))
 
-  ;; FCC - save sent mail
+  ;; FCC - save sent mail. Absolute paths are required because we disable
+  ;; `notmuch-maildir-use-notmuch-insert' below (see that comment for why).
+  ;; With insert disabled, Fcc routes through `notmuch-maildir-fcc-file-fcc'
+  ;; which checks `notmuch-maildir-fcc-dir-is-maildir-p' on the raw header
+  ;; string — relative paths would get resolved against `default-directory'
+  ;; (= ~), not the notmuch mailstore.
   (setq notmuch-fcc-dirs
-        '(("aayushbajaj7@gmail.com" . nil)  ; Gmail saves sent automatically
-          ("j@abaj.ai" . "abaj/Sent")
-          ("z5362216@zmail.unsw.edu.au" . "unsw/Sent Items")))
+        `(("aayushbajaj7@gmail.com" . nil)  ; Gmail saves sent automatically
+          ("j@abaj.ai" . ,(expand-file-name "~/Maildir/abaj/Sent"))
+          ("z5362216@zmail.unsw.edu.au" . ,(expand-file-name "~/Maildir/unsw/Sent Items"))
+          ("aayush.bajaj@student.unsw.edu.au" . ,(expand-file-name "~/Maildir/unsw-school/Sent Items"))))
+
+  ;; Disable `notmuch insert' for Fcc. The insert path calls
+  ;; `notmuch-maildir-fcc--split-fcc-header' which splits on spaces — so a
+  ;; folder named "Sent Items" becomes folder "Sent" + tag "Items" and the
+  ;; send fails with "Insert failed: (r)etry, (c)reate folder..." prompt.
+  ;; File-fcc path handles spaces correctly; `notmuch new' on the next
+  ;; sync will index the written message.
+  (setq notmuch-maildir-use-notmuch-insert nil)
+
+  ;; Address completion on To:/Cc:/Bcc: from notmuch db
+  (setq notmuch-address-command 'internal
+        notmuch-address-use-company nil
+        notmuch-address-save-filename "~/.cache/notmuch-addresses")
+  (notmuch-address-setup)
 
   ;; ---------------------------------------------------------------------------
   ;; Marking system for bulk operations
@@ -224,6 +246,7 @@
       (cond
        ((string-match "gmail-lieer" files) 'gmail)
        ((string-match "/abaj/" files) 'abaj)
+       ((string-match "/unsw-school/" files) 'school)
        ((string-match "/unsw/" files) 'unsw)
        (t nil))))
 
@@ -237,19 +260,21 @@
           (cond
            ((string-match "gmail-lieer" files) 'gmail)
            ((string-match "/abaj/" files) 'abaj)
+           ((string-match "/unsw-school/" files) 'school)
            ((string-match "/unsw/" files) 'unsw)
            (t nil))))))
 
   (defun my/notmuch-move-to-folder (folder)
-    "Move current IMAP message to FOLDER (for abaj/unsw only)."
+    "Move current IMAP message to FOLDER (for abaj/unsw/school only)."
     (let* ((file (notmuch-show-get-filename))
            (account (my/notmuch-get-message-account))
            (maildir (cond
                      ((eq account 'abaj) "~/Maildir/abaj")
                      ((eq account 'unsw) "~/Maildir/unsw")
+                     ((eq account 'school) "~/Maildir/unsw-school")
                      (t nil))))
       (if (not maildir)
-          (message "Move only works for IMAP accounts (abaj/unsw)")
+          (message "Move only works for IMAP accounts (abaj/unsw/school)")
         (let* ((dest-dir (expand-file-name (concat folder "/cur") maildir))
                (basename (file-name-nondirectory file))
                (dest-file (expand-file-name basename dest-dir)))
@@ -287,10 +312,16 @@
       (setq my/notmuch-pending-changes t)
       (notmuch-search-next-thread)))
 
+  (define-key notmuch-search-mode-map (kbd "m i")
+    (lambda () (interactive)
+      (notmuch-search-tag '("+invoice-pending" "-inbox"))
+      (setq my/notmuch-pending-changes t)
+      (notmuch-search-next-thread)))
+
   (define-key notmuch-search-mode-map (kbd "m u")
     (lambda () (interactive)
       "Undo move - restore to inbox"
-      (notmuch-search-tag '("+inbox" "-Finance" "-Orders"))
+      (notmuch-search-tag '("+inbox" "-Finance" "-Orders" "-invoice-pending"))
       (setq my/notmuch-pending-changes t)
       (notmuch-search-next-thread)))
 
@@ -426,10 +457,15 @@ for part in msg.walk():
       (notmuch-show-tag '("+Orders" "-inbox"))
       (setq my/notmuch-pending-changes t)))
 
+  (define-key notmuch-show-mode-map (kbd "m i")
+    (lambda () (interactive)
+      (notmuch-show-tag '("+invoice-pending" "-inbox"))
+      (setq my/notmuch-pending-changes t)))
+
   (define-key notmuch-show-mode-map (kbd "m u")
     (lambda () (interactive)
       "Undo move - restore to inbox"
-      (notmuch-show-tag '("+inbox" "-Finance" "-Orders"))
+      (notmuch-show-tag '("+inbox" "-Finance" "-Orders" "-invoice-pending"))
       (setq my/notmuch-pending-changes t)))
 
   ;; Move to IMAP folder (for abaj/unsw)
@@ -585,6 +621,12 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
 
   (define-key notmuch-tree-mode-map (kbd "J") 'my/jobsync-rotate-classification-tree))
 
+;; Route Fcc through notmuch's maildir handler (not message.el's default
+;; file-save, which writes a literal file and triggers the "Insert failed:
+;; (r)etry, (c)reate folder..." prompt). Kept at top level so it always
+;; applies on config reload, regardless of what's loaded first.
+(setq message-fcc-handler-function 'notmuch-maildir-fcc-write-buffer-to-maildir)
+
 ;; =============================================================================
 ;; SMTP - Per-account sending
 ;; =============================================================================
@@ -598,14 +640,29 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
 (use-package message
   :straight (:type built-in)
   :config
-  (setq message-send-mail-function 'message-smtpmail-send-it
-        message-kill-buffer-on-exit t)
+  ;; Send via msmtp (external sendmail). msmtp's per-account `from` fields
+  ;; in ~/.msmtprc match against the envelope From — so it selects the right
+  ;; account (gmail/abaj/unsw/unsw-school) and auth method (app password or
+  ;; XOAUTH2) on its own. Emacs just pipes the message to stdin.
+  ;;
+  ;; Why not smtpmail: `smtpmail-auth-supported' is (cram-md5 plain login) —
+  ;; no XOAUTH2. Office365 student tenant (Conditional Access) blocks basic
+  ;; SMTP auth, so smtpmail can't reach the PGrad mailbox at all.
+  (setq message-send-mail-function 'message-send-mail-with-sendmail
+        sendmail-program "/opt/local/bin/msmtp"
+        message-sendmail-f-is-evil nil
+        message-sendmail-envelope-from 'header
+        mail-specify-envelope-from t
+        mail-envelope-from 'header
+        message-kill-buffer-on-exit t
+        ;; Don't leak "MacBook-Pro.local.mail-host-address-is-not-set" into Message-IDs
+        mail-host-address "abaj.ai")
 
   ;; ---------------------------------------------------------------------------
   ;; Identity configuration
   ;; ---------------------------------------------------------------------------
   (defvar my/email-identities
-    '(("aayushbajaj7@gmail.com"
+    `(("aayushbajaj7@gmail.com"
        :name "Aayush Bajaj"
        :smtp-server "smtp.gmail.com"
        :smtp-port 465
@@ -616,14 +673,21 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
        :smtp-server "mail.abaj.ai"
        :smtp-port 465
        :smtp-stream ssl
-       :fcc "abaj/Sent")
+       :fcc ,(expand-file-name "~/Maildir/abaj/Sent"))
       ("z5362216@zmail.unsw.edu.au"
        :name "Aayush Bajaj"
        :smtp-server "smtp.office365.com"
        :smtp-port 587
        :smtp-stream starttls
-       :fcc "unsw/Sent Items"))
-    "Email identity configurations.")
+       :fcc ,(expand-file-name "~/Maildir/unsw/Sent Items"))
+      ("aayush.bajaj@student.unsw.edu.au"
+       :name "Aayush Bajaj"
+       :smtp-server "smtp.office365.com"
+       :smtp-port 587
+       :smtp-stream starttls
+       :fcc ,(expand-file-name "~/Maildir/unsw-school/Sent Items")))
+    "Email identity configurations. :fcc paths are absolute —
+see the `notmuch-fcc-dirs' comment above for why.")
 
   (defun my/email-get-identity (email)
     "Get identity config for EMAIL address."
@@ -659,12 +723,14 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
         (message-beginning-of-line)
         (delete-region (point) (line-end-position))
         (insert (format "%s <%s>" next-name next-email)))
-      ;; Update or add Fcc header
+      ;; Update or add Fcc header. After `re-search-forward "^Fcc: "' point
+      ;; sits at the value start; don't call `message-beginning-of-line' —
+      ;; it would jump to BOL and the delete-region would swallow the
+      ;; "Fcc: " prefix, leaving an orphan bare-value line.
       (save-excursion
         (goto-char (point-min))
         (if (re-search-forward "^Fcc: " nil t)
             (progn
-              (message-beginning-of-line)
               (delete-region (point) (line-end-position))
               (if next-fcc
                   (insert next-fcc)
@@ -679,28 +745,6 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
                next-email
                (plist-get (cdr next-identity) :smtp-server)
                (or next-fcc "none"))))
-
-  ;; ---------------------------------------------------------------------------
-  ;; SMTP configuration with logging
-  ;; ---------------------------------------------------------------------------
-  (defun my/set-smtp-from-address ()
-    "Set SMTP server based on From address with logging."
-    (let* ((from (message-fetch-field "from"))
-           (email (my/email-extract-address from))
-           (identity (my/email-get-identity email)))
-      (if identity
-          (let ((server (plist-get (cdr identity) :smtp-server))
-                (port (plist-get (cdr identity) :smtp-port))
-                (stream (plist-get (cdr identity) :smtp-stream)))
-            (setq smtpmail-smtp-server server
-                  smtpmail-smtp-service port
-                  smtpmail-stream-type stream)
-            (message "SMTP configured: %s:%s (%s) for %s"
-                     server port stream email))
-        ;; Unknown identity - WARN
-        (message "WARNING: Unknown email identity '%s' - SMTP may fail!" email)
-        (unless (yes-or-no-p (format "Unknown identity '%s'. Send anyway? " email))
-          (user-error "Send cancelled - unknown identity")))))
 
   ;; ---------------------------------------------------------------------------
   ;; Pre-send validation
@@ -738,7 +782,6 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
                (or (plist-get (cdr identity) :smtp-server) "UNKNOWN"))))
 
   (add-hook 'message-send-hook 'my/email-validate-before-send)
-  (add-hook 'message-send-hook 'my/set-smtp-from-address)
 
   ;; Bind identity cycling in message-mode
   (add-hook 'message-mode-hook
@@ -820,7 +863,8 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
 (defvar my/email-account-queries
   '((gmail . "path:gmail-lieer/** and tag:inbox")
     (abaj . "folder:abaj/Inbox")
-    (unsw . "folder:unsw/Inbox"))
+    (unsw . "folder:unsw/Inbox")
+    (school . "folder:unsw-school/Inbox"))
   "Notmuch queries for each account inbox.")
 
 (defun my/email-update-unread-count ()
@@ -834,7 +878,7 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
                    (string-to-number
                     (string-trim
                      (shell-command-to-string cmd))))))
-         '(gmail abaj unsw))))
+         '(gmail abaj unsw school))))
 
 (defun my/email-total-unread ()
   "Return total unread count."
@@ -863,7 +907,8 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
         (pending my/notmuch-pending-changes)
         (gmail (or (alist-get 'gmail my/email-unread-counts) 0))
         (abaj (or (alist-get 'abaj my/email-unread-counts) 0))
-        (unsw (or (alist-get 'unsw my/email-unread-counts) 0)))
+        (unsw (or (alist-get 'unsw my/email-unread-counts) 0))
+        (school (or (alist-get 'school my/email-unread-counts) 0)))
     (concat
      (if syncing (propertize " SYNCING" 'face 'font-lock-comment-face) "")
      (if pending (propertize " *" 'face 'warning) "")
@@ -875,6 +920,8 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
          (push (my/email-make-clickable (format "A:%d" abaj) 'abaj) parts))
        (when (> unsw 0)
          (push (my/email-make-clickable (format "U:%d" unsw) 'unsw) parts))
+       (when (> school 0)
+         (push (my/email-make-clickable (format "S:%d" school) 'school) parts))
        (if parts
            (concat " " (string-join (nreverse parts) " "))
          "")))))
@@ -995,7 +1042,11 @@ Skips sync if user was marking emails in the last 10 seconds."
   :straight t
   :after notmuch
   :config
-  (setq org-msg-options "html-postamble:nil toc:nil author:nil email:nil"
+  ;; `tex:luamagick' tells org-export's HTML backend to convert every LaTeX
+  ;; fragment (\(...\), $...$, \[...\]) into a PNG using the `luamagick'
+  ;; processor defined in org-config.el. The PNGs are embedded as inline
+  ;; MIME parts so recipients see rendered math without running JavaScript.
+  (setq org-msg-options "html-postamble:nil toc:nil author:nil email:nil tex:luamagick"
         org-msg-startup "hidestars indent inlineimages"
         org-msg-greeting-fmt nil  ; No automatic greeting
         org-msg-signature nil     ; Use notmuch signature instead
@@ -1003,6 +1054,31 @@ Skips sync if user was marking emails in the last 10 seconds."
                                        (reply-to-html . (text html))
                                        (reply-to-text . (text)))
         org-msg-convert-citation t)
+
+  ;; Redirect generated LaTeX fragment PNGs to a dedicated cache directory so
+  ;; they don't clutter the compose buffer's default-directory (usually ~/).
+  ;; org-format-latex hashes fragment contents into the filename, so the
+  ;; cache is reused across sends. Also bury the `*Org Preview LaTeX Output*'
+  ;; buffer that `org-create-formula-image' pops up during export.
+  (defun aj/org-msg-latex-cache-dir (orig-fn &rest args)
+    "Redirect LaTeX fragment PNGs to a dedicated cache dir during org-msg export.
+Also suppress the `*Org Preview LaTeX Output*' log buffer that
+`org-create-formula-image' pops up while compiling fragments."
+    (let ((org-preview-latex-image-directory
+           (expand-file-name "org-msg-ltximg/" user-emacs-directory))
+          ;; Prevent display of the LaTeX compilation log buffer.
+          (display-buffer-alist
+           (cons '("\\*Org Preview LaTeX Output\\*"
+                   (display-buffer-no-window)
+                   (allow-no-window . t))
+                 display-buffer-alist)))
+      (unwind-protect
+          (apply orig-fn args)
+        (when-let ((buf (get-buffer "*Org Preview LaTeX Output*")))
+          (let ((win (get-buffer-window buf)))
+            (when win (delete-window win)))
+          (kill-buffer buf)))))
+  (advice-add 'org-msg-org-to-xml :around #'aj/org-msg-latex-cache-dir)
 
   ;; Add message-mode header navigation keybindings to org-msg-edit-mode
   (with-eval-after-load 'org-msg

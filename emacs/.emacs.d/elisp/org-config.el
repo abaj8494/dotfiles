@@ -427,7 +427,11 @@
                :latex-compiler
                ("lualatex -interaction nonstopmode -output-directory %o %f")
                :image-converter
-               ("convert -density %D -trim -antialias %f -quality 100 %O")))
+               ;; ImageMagick 7+: use `magick' directly. The legacy `convert'
+               ;; shim emits deprecation warnings and in some builds drops the
+               ;; image silently, which breaks both org-fragtog previews and
+               ;; org-msg LaTeX-fragment export.
+               ("magick -density %D %f -trim -antialias -quality 100 %O")))
 
 ;; Default to PNG (raster, scalable)
 
@@ -453,7 +457,7 @@
   (setq org-preview-latex-default-process 'luamagick)
   (message "LaTeX preview: PNG (raster, 2x scale)"))
 
-(defvar aj/latex-preview-scale 1.0
+(defvar aj/latex-preview-scale 0.5
   "Display scale factor for custom LaTeX previews (aj/latex-preview-at-point).
 Adjusts the `:scale' parameter passed to `create-image'.")
 
@@ -679,6 +683,18 @@ LOG-FILE is the .log file, ENV-NAME is the environment type."
         (insert "\n")))
     (display-buffer aj/latex-preview-log-buffer)))
 
+(defun aj/latex--fg-color-command ()
+  "Return a LaTeX \\color{...} command matching the current Emacs foreground.
+Returns e.g. \"\\color[HTML]{E4E4EF}\" for dark themes, or empty string for light."
+  (let* ((fg (face-attribute 'default :foreground nil t))
+         (rgb (color-values fg)))
+    (if rgb
+        (format "\\color[HTML]{%02X%02X%02X}\n"
+                (/ (nth 0 rgb) 256)
+                (/ (nth 1 rgb) 256)
+                (/ (nth 2 rgb) 256))
+      "")))
+
 (defun aj/latex--render-preview (env-name content beg end &optional extra-preamble)
   "Render LaTeX CONTENT of environment ENV-NAME as preview overlay between BEG and END.
 EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
@@ -696,6 +712,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
          (log-file (concat (file-name-sans-extension tex-file) ".log"))
          (img-file (concat (file-name-sans-extension tex-file)
                            (if (eq org-preview-latex-default-process 'ajlua) ".svg" ".png")))
+         (fg-cmd (aj/latex--fg-color-command))
          (preamble (if use-buf-preamble
                        (aj/latex--buffer-preview-preamble extra-preamble)
                      (concat
@@ -705,7 +722,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
                       (or extra-preamble "")
                       "\\begin{document}\n")))
          (postamble "\n\\end{document}\n")
-         (full-content (concat preamble content postamble)))
+         (full-content (concat preamble fg-cmd content postamble)))
     ;; Ensure directory exists
     (unless (file-directory-p temporary-file-directory)
       (make-directory temporary-file-directory t))
@@ -723,7 +740,7 @@ EXTRA-PREAMBLE contains additional preamble commands extracted from the block."
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
-                          (format "convert -density 300 -trim -antialias %s -quality 100 %s"
+                          (format "magick -density 300 %s -trim -antialias -quality 100 %s"
                                   (shell-quote-argument pdf-file)
                                   (shell-quote-argument img-file))))
            (buf (current-buffer)))
@@ -818,7 +835,8 @@ EXTRA-PREAMBLE is appended before \\begin{document}."
      filtered-headers "\n"
      "\\pagestyle{empty}\n"
      (or extra-preamble "")
-     "\\begin{document}\n")))
+     "\\begin{document}\n"
+     (aj/latex--fg-color-command))))
 
 (defun aj/chess-preview-at-point ()
   "Toggle chessboard preview at point using buffer's #+LATEX_HEADER directives.
@@ -889,7 +907,7 @@ If preview exists, remove it. Otherwise, render it."
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
-                          (format "convert -density 300 -trim -antialias %s -quality 100 %s"
+                          (format "magick -density 300 %s -trim -antialias -quality 100 %s"
                                   (shell-quote-argument pdf-file)
                                   (shell-quote-argument img-file)))))
       (set-process-sentinel
@@ -1088,7 +1106,7 @@ For chess blocks, EXTRA-PREAMBLE contains buffer #+LATEX_HEADER lines to use as 
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
-                          (format "convert -density 300 -trim -antialias %s -quality 100 %s"
+                          (format "magick -density 300 %s -trim -antialias -quality 100 %s"
                                   (shell-quote-argument pdf-file)
                                   (shell-quote-argument img-file)))))
       (set-process-sentinel
@@ -1196,7 +1214,7 @@ because all fragments are compiled together."
                             (format "inkscape --pdf-poppler --export-text-to-path --export-plain-svg --export-area-drawing --export-filename=%s %s"
                                     (shell-quote-argument img-file)
                                     (shell-quote-argument pdf-file))
-                          (format "convert -density 300 -trim -antialias %s -quality 100 %s"
+                          (format "magick -density 300 %s -trim -antialias -quality 100 %s"
                                   (shell-quote-argument pdf-file)
                                   (shell-quote-argument img-file)))))
       (set-process-sentinel
@@ -1490,21 +1508,9 @@ Only applies to LaTeX-based backends."
 (setq org-latex-hyperref-template
       (aj/latex--hyperref-template-for-color aj/latex-link-color-default))
 
-;; Open exported PDFs in Chrome (new tab in existing window)
-(defun aj/open-pdf-in-chrome (file)
-  "Open FILE in Google Chrome."
-  (start-process "chrome-pdf" nil "open" "-a" "Google Chrome" file))
-
-(defun aj/org-latex-export-and-open-chrome ()
-  "Export Org to PDF and open in Chrome."
-  (interactive)
-  (let ((pdf-file (org-latex-export-to-pdf)))
-    (when pdf-file
-      (aj/open-pdf-in-chrome pdf-file))))
-
-;; Override PDF opening for org-export to use Chrome
+;; Open exported PDFs in sioyek
 (with-eval-after-load 'org
-  (add-to-list 'org-file-apps '("\\.pdf\\'" . "open -a 'Google Chrome' %s")))
+  (add-to-list 'org-file-apps '("\\.pdf\\'" . "sioyek %s")))
 
 ;; LaTeX packages for inline previews only (not exports)
 ;; Exports use their own class templates; adding packages globally causes hyperref clashes
@@ -1616,34 +1622,53 @@ Only applies to LaTeX-based backends."
   "Tracks the last LaTeX environment point was in (buffer-local).
 Value is (ENV-NAME BEG END) or nil.")
 
+(defun aj/latex-fragtog--same-env-p (a b)
+  "Return non-nil if A and B refer to the same environment.
+Compares name and start position only (end shifts during edits)."
+  (and a b
+       (string= (nth 0 a) (nth 0 b))
+       (= (nth 1 a) (nth 1 b))))
+
+(defun aj/latex-fragtog--render-env (env buf)
+  "Schedule a re-render of ENV in BUF after `org-fragtog-preview-delay'."
+  (let ((beg-marker (copy-marker (nth 1 env)))
+        (env-name (nth 0 env)))
+    (run-with-timer
+     org-fragtog-preview-delay nil
+     (lambda ()
+       (let ((beg (marker-position beg-marker)))
+         (when (buffer-live-p buf)
+           (with-current-buffer buf
+             ;; Only render if the user's cursor isn't back inside this env
+             (let ((user-env (aj/latex--find-environment-at-point)))
+               (unless (and user-env
+                            (aj/latex-fragtog--same-env-p
+                             user-env (list env-name beg nil)))
+                 (save-excursion
+                   (goto-char (+ beg (length (format "\\begin{%s}" env-name))))
+                   (aj/latex-preview-at-point)))))))
+       (set-marker beg-marker nil)))))
+
+(defun aj/latex-fragtog--clear-env (env)
+  "Remove preview overlays for ENV."
+  (dolist (ov (overlays-in (nth 1 env) (nth 2 env)))
+    (when (overlay-get ov 'aj-latex-preview)
+      (delete-overlay ov))))
+
 (defun aj/latex-fragtog-hook ()
   "Toggle LaTeX environment preview when cursor enters/leaves.
 Called from `post-command-hook'. Works with all environments in
 `aj/latex-preview-environments'."
   (when (derived-mode-p 'org-mode)
-    (let ((current-env (aj/latex--find-environment-at-point)))
-      (cond
-       ;; Entered an environment: clear its preview to show source
-       ((and current-env (not aj/latex-fragtog--last-env))
-        (let ((beg (nth 1 current-env))
-              (end (nth 2 current-env)))
-          (dolist (ov (overlays-in beg end))
-            (when (overlay-get ov 'aj-latex-preview)
-              (delete-overlay ov)))))
-       ;; Left an environment: render preview after delay
-       ((and aj/latex-fragtog--last-env (not current-env))
-        (let ((env aj/latex-fragtog--last-env)
-              (buf (current-buffer)))
-          (run-with-timer
-           org-fragtog-preview-delay nil
-           (lambda ()
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (save-excursion
-                   (goto-char (nth 1 env))
-                   ;; Only render if we're still outside the environment
-                   (unless (aj/latex--find-environment-at-point)
-                     (aj/latex-preview-at-point))))))))))
+    (let ((current-env (aj/latex--find-environment-at-point))
+          (last-env aj/latex-fragtog--last-env))
+      (unless (aj/latex-fragtog--same-env-p current-env last-env)
+        ;; Left an environment: re-render it
+        (when last-env
+          (aj/latex-fragtog--render-env last-env (current-buffer)))
+        ;; Entered an environment: clear its preview to show source
+        (when current-env
+          (aj/latex-fragtog--clear-env current-env)))
       (setq aj/latex-fragtog--last-env current-env))))
 
 (add-hook 'org-mode-hook
@@ -1937,18 +1962,26 @@ Uses today's date with the time extracted from the heading."
 
 ;; Push to gcal after capture finalization only if C-c C-s was used during capture
 (defun aj/gcal-after-capture-finalize ()
-  "Push newly captured item to Google Calendar if scheduled via `org-schedule'."
+  "Push newly captured item to Google Calendar if scheduled via `org-schedule'.
+Deferred via a 0-delay timer so the push runs after the capture's dynamic
+context (windows, minibuffer state) has fully unwound — otherwise pinentry
+can't land and GPG decrypt of oauth2-auto.plist aborts with \"Can't decrypt\"."
   (when aj/--gcal-scheduled-during-capture
     (setq aj/--gcal-scheduled-during-capture nil)
-    (condition-case err
-        (when-let ((marker org-capture-last-stored-marker))
-          (when (marker-buffer marker)
-            (with-current-buffer (marker-buffer marker)
-              (save-excursion
-                (goto-char marker)
-                (aj/gcal-maybe-push-at-point)))))
-      (error
-       (message "org-gcal post failed: %s" (error-message-string err))))))
+    (when-let ((marker org-capture-last-stored-marker))
+      (when (marker-buffer marker)
+        (run-at-time
+         0 nil
+         (lambda (m)
+           (condition-case err
+               (when (marker-buffer m)
+                 (with-current-buffer (marker-buffer m)
+                   (save-excursion
+                     (goto-char m)
+                     (aj/gcal-maybe-push-at-point))))
+             (error
+              (message "org-gcal post failed: %s" (error-message-string err)))))
+         marker)))))
 
 (add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize t)
 

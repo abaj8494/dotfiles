@@ -632,55 +632,61 @@ Matches regardless of TODO state, priority, or tags."
 
 (defun aj/bring-forward-overdue-captures ()
   "Bring forward TODO items from previous days' * Capture into today's * Capture.
-Items are tagged :overdue: and only added if not already present."
+Items are tagged :overdue: and only added if not already present.
+No-op when the buffer's title date is in the future relative to real today —
+otherwise opening a future daily would scan backward and CANCEL-stamp
+present/past files."
   (interactive)
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
       (let* ((date-str (match-string 1))
-             (overdue (aj/get-overdue-captures date-str))
-             (added 0))
-        (when overdue
-          (aj/ensure-heading-exists "Capture")
-          (dolist (pair overdue)
-            (let ((heading-text (car pair))
-                  (content (nth 1 pair))
-                  (source-file (nth 2 pair)))
-              (unless (aj/capture-heading-exists-p heading-text)
-                ;; Find end of Capture section to insert
-                (goto-char (point-min))
-                (when (re-search-forward "^\\* Capture" nil t)
-                  (let ((section-end (save-excursion
-                                       (forward-line 1)
-                                       (if (re-search-forward "^\\* " nil t)
-                                           (line-beginning-position)
-                                         (point-max)))))
-                    (goto-char section-end)
-                    ;; Insert before next heading
-                    (unless (bolp) (insert "\n"))
-                    (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
-                      (insert "\n"))
-                    (insert content "\n")
-                    (setq added (1+ added))
-                    ;; Mark source item as CANCEL to prevent re-scanning
-                    (when source-file
-                      (with-current-buffer (find-file-noselect source-file)
-                        (save-excursion
-                          (goto-char (point-min))
-                          (when (re-search-forward "^\\* Capture" nil t)
-                            (let ((src-end (save-excursion
-                                             (if (re-search-forward "^\\* " nil t)
-                                                 (line-beginning-position)
-                                               (point-max)))))
-                              (when (re-search-forward
-                                     (format "^\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
-                                             (regexp-quote heading-text))
-                                     src-end t)
-                                (beginning-of-line)
-                                (org-todo "CANCEL")))))
-                        (save-buffer)))))))))
-        (when (> added 0)
-          (message "Brought forward %d overdue capture(s) for %s" added date-str))))))
+             (today (format-time-string "%Y-%m-%d")))
+        (unless (string> date-str today)
+          (let* ((overdue (aj/get-overdue-captures date-str))
+                 (added 0))
+            (when overdue
+              (aj/ensure-heading-exists "Capture")
+              (dolist (pair overdue)
+                (let ((heading-text (car pair))
+                      (content (nth 1 pair))
+                      (source-file (nth 2 pair)))
+                  (unless (aj/capture-heading-exists-p heading-text)
+                    ;; Find end of Capture section to insert
+                    (goto-char (point-min))
+                    (when (re-search-forward "^\\* Capture" nil t)
+                      (let ((section-end (save-excursion
+                                           (forward-line 1)
+                                           (if (re-search-forward "^\\* " nil t)
+                                               (line-beginning-position)
+                                             (point-max)))))
+                        (goto-char section-end)
+                        ;; Insert before next heading
+                        (unless (bolp) (insert "\n"))
+                        (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                          (insert "\n"))
+                        (insert content "\n")
+                        (setq added (1+ added))
+                        ;; Mark source item as CANCEL to prevent re-scanning
+                        (when source-file
+                          (with-current-buffer (find-file-noselect source-file)
+                            (save-excursion
+                              (goto-char (point-min))
+                              (when (re-search-forward "^\\* Capture" nil t)
+                                (let ((src-end (save-excursion
+                                                 (if (re-search-forward "^\\* " nil t)
+                                                     (line-beginning-position)
+                                                   (point-max)))))
+                                  (when (re-search-forward
+                                         (format "^\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
+                                                 (regexp-quote heading-text))
+                                         src-end t)
+                                    (beginning-of-line)
+                                    (let ((aj/daily-hook-suppress t))
+                                      (org-todo "CANCEL"))))))
+                            (save-buffer)))))))))
+            (when (> added 0)
+              (message "Brought forward %d overdue capture(s) for %s" added date-str))))))))
 
 (defun aj/get-overdue-recurring-tasks (date-str)
   "Return overdue priority TODO subtrees from * Recurring in previous daily notes.
@@ -798,66 +804,72 @@ Matches regardless of TODO state, priority, or tags."
 (defun aj/bring-forward-overdue-recurring ()
   "Bring forward priority TODO items from previous days' * Recurring sections.
 Items are tagged :overdue: and placed under the same parent heading.
-Source items are marked as CANCEL to prevent re-scanning."
+Source items are marked as CANCEL to prevent re-scanning.
+No-op when the buffer's title date is in the future relative to real today —
+otherwise opening a future daily would scan backward and CANCEL-stamp
+present/past files."
   (interactive)
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
       (let* ((date-str (match-string 1))
-             (overdue (aj/get-overdue-recurring-tasks date-str))
-             (added 0))
-        (when overdue
-          (dolist (entry overdue)
-            (let ((parent-name (nth 0 entry))
-                  (heading-text (nth 1 entry))
-                  (content (nth 2 entry))
-                  (source-file (nth 3 entry)))
-              (unless (aj/recurring-child-exists-p parent-name heading-text)
-                ;; Find parent heading under * Recurring
-                (goto-char (point-min))
-                (when (re-search-forward "^\\* Recurring\\b" nil t)
-                  (let ((section-end (save-excursion
-                                       (forward-line 1)
-                                       (if (re-search-forward "^\\* " nil t)
-                                           (line-beginning-position)
-                                         (point-max)))))
-                    (when (re-search-forward
-                           (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
-                                   (regexp-quote parent-name))
-                           section-end t)
-                      ;; Find end of this parent's subtree
-                      (let ((parent-end (save-excursion
-                                          (forward-line 1)
-                                          (if (re-search-forward "^\\*\\* " section-end t)
-                                              (line-beginning-position)
-                                            section-end))))
-                        (goto-char parent-end)
-                        ;; Insert before next ** heading (separators will be cleaned up)
-                        (unless (bolp) (insert "\n"))
-                        (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
-                          (insert "\n"))
-                        (insert content "\n")
-                        (setq added (1+ added))
-                        ;; Mark source item as CANCEL to prevent re-scanning
-                        (when source-file
-                          (with-current-buffer (find-file-noselect source-file)
-                            (save-excursion
-                              (goto-char (point-min))
-                              (when (re-search-forward "^\\* Recurring\\b" nil t)
-                                (let ((src-end (save-excursion
-                                                 (forward-line 1)
-                                                 (if (re-search-forward "^\\* " nil t)
-                                                     (line-beginning-position)
-                                                   (point-max)))))
-                                  (when (re-search-forward
-                                         (format "^\\*\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
-                                                 (regexp-quote heading-text))
-                                         src-end t)
-                                    (beginning-of-line)
-                                    (org-todo "CANCEL")))))
-                            (save-buffer))))))))))
-          (when (> added 0)
-            (message "Brought forward %d overdue recurring task(s) for %s" added date-str)))))))
+             (today (format-time-string "%Y-%m-%d")))
+        (unless (string> date-str today)
+          (let* ((overdue (aj/get-overdue-recurring-tasks date-str))
+                 (added 0))
+            (when overdue
+              (dolist (entry overdue)
+                (let ((parent-name (nth 0 entry))
+                      (heading-text (nth 1 entry))
+                      (content (nth 2 entry))
+                      (source-file (nth 3 entry)))
+                  (unless (aj/recurring-child-exists-p parent-name heading-text)
+                    ;; Find parent heading under * Recurring
+                    (goto-char (point-min))
+                    (when (re-search-forward "^\\* Recurring\\b" nil t)
+                      (let ((section-end (save-excursion
+                                           (forward-line 1)
+                                           (if (re-search-forward "^\\* " nil t)
+                                               (line-beginning-position)
+                                             (point-max)))))
+                        (when (re-search-forward
+                               (format "^\\*\\* \\(?:TODO \\|DONE \\|WAIT \\|CANCEL \\)?\\(?:\\[#[A-Z]\\] \\)?%s\\(?:[ \t]*$\\|[ \t]\\)"
+                                       (regexp-quote parent-name))
+                               section-end t)
+                          ;; Find end of this parent's subtree
+                          (let ((parent-end (save-excursion
+                                              (forward-line 1)
+                                              (if (re-search-forward "^\\*\\* " section-end t)
+                                                  (line-beginning-position)
+                                                section-end))))
+                            (goto-char parent-end)
+                            ;; Insert before next ** heading (separators will be cleaned up)
+                            (unless (bolp) (insert "\n"))
+                            (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                              (insert "\n"))
+                            (insert content "\n")
+                            (setq added (1+ added))
+                            ;; Mark source item as CANCEL to prevent re-scanning
+                            (when source-file
+                              (with-current-buffer (find-file-noselect source-file)
+                                (save-excursion
+                                  (goto-char (point-min))
+                                  (when (re-search-forward "^\\* Recurring\\b" nil t)
+                                    (let ((src-end (save-excursion
+                                                     (forward-line 1)
+                                                     (if (re-search-forward "^\\* " nil t)
+                                                         (line-beginning-position)
+                                                       (point-max)))))
+                                      (when (re-search-forward
+                                             (format "^\\*\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
+                                                     (regexp-quote heading-text))
+                                             src-end t)
+                                        (beginning-of-line)
+                                        (let ((aj/daily-hook-suppress t))
+                                          (org-todo "CANCEL"))))))
+                                (save-buffer))))))))))
+              (when (> added 0)
+                (message "Brought forward %d overdue recurring task(s) for %s" added date-str)))))))))
 
 (defun aj/recurring-heading-exists-p (heading)
   "Check if HEADING already exists under * Recurring.
@@ -1949,6 +1961,60 @@ syncs data, then inserts."
                       (aj/ensure-recurring-separators))
                     (message "Weather: done for %s ✓" name))))))))))))
 
+(defun aj/fetch-calendar-weather-sync (date-str buffer)
+  "Synchronous version of `aj/fetch-calendar-weather-async'.
+Blocks until weather-archive.sh + rsync complete, then inserts weather
+and the hourly table into BUFFER. Used by cron/batch export where the
+buffer must be complete before `save-buffer' runs — the async variant
+saves before the weather callback fires, so the weather never makes it
+to disk.
+
+On any step failure, falls back to whatever is already in the local
+cache so the calendar still has the most recent available weather."
+  (let* ((location (aj/get-weather-location))
+         (lat  (number-to-string (nth 0 location)))
+         (lon  (number-to-string (nth 1 location)))
+         (name (nth 2 location)))
+    (make-directory aj/weather-archive-local t)
+    ;; Step 1: ask server for fresh data. Short SSH timeout so cron
+    ;; doesn't hang if abaj.ai is unreachable.
+    (let ((fetch-code
+           (call-process "ssh" nil nil nil
+                         "-o" "ConnectTimeout=5"
+                         "root@abaj.ai"
+                         (format "/root/scripts/weather-archive.sh %s %s '%s'"
+                                 lat lon name))))
+      (unless (zerop fetch-code)
+        (message "Weather (sync): server fetch failed (exit %d) — using stale cache"
+                 fetch-code)))
+    ;; Step 2: rsync, regardless of fetch outcome (pulls whatever's there)
+    (let ((sync-code
+           (call-process "rsync" nil nil nil "-az"
+                         aj/weather-archive-remote
+                         aj/weather-archive-local)))
+      (unless (zerop sync-code)
+        (message "Weather (sync): rsync failed (exit %d) — using stale cache"
+                 sync-code)))
+    ;; Step 3: insert from cache (works even if the fetch/rsync failed)
+    (when (buffer-live-p buffer)
+      (aj/insert-weather-from-cache buffer date-str)
+      (aj/insert-hourly-weather-table buffer date-str)
+      (with-current-buffer buffer
+        (aj/ensure-heading-separators)
+        (aj/ensure-recurring-separators)))))
+
+(defun aj/refresh-daily-calendar-sync ()
+  "Like `aj/refresh-daily-calendar' but blocks until weather is inserted.
+Intended for batch/cron: call this from the emacsclient eval before
+`save-buffer' so the exported PDF has the weather content, not just the
+synchronously-inserted date table."
+  (interactive)
+  (unless (aj/daily-date-file-p)
+    (user-error "Not in a daily note"))
+  (my/insert-aj-day-calendar)                 ; inserts table + starts async fetch
+  (let ((date-str (file-name-base (buffer-file-name))))
+    (aj/fetch-calendar-weather-sync date-str (current-buffer))))
+
 ;; ---------------------------------------------------------------------------
 ;; Hourly Weather Table
 ;; ---------------------------------------------------------------------------
@@ -2407,8 +2473,12 @@ Preserves transclusion state in current buffer."
 (defun aj/propagate-done-to-tasks ()
   "When a heading is marked DONE/CANCEL under * Recurring in a daily note,
 find the corresponding heading in tasks.org and mark it DONE there too.
-This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
-  (when (and (member org-state '("DONE" "CANCEL"))
+This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'.
+Suppressed when `aj/daily-hook-suppress' is non-nil so that machine-driven
+state changes (e.g. bring-forward source-CANCEL) don't cascade into
+tasks.org."
+  (when (and (not aj/daily-hook-suppress)
+             (member org-state '("DONE" "CANCEL"))
              (aj/daily-date-file-p)
              (aj/under-heading-p "^\\* Recurring\\b"))
     (let* ((heading-text (org-get-heading t t t t))
@@ -2453,11 +2523,19 @@ This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'."
                       (setq found t)))))
               (when found
                 (beginning-of-line)
-                ;; Auto-confirm the "N repeater intervals" prompt that org
-                ;; shows when SCHEDULED is far behind today.
-                (cl-letf (((symbol-function 'y-or-n-p)
-                           (lambda (&rest _) t)))
-                  (org-todo "DONE"))
+                (let ((sched (org-entry-get (point) "SCHEDULED")))
+                  (if (and sched (string-match-p "\\`<%%(" sched))
+                      ;; Diary-sexp schedule: can't be advanced by a repeater,
+                      ;; so bump LAST_REPEAT in-place and leave state as TODO.
+                      (org-entry-put (point) "LAST_REPEAT"
+                                     (format-time-string
+                                      (org-time-stamp-format t t)))
+                    ;; Standard repeater: let org advance SCHEDULED/LAST_REPEAT
+                    ;; and reset state. Auto-confirm the "N repeater intervals"
+                    ;; prompt org shows when SCHEDULED is far behind today.
+                    (cl-letf (((symbol-function 'y-or-n-p)
+                               (lambda (&rest _) t)))
+                      (org-todo "DONE"))))
                 (save-buffer)
                 (message "Propagated DONE to tasks.org: %s" heading-text)))))))))
 

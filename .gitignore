@@ -39,6 +39,8 @@ emacs/.emacs.d/tramp
 emacs/.emacs.d/bookmarks
 emacs/.emacs.d/eshell/
 emacs/.emacs.d/url/
+emacs/.emacs.d/network-security.data
+emacs/.emacs.d/org-msg-ltximg/
 emacs/.emacs.d/*.elc
 .emacs.d.backup/
 emacs.el

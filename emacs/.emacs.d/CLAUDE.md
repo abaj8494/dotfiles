@@ -141,3 +141,48 @@ Uses **straight.el** (not package.el). Packages are cloned to `~/.emacs.d/straig
 - Database: `~/.emacs.d/org-roam.db`
 - Dailies directory: `~/Documents/new-site/content-org/daily/`
 - ID resolution: `org-roam-id.el` advises `org-id-find` to query `org-roam.db`, loaded automatically via `(require 'org-roam)`
+
+### LaTeX Preview System (`org-config.el`)
+
+There are **two parallel preview pipelines** for LaTeX in org buffers. They're orthogonal — understand which one handles which syntax before touching either.
+
+#### 1. Built-in Org preview (`org-latex-preview`)
+
+Handles inline/display math: `\(...\)`, `\[...\]`, `$...$`.
+
+- Process alist entry: `luamagick` (custom, added to `org-preview-latex-process-alist`)
+  - `lualatex` → `magick` (PDF → PNG)
+  - **Argument order matters**: `magick -density %D %f -trim -antialias -quality 100 %O`. In ImageMagick 7, `-trim` is an *operator* and must come **after** the input file `%f`. Putting it before (as IM6 `convert` allowed) produces `"no images found for operation '-trim'"` and silently drops the output — visible as "File … wasn't produced  Please adjust 'luamagick'" in *Messages*.
+- Auto-toggle on cursor enter/leave: `org-fragtog` (upstream package) with `org-fragtog-preview-delay = 0.2`.
+- `:foreground 'auto` on `org-format-latex-options` so the text color follows the Emacs default face (dark mode compatible).
+
+#### 2. Custom environment preview (`aj/latex--render-preview` + friends)
+
+Handles `\begin{envname}...\end{envname}` blocks that org-latex-preview **ignores**: `tikzpicture`, `algorithm`, and theorem-style envs (`proof`, `theorem`, `lemma`, `definition`, `examples`, `remark`, `result`, `corollary`, `proposition`).
+
+Key pieces (all in `elisp/org-config.el`):
+
+| Function | Role |
+|---|---|
+| `aj/latex-preview-environments` | Alist of known env names → preview config (packages + docclass, or `:use-buffer-preamble t`) |
+| `aj/latex--find-environment-at-point` | Returns `(ENV-NAME BEG END)` or nil. **Known quirk**: from point sitting inside `\begin{...}` itself, `re-search-backward` won't find the current env (match ends after point) — it finds the previous one. Callers must `goto-char` *past* the `\begin{...}` tag. |
+| `aj/latex--render-preview` | Async: `lualatex` → `magick`, injects `\color[HTML]{...}` from `aj/latex--fg-color-command` so text matches Emacs foreground |
+| `aj/latex--buffer-preview-preamble` | For theorem-style envs: reuses buffer's `#+LATEX_HEADER` lines (minus `\geometry`) so custom colors/mdframed/theorem styles render correctly |
+| `aj/latex--create-overlay` | Places PNG/SVG as a display overlay; scale from `aj/latex-preview-scale` (default 0.5) |
+| `aj/latex-preview-buffer` | `C-c C-x C-l` — previews both standard org fragments AND all queued environments (async, `aj/latex-preview-parallel-jobs` concurrent) |
+
+#### Fragtog-for-environments (custom hook)
+
+`org-fragtog` only toggles standard org fragments. To get the same mouse-in/mouse-out behavior for `\begin{...}...\end{...}` environments, there's a custom `post-command-hook`: `aj/latex-fragtog-hook`.
+
+Design notes (learned the hard way — don't undo these):
+
+- **Comparison by name + BEG only** (`aj/latex-fragtog--same-env-p`), never by END. Editing inside an env shifts END on every keystroke; comparing the full tuple causes a spurious "leave-and-re-enter" transition on every character typed, which thrashes the preview.
+- **Uses a marker for BEG**, not a raw position. Edits elsewhere in the buffer shift positions; markers track the real location across the preview-delay timer.
+- **Timer goto-char jumps past `\begin{envname}`**, not to BEG itself. `re-search-backward` would otherwise find the *previous* matching env (its match would extend past point).
+- **Guard against re-render race**: when the timer fires, it checks whether the user's *current* point is inside the same env (via `aj/latex--find-environment-at-point`). If the user stepped back in during the delay, skip re-render. The guard must check the user's point, **not** the `goto-char`'d position — those are different.
+- **Initial render on buffer open**: `aj/latex-preview-buffer-on-open` (hooked to `org-mode-hook`, runs on an idle timer so it doesn't block file open). Without this, environments show as source until first toggle.
+
+#### PDF viewer
+
+`C-c C-e l o` opens exported PDFs in `sioyek` via `(add-to-list 'org-file-apps '("\\.pdf\\'" . "sioyek %s"))`. There used to be a Chrome entry above this in the same file — removed. If a new entry gets prepended and takes priority, inspect `org-file-apps` via `emacsclient --eval` to find the offender.

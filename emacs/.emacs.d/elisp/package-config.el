@@ -841,6 +841,14 @@ With prefix ARG, search from current directory instead of project root."
   (require 'org-roam-protocol)
   (setq find-file-visit-truename t)
 
+  ;; Hide non-navigable link types from the graph. `elisp:' links with
+  ;; embedded quotes (e.g. the Garmin dashboard links) otherwise produce a
+  ;; .dot file with unescaped quotes in node ids, which dot(1) rejects with
+  ;; a syntax error and silently writes an empty SVG.
+  (with-eval-after-load 'org-roam-graph
+    (dolist (type '("elisp" "http" "https" "mailto" "garmin-activity"))
+      (add-to-list 'org-roam-graph-link-hidden-types type)))
+
   ;; Custom node type method - must be inside :config so org-roam-node class exists
   (cl-defmethod org-roam-node-type ((node org-roam-node))
     "Return the TYPE of NODE."

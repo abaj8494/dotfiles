@@ -27,7 +27,8 @@
  '(org-latex-image-default-scale "")
  '(org-log-into-drawer "PROPERTIES")
  '(safe-local-variable-values
-   '((eval setq org-preview-latex-default-process 'imagemagick)))
+   '((org-confirm-babel-evaluate)
+     (eval setq org-preview-latex-default-process 'imagemagick)))
  '(tex-run-command "tex"))
 
 (custom-set-faces
@@ -35,7 +36,18 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(default ((t (:family "Menlo" :foundry "nil" :slant normal :weight regular :height 180 :width normal)))))
+ '(default ((t (:family "Menlo" :foundry "nil" :slant normal :weight regular :height 180 :width normal))))
+ '(notmuch-message-summary-face ((t (:inherit default))))
+ '(notmuch-search-date ((t (:inherit default))))
+ '(notmuch-search-matching-authors ((t (:inherit default))))
+ '(notmuch-search-subject ((t (:inherit default))))
+ '(notmuch-tag-face ((t (:inherit font-lock-comment-face))))
+ '(notmuch-tag-flagged ((t (:inherit warning))))
+ '(notmuch-tag-unread ((t (:inherit font-lock-keyword-face))))
+ '(shr-h1 ((t (:inherit variable-pitch :weight bold :height 1.2))))
+ '(shr-h2 ((t (:inherit variable-pitch :weight bold :height 1.1))))
+ '(shr-h3 ((t (:inherit variable-pitch :weight bold))))
+ '(shr-link ((t (:inherit link :underline nil)))))
 
 (provide 'custom-vars)
 ;;; custom-vars.el ends here

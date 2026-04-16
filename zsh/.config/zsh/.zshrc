@@ -145,6 +145,9 @@ alias emacs='$(/Applications/MacPorts/Emacs.app/ "$@")'
 alias lrc='nvim ~/.config/lf/lfrc'
 alias zrc='nvim ~/.config/zsh/.zshrc'
 alias nrc='nvim ~/.config/nvim/'
+alias trc='nvim ~/.config/tmux/tmux.conf'
+alias et='/Applications/MacPorts/Emacs.app/Contents/MacOS/bin/emacsclient -t'
+alias er=' launchctl kickstart -k gui/501/org.gnu.emacs.daemon && sleep 7 && /Applications/MacPorts/Emacs.app/Contents/MacOS/bin/emacsclient -c -n'
 
 # clip.abaj.ai integration via television
 clip() {
@@ -191,3 +194,5 @@ export PATH=$PATH:/opt/homebrew/share/android-commandlinetools/platform-tools
 export JOBSYNC_API_KEY="***REMOVED***"
 export JOBSYNC_API_URL="http://localhost:3000/api/email-sync"
 
+unalias z
+eval "$(zoxide init zsh)"
