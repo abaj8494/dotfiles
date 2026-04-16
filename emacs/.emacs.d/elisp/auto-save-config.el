@@ -75,6 +75,20 @@
   (unless (file-exists-p backup-dir)
     (make-directory backup-dir t)))
 
+;; ---------------------------------------------------------------------------
+;; Message-mode draft auto-saves
+;; ---------------------------------------------------------------------------
+
+;; `message-mode' (used when composing email) writes draft auto-saves named
+;; like `*message*-YYYYMMDD-HHMMSS' to `message-auto-save-directory', which
+;; defaults to ~/. That left dozens of files cluttering the home directory.
+;; Redirect them to a dedicated dir under ~/.emacs.d/.
+(with-eval-after-load 'message
+  (setq message-auto-save-directory
+        (expand-file-name "message-drafts/" user-emacs-directory))
+  (unless (file-exists-p message-auto-save-directory)
+    (make-directory message-auto-save-directory t)))
+
 (provide 'auto-save-config)
 ;;; auto-save-config.el ends here
 
