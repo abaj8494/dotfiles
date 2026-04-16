@@ -1,0 +1,54 @@
+[metadata]
+name = "clip-files"
+description = "Download/upload files on clip.abaj.ai (Ctrl-S to switch)"
+requirements = ["curl", "sed", "python3", "fd"]
+
+[source]
+command = [
+  "curl -s \"https://clip.abaj.ai/files/${CLIP_PAGE:-shared}/\" | sed -n 's|.*<a href=\"\\([^\"]*\\)\">\\(.*\\)</a>.*|\\1\\t\\2|p' | python3 -c \"import sys,urllib.parse;[print('https://clip.abaj.ai/files/${CLIP_PAGE:-shared}/'+line.split('\\t')[0]+'\\t'+urllib.parse.unquote(line.split('\\t')[1]),end='') for line in sys.stdin]\"",
+  "fd -t f -d 1 | awk '{print $0 \"\\t\" $0}'",
+]
+display = "{split:\\t:1}"
+output = "{split:\\t:0}"
+
+[preview]
+command = "tv-preview '{split:\\t:0}'"
+env = { TERM = "dumb" }
+
+[keybindings]
+enter = "actions:download"
+ctrl-u = "actions:upload"
+ctrl-e = "actions:edit"
+ctrl-k = "actions:delete"
+ctrl-p = "actions:preview-full"
+ctrl-b = "actions:open-browser"
+
+[actions.download]
+description = "Download file to current directory"
+command = "curl -sfLO '{split:\\t:0}' >/dev/null 2>&1 &"
+mode = "fork"
+
+[actions.upload]
+description = "Upload file to clip.abaj.ai"
+command = "curl -sf -F \"file=@{split:\\t:0}\" \"https://clip.abaj.ai/upload/${CLIP_PAGE:-shared}\" >/dev/null 2>&1 &"
+mode = "fork"
+
+[actions.delete]
+description = "Delete file from clip.abaj.ai"
+command = "FNAME=$(python3 -c \"import urllib.parse,os; print(os.path.basename(urllib.parse.urlparse('{split:\\t:0}').path))\") && curl -sf -X POST -d \"filename=$FNAME\" \"https://clip.abaj.ai/delete-file/${CLIP_PAGE:-shared}\" >/dev/null 2>&1 &"
+mode = "fork"
+
+[actions.edit]
+description = "Edit page content in Neovim"
+command = "clip-edit '${CLIP_PAGE:-shared}'"
+mode = "execute"
+
+[actions.preview-full]
+description = "Full fidelity preview in tmux popup"
+command = "tmux popup -w 80% -h 80% -E \"tv-preview-full '{split:\\t:0}'\""
+mode = "fork"
+
+[actions.open-browser]
+description = "Open in browser"
+command = "open '{split:\\t:0}'"
+mode = "fork"

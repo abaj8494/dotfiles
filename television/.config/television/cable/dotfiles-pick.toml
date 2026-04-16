@@ -1,0 +1,19 @@
+[metadata]
+name = "dotfiles-pick"
+description = "Pick a stow package under ~/dotfiles and open it in nvim."
+requirements = ["fd"]
+
+[source]
+command = "fd -t d -d 1 . ~/dotfiles"
+display = "{split:/:-1}"
+
+[preview]
+command = "ls -la '{}'"
+
+[keybindings]
+enter = "actions:edit"
+
+[actions.edit]
+description = "Open folder in nvim"
+command = "cd '{}' && nvim ."
+mode = "execute"

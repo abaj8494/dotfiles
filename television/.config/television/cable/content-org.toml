@@ -1,0 +1,23 @@
+[metadata]
+name = "content-org"
+description = "Jump into a content-org area (flashcards, daily, roam, shops) and open nvim."
+
+[source]
+command = """printf '%s\\n' \
+  'flashcards|/Users/aayushbajaj/Documents/new-site/content-org/flashcards' \
+  'daily|/Users/aayushbajaj/Documents/new-site/content-org/daily' \
+  'roam|/Users/aayushbajaj/Documents/new-site/content-org/roam' \
+  'shops|/Users/aayushbajaj/Documents/new-site/content-org/private/shops'"""
+display = "{split:|:0}"
+output  = "{split:|:1}"
+
+[preview]
+command = "ls -la '{}'"
+
+[keybindings]
+enter = "actions:edit"
+
+[actions.edit]
+description = "Open area in nvim"
+command = "cd '{}' && nvim ."
+mode = "execute"

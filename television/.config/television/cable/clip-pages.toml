@@ -1,0 +1,31 @@
+[metadata]
+name = "clip-pages"
+description = "Browse clip.abaj.ai pages"
+requirements = ["curl", "sed", "python3"]
+
+[source]
+command = "curl -s 'https://clip.abaj.ai/' | sed -n 's/.*\\/view\\/\\([^\"]*\\)\".*/\\1/p'"
+
+[preview]
+command = "printf '\\033[1;35m=== Content ===\\033[0m\\n' && curl -s 'https://clip.abaj.ai/view/{}' | sed -n 's/.*id=\"contentBody\"[^>]*>\\(.*\\)/\\1/p' | sed 's/<\\/div>//g' | head -20 && printf '\\n\\033[1;36m=== Attachments ===\\033[0m\\n' && curl -s 'https://clip.abaj.ai/files/{}/' | sed -n 's/.*<a[^>]*>\\(.*\\)<\\/a>.*/\\1/p' | python3 -c \"import sys,urllib.parse;[print('  '+urllib.parse.unquote(l.strip())) for l in sys.stdin if l.strip()]\""
+env = { TERM = "dumb" }
+
+[keybindings]
+enter = "actions:files"
+ctrl-e = "actions:edit"
+ctrl-b = "actions:open-browser"
+
+[actions.files]
+description = "Browse/download/upload files (Ctrl-S to switch)"
+command = "CLIP_PAGE='{}' tv clip-files; tv clip-pages"
+mode = "execute"
+
+[actions.edit]
+description = "Edit page content in Neovim"
+command = "clip-edit '{}'; tv clip-pages"
+mode = "execute"
+
+[actions.open-browser]
+description = "Open page in browser"
+command = "open 'https://clip.abaj.ai/view/{}'"
+mode = "fork"
