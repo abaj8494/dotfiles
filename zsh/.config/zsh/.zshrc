@@ -146,6 +146,17 @@ alias lrc='nvim ~/.config/lf/lfrc'
 alias zrc='nvim ~/.config/zsh/.zshrc'
 alias nrc='nvim ~/.config/nvim/'
 alias trc='nvim ~/.config/tmux/tmux.conf'
+
+# Bare `tmux` attaches to the existing server instead of spawning a new
+# unnamed "0" session alongside the pre-warmed sesh sessions. Explicit
+# args (e.g. `tmux kill-server`, `tmux new -s foo`) still behave normally.
+tmux() {
+  if [[ $# -eq 0 && -z "$TMUX" ]]; then
+    command tmux attach 2>/dev/null || command tmux
+  else
+    command tmux "$@"
+  fi
+}
 alias et='/Applications/MacPorts/Emacs.app/Contents/MacOS/bin/emacsclient -t'
 alias er=' launchctl kickstart -k gui/501/org.gnu.emacs.daemon && sleep 7 && /Applications/MacPorts/Emacs.app/Contents/MacOS/bin/emacsclient -c -n'
 

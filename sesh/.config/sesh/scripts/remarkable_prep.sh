@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Pre-stage the two remarkable targets in split panes WITHOUT executing them.
-# Run `make remarkable-sync` first, then `make remarkable` only after it finishes,
-# to avoid overwriting local progress. `send-keys` without `Enter` leaves the
-# command typed at the prompt, unexecuted.
+# Lay out the remarkable session in a single window with two horizontal panes
+# (top/bottom). Top pane: `make remarkable-sync` pre-typed; bottom: `make
+# remarkable` pre-typed. NEITHER executed -- run sync first, then remarkable
+# only after it finishes, to avoid overwriting local progress.
+# Runs as the session's `startup_command`, so the script is executing inside
+# pane 0 of window 0; queued send-keys land after the script exits.
 
-tmux split-window -h -c "#{pane_current_path}"
-tmux send-keys -t :.0 'make remarkable-sync'
-tmux send-keys -t :.1 'make remarkable'
-tmux select-pane -t :.0
+S="remarkable"
+tmux send-keys -t "$S":0.0 'make remarkable-sync'
+tmux split-window -v -t "$S":0 -c "#{pane_current_path}"
+tmux send-keys -t "$S":0.1 'make remarkable'
+tmux select-pane -t "$S":0.0

@@ -261,12 +261,12 @@ startup_command = "lf"
 [[session]]
 name = "remarkable"
 path = "~/Documents/remarkable-paper-pro"
-startup_script = "~/.config/sesh/scripts/remarkable_prep.sh"
+startup_command = "~/.config/sesh/scripts/remarkable_prep.sh"
 
 [[session]]
 name = "monitoring"
 path = "~"
-startup_script = "~/.config/sesh/scripts/monitoring_prep.sh"
+startup_command = "~/.config/sesh/scripts/monitoring_prep.sh"
 
 [[session]]
 name = "flashcards"

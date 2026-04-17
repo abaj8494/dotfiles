@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Lay out the monitoring session: htop in the left pane, typtel in the right.
-# Both run immediately -- they're idempotent monitors.
+# Lay out the monitoring session: window 0 = htop, window 1 = `typtel stats`.
+# Runs as the session's `startup_command`, so this script itself is executing
+# inside window 0's shell -- queued send-keys fire after the script exits.
 
-tmux split-window -h -c "#{pane_current_path}"
-tmux send-keys -t :.0 'htop' Enter
-tmux send-keys -t :.1 'typtel' Enter
-tmux select-pane -t :.0
+S="monitoring"
+tmux send-keys -t "$S":0 'htop' Enter
+tmux new-window -t "$S": -n typtel -c "$HOME"
+tmux send-keys -t "$S":typtel 'typtel stats' Enter
+tmux select-window -t "$S":0
