@@ -219,6 +219,10 @@ startup_script = "git pull && lazygit"
 name = "lazygit"
 startup_script = "lazygit"
 
+[[window]]
+name = "sesh config"
+startup_script = "nvim ~/.config/sesh/sesh.toml"
+
 # wildcards
 
 [[wildcard]]
@@ -242,6 +246,7 @@ path = "~/Documents/Finances/stock-research"
 [[session]]
 name = "uni"
 path = "~/Documents/uni"
+startup_command = "lf"
 
 [[session]]
 name = "abaj.ai (dev server)"
@@ -270,6 +275,7 @@ path = "~/Documents/new-site/content-org/flashcards"
 [[session]]
 name = "configs"
 path = "~/.config"
+windows = ["sesh config"]
 
 [[session]]
 name = "Finances"
