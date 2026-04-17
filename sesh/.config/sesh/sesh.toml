@@ -32,7 +32,7 @@ dir_length = 3
 # default
 
 [default_session]
-startup_command = "nvim +GoToFile"
+startup_command = "nvim '+Telescope find_files'"
 #preview_command = "eza --all --git --icons --color=always {}"
 # startup_command_ignore_dirs = ["~/repos", "~/.config"]
 
@@ -100,6 +100,21 @@ startup_command = "l"
 [[session]]
 name = "code (archived)"
 path = "~/Documents/code-archived"
+startup_command = "l"
+
+[[session]]
+name = "code (private)"
+path = "~/c/code-private"
+startup_command = "l"
+
+[[session]]
+name = "code (others)"
+path = "~/c/code-others"
+startup_command = "l"
+
+[[session]]
+name = "code (share)"
+path = "~/c/code-share"
 startup_command = "l"
 
 [[session]]

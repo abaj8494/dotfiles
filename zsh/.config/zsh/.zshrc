@@ -196,9 +196,3 @@ export JOBSYNC_API_URL="http://localhost:3000/api/email-sync"
 
 unalias z
 eval "$(zoxide init zsh)"
-
-# Pre-warm always-open sesh sessions on login (idempotent; skips
-# sessions that already exist, so it coexists with tmux-continuum).
-if command -v sesh >/dev/null && [ -z "$TMUX" ]; then
-  ~/.config/sesh/scripts/startup.sh >/dev/null 2>&1 &
-fi
