@@ -107,7 +107,7 @@ This is the largest config file (~3400 lines). It manages org-roam daily notes w
 | `C-c d F` / `B` | Next / previous day |
 
 **rMPP push** (`C-c d p` → `aj/rmpp-push-daily`):
-- Step 1: `make remarkable-pull` (KOReader highlights → sioyek)
+- Step 1: `make ferrari-pull` (KOReader highlights → sioyek)
 - Step 2: `scripts/sync-daily.sh` (emacsclient populates → batch LaTeX export → scp → xochitl)
 - Output goes to hidden buffer ` *rmpp-push-daily*`
 - Success: Glass.aiff chime

@@ -2743,7 +2743,7 @@ otherwise lose its custom PATH."
 (defun aj/rmpp-push-daily ()
   "Pull KOReader highlights from rMPP, then export + push today's daily.
 
-Step 1 runs `make remarkable-pull' so any unpulled highlights on the
+Step 1 runs `make ferrari-pull' so any unpulled highlights on the
 device are merged back into sioyek before we touch it further. Step 2
 shells out to `scripts/sync-daily.sh' for the headless org→PDF export,
 UUID lookup, scp, and xochitl registration. If step 1 fails, step 2 is
@@ -2756,14 +2756,14 @@ On success: plays Glass.aiff and flashes a success message.
 On failure: plays Basso.aiff, speaks the failing step and a short reason
 via `edge-tts' so you can react without switching windows."
   (interactive)
-  (let ((project-dir (expand-file-name "~/Documents/remarkable-paper-pro")))
+  (let ((project-dir (expand-file-name "~/Documents/remarkable/ferrari")))
     (with-current-buffer (aj/rmpp--log-buffer)
       (goto-char (point-max))
       (insert (format-time-string "\n=== [%F %T] rMPP push starting ===\n")))
     (message "rMPP: pulling highlights, then pushing today's daily…")
     (aj/rmpp--run-step
      "pull"
-     (list "make" "-C" project-dir "remarkable-pull")
+     (list "make" "-C" project-dir "ferrari-pull")
      (lambda ()
        (aj/rmpp--run-step
         "push"
