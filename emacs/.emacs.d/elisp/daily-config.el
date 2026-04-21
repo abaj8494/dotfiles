@@ -1153,6 +1153,9 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
         (aj/ensure-heading-has-statistics-cookie heading))
       ;; Ensure ----- separators between level-1 headings
       (aj/ensure-heading-separators)
+      ;; Ensure #+LATEX: \newpage directive before each level-1 heading
+      ;; (except the first) so `C-c C-e l o' paginates top-level sections.
+      (aj/ensure-heading-newpages)
       (aj/ensure-recurring-separators))))
 
 (defun aj/ensure-heading-separators ()
@@ -1179,11 +1182,14 @@ User-placed separators earlier in the section are preserved."
                      (section-start (save-excursion
                                       (goto-char (nth (1- i) headings))
                                       (forward-line 1) (point))))
-                ;; Check if double ----- is right above heading (skip blank lines)
+                ;; Check if triple ----- is right above heading (skip blank lines
+                ;; and any `#+LATEX: \newpage' directive inserted by
+                ;; `aj/ensure-heading-newpages').
                 (goto-char heading-bol)
                 (forward-line -1)
                 (while (and (> (point) section-start)
-                            (looking-at-p "^[ \t]*$"))
+                            (or (looking-at-p "^[ \t]*$")
+                                (looking-at-p "^#\\+LATEX:[ \t]+\\\\newpage[ \t]*$")))
                   (forward-line -1))
                 (let ((has-triple-sep
                        (and (looking-at-p "^-----$")
@@ -1205,11 +1211,73 @@ User-placed separators earlier in the section are preserved."
                       (dolist (pos positions)
                         (delete-region (car pos) (cdr pos))
                         (setq heading-bol (- heading-bol (- (cdr pos) (car pos))))))
-                    ;; Insert fresh double separator before heading
-                    (goto-char heading-bol)
-                    (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
-                      (insert "\n"))
-                    (insert "-----\n-----\n-----\n\n")))))))))))
+                    ;; Insert fresh triple separator before heading. If a
+                    ;; `#+LATEX: \newpage' directive already sits directly
+                    ;; above the heading, insert the separators above it so
+                    ;; the canonical order (separators -> newpage -> heading)
+                    ;; is preserved.
+                    (let ((insert-pos heading-bol))
+                      (save-excursion
+                        (goto-char heading-bol)
+                        (forward-line -1)
+                        (when (looking-at-p "^#\\+LATEX:[ \t]+\\\\newpage[ \t]*$")
+                          (setq insert-pos (line-beginning-position))))
+                      (goto-char insert-pos)
+                      (unless (save-excursion (forward-line -1) (looking-at-p "^[ \t]*$"))
+                        (insert "\n"))
+                      (insert "-----\n-----\n-----\n\n"))))))))))))
+
+(defun aj/ensure-heading-newpages ()
+  "Ensure `#+LATEX: \\newpage' sits immediately above each level-1 heading
+except the first, so `C-c C-e l o' paginates top-level sections.
+
+Self-healing: first sweeps out orphaned directives (those whose next
+non-blank line is NOT a level-1 heading), then inserts canonical ones.
+Orphaning happens when `aj/refresh-daily-recurring' or the overdue
+bringers splice `** ' subtrees between a pre-existing directive and its
+intended heading — the directive ends up stranded above the injected
+subtree instead of above the heading it was meant for."
+  (save-excursion
+    (save-restriction
+      (widen)
+      ;; Phase 1: delete orphaned directives.
+      (goto-char (point-min))
+      (let ((to-delete nil))
+        (while (re-search-forward "^#\\+LATEX:[ \t]+\\\\newpage[ \t]*$" nil t)
+          (let ((line-start (line-beginning-position))
+                (orphan-p
+                 (save-excursion
+                   (forward-line 1)
+                   (while (and (not (eobp))
+                               (looking-at-p "^[ \t]*$"))
+                     (forward-line 1))
+                   (not (looking-at-p "^\\* ")))))
+            (when orphan-p
+              (push (cons line-start
+                          (save-excursion
+                            (goto-char line-start)
+                            (forward-line 1)
+                            (point)))
+                    to-delete))))
+        ;; Delete bottom-to-top to keep earlier positions valid.
+        (dolist (range to-delete)
+          (delete-region (car range) (cdr range))))
+      ;; Phase 2: insert canonical directives.
+      (goto-char (point-min))
+      (let ((headings nil))
+        (while (re-search-forward "^\\* " nil t)
+          (push (line-beginning-position) headings))
+        (setq headings (nreverse headings))
+        (let ((len (length headings)))
+          (when (>= len 2)
+            (dotimes (j (1- len))
+              (let* ((i (- len 1 j))
+                     (heading-bol (nth i headings)))
+                (goto-char heading-bol)
+                (unless (save-excursion
+                          (forward-line -1)
+                          (looking-at-p "^#\\+LATEX:[ \t]+\\\\newpage[ \t]*$"))
+                  (insert "#+LATEX: \\newpage\n"))))))))))
 
 (defun aj/fold-week-heading ()
   "Fold the Week heading if present.
@@ -2343,6 +2411,8 @@ Per-step timings are logged to *Messages* when the total exceeds
           (aj/bring-forward-overdue-recurring))
         (aj/daily-time-step aj--timings "ensure-heading-separators"
           (aj/ensure-heading-separators))
+        (aj/daily-time-step aj--timings "ensure-heading-newpages"
+          (aj/ensure-heading-newpages))
         (aj/daily-time-step aj--timings "ensure-recurring-separators"
           (aj/ensure-recurring-separators))
         (aj/daily-time-step aj--timings "refresh-daily-calendar"
