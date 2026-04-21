@@ -147,6 +147,10 @@ alias zrc='nvim ~/.config/zsh/.zshrc'
 alias nrc='nvim ~/.config/nvim/'
 alias trc='nvim ~/.config/tmux/tmux.conf'
 
+# eza replaces ls / l (omz's `l` default was `ls -lah`)
+alias ls='eza'
+alias l='eza -lah --git --git-ignore --group-directories-first --icons=auto --time-style=relative'
+
 # Bare `tmux` attaches to the existing server instead of spawning a new
 # unnamed "0" session alongside the pre-warmed sesh sessions. Explicit
 # args (e.g. `tmux kill-server`, `tmux new -s foo`) still behave normally.
@@ -207,3 +211,19 @@ export JOBSYNC_API_URL="http://localhost:3000/api/email-sync"
 
 unalias z
 eval "$(zoxide init zsh)"
+
+# --- reMarkable fleet: on-demand mirror shortcuts --------------------------
+# Bypass the cron schedule when you're about to walk out with one of the tablets.
+#   ferrari  — "leaving with ferrari" → pull porsche's latest work into ferrari:portia/
+#   porsche  — "leaving with porsche" → push ferrari's latest work into porsche:Ferrari/
+# Extra args pass through (e.g. `ferrari --dry-run`).
+_rmpp_mirror() {
+    if pgrep -f "python.* -m rmsync " >/dev/null 2>&1; then
+        print -u2 "rmsync is already running (mirror/merge/sync) — aborting to avoid state-file races"
+        return 1
+    fi
+    (cd "$HOME/Documents/remarkable-paper-pro" && \
+        /Users/aayushbajaj/miniconda3/bin/python3 -m rmsync mirror "$@")
+}
+ferrari() { _rmpp_mirror --from porsche --to ferrari "$@"; }
+porsche() { _rmpp_mirror --from ferrari --to porsche "$@"; }
