@@ -896,6 +896,10 @@ With prefix ARG, search from current directory instead of project root."
           ("b" "book" plain "%?"
            :target (file+head "words/library/books/${slug}.org"
                               ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n#+hugo_layout: book\n#+hugo_custom_front_matter: :toc true :author \n#+hugo_tags: \n#+hugo_auto_set_lastmod: t\n#+toc: headlines 2\n")
+           :unnarrowed t)
+          ("s" "shop" plain "%?"
+           :target (file+head "private/shops/${slug}.org"
+                              ":PROPERTIES:\n:ID: %(org-id-uuid)\n:END:\n#+TITLE: ${title}\n#+EXPORT_FILE_NAME: ${slug}\n#+DATE: %<%Y-%m-%dT%H:%M:%S+11:00>\n\n* next-shop\n\n- [ ] \n\n* inventory\n\n| next | product | price | quantity | last_bought |\n|------+---------+-------+----------+-------------|\n|      |         |       |          |             |\n|------+---------+-------+----------+-------------|\n| TOTAL |        |       |          |             |\n|------+---------+-------+----------+-------------|\n\n#+TBLFM: @>$3=vsum(@3..@-1)\n\n* history                                                        :noexport:\n|---------+------+-------+----------+-------|\n| product | date | count | discount | price |\n|---------+------+-------+----------+-------|\n|         |      |       |          |       |\n|---------+------+-------+----------+-------|\n| TOTAL   |      |       |          |       |\n|---------+------+-------+----------+-------|\n\n* one-offs\n\n| product | price | date (mm/yy) |\n|---------+-------+--------------|\n")
            :unnarrowed t))))
 
 
