@@ -338,7 +338,8 @@
 \\usepackage{fontspec}
 \\directlua{luaotfload.add_fallback(\"mainfallback\", {
   \"TeX Gyre Termes:mode=node;\",
-  \"Apple Color Emoji:mode=harf;\",
+  \"Hiragino Kaku Gothic ProN:mode=node;\",
+  \"Apple Color Emoji:mode=node;\",
 })}
 \\setmainfont{Latin Modern Roman}[Ligatures=TeX, RawFeature={fallback=mainfallback}]
 \\setmonofont{Menlo}[Scale=0.9]
