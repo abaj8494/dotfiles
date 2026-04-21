@@ -1136,40 +1136,44 @@ With prefix ARG, search from current directory instead of project root."
              beancount-fava)
   :init
   (defun aj/beancount-root-ledger ()
-    "Find the root ledger file for the current buffer.
-If editing aayush/2026.org, returns .../ledger/aayush.org.
-If already in aayush.org, returns it directly."
+    "Return absolute path of the top-level ledger for the current buffer.
+Visits to ledger/aayush.org, ledger/kiyomi.org, ledger/all.org return
+themselves. Year files under ledger/<who>/<YYYY>.org route up to
+ledger/<who>.org. Returns nil for buffers outside ledger/."
     (when buffer-file-name
       (let ((file (expand-file-name buffer-file-name)))
         (cond
-         ;; Already a root file (ledger/aayush.org or ledger/kiyomi.org)
-         ((string-match "/beancount/ledger/[^/]+\\.org\\'" file) file)
-         ;; A year file (ledger/aayush/2026.org) — go up to parent
-         ((string-match "\\(/beancount/ledger/\\)\\([^/]+\\)/" file)
-          (let ((root (concat (match-string 1 file)
+         ;; Top-level ledger file (e.g. ledger/aayush.org)
+         ((string-match "\\`\\(.*/beancount/ledger\\)/[^/]+\\.org\\'" file)
+          file)
+         ;; Year file under ledger/<who>/<year>.org → ledger/<who>.org
+         ((string-match "\\`\\(.*/beancount/ledger\\)/\\([^/]+\\)/[^/]+\\.org\\'" file)
+          (let ((root (concat (match-string 1 file) "/"
                               (match-string 2 file) ".org")))
-            (if (file-exists-p root) root file)))
-         (t file)))))
+            (and (file-exists-p root) root)))))))
 
   (defun aj/beancount-check ()
-    "Run bean-check on the root ledger file."
+    "Run bean-check on the root ledger for the current buffer."
     (interactive)
     (require 'beancount)
-    (let* ((root (aj/beancount-root-ledger))
-           (default-directory (file-name-directory root))
-           (compilation-read-command nil))
-      (beancount--run beancount-check-program
-                      (file-relative-name root))))
+    (let ((root (aj/beancount-root-ledger)))
+      (unless (and root (file-exists-p root))
+        (user-error "No root ledger resolved for %s" (or buffer-file-name "buffer")))
+      (let ((default-directory (file-name-directory root))
+            (compilation-read-command nil))
+        (beancount--run beancount-check-program root))))
 
   (defun aj/beancount-query ()
-    "Run bean-query interactively in a comint shell."
+    "Run bean-query interactively against the root ledger for the current buffer."
     (interactive)
     (require 'beancount)
-    (let* ((root (aj/beancount-root-ledger))
-           (default-directory (file-name-directory root))
-           (buf (make-comint "bean-query" beancount-query-program nil
-                             (file-relative-name root))))
-      (pop-to-buffer buf)))
+    (let ((root (aj/beancount-root-ledger)))
+      (unless (and root (file-exists-p root))
+        (user-error "No root ledger resolved for %s" (or buffer-file-name "buffer")))
+      (let* ((default-directory (file-name-directory root))
+             (bufname (format "bean-query<%s>" (file-name-base root)))
+             (buf (make-comint bufname beancount-query-program nil root)))
+        (pop-to-buffer buf))))
 
   (defun aj/beancount-org-setup ()
     "Add beancount syntax highlighting and keybindings to org ledger files."
