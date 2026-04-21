@@ -87,9 +87,30 @@ cmd open_selected ${{
 }}
 
 
-cmd yank-path $printf '%s' "$fx" | pbcopy
+cmd yank-path ${{
+    if command -v pbcopy >/dev/null 2>&1; then
+        printf '%s' "$fx" | pbcopy
+    else
+        data=$(printf '%s' "$fx" | base64 | tr -d '\n')
+        if [ -n "$TMUX" ]; then
+            printf '\ePtmux;\e\e]52;c;%s\a\e\\' "$data" > /dev/tty
+        else
+            printf '\e]52;c;%s\a' "$data" > /dev/tty
+        fi
+    fi
+    lf -remote "send $id echo \"Copied: $fx\""
+}}
 cmd yank-filepath &{{
-    printf '%s' "$f" | pbcopy
+    if command -v pbcopy >/dev/null 2>&1; then
+        printf '%s' "$f" | pbcopy
+    else
+        data=$(printf '%s' "$f" | base64 | tr -d '\n')
+        if [ -n "$TMUX" ]; then
+            printf '\ePtmux;\e\e]52;c;%s\a\e\\' "$data" > /dev/tty
+        else
+            printf '\e]52;c;%s\a' "$data" > /dev/tty
+        fi
+    fi
     lf -remote "send $id echo \"Copied: $f\""
 }}
 # the below 2 do not work as the head command on osx cannot handle negative
@@ -113,6 +134,10 @@ map e $$EDITOR "$f"
 map E $$EDITOR -R "$f"
 map l $view "$f"
 map u unzip
+
+# Open in sioyek (mirrors V in Emacs dired)
+cmd sioyek &sioyek "$f"
+map V sioyek
 
 # Archive Mappings
 map az zip
