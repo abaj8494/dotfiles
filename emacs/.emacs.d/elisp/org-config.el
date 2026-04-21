@@ -345,6 +345,7 @@
 \\setmonofont{Menlo}[Scale=0.9]
 \\usepackage{graphicx}
 \\usepackage{longtable}
+\\usepackage{adjustbox}
 \\usepackage{wrapfig}
 \\usepackage{rotating}
 \\usepackage[normalem]{ulem}
@@ -1508,6 +1509,23 @@ Only applies to LaTeX-based backends."
 ;; Initialize with default
 (setq org-latex-hyperref-template
       (aj/latex--hyperref-template-for-color aj/latex-link-color-default))
+
+;; Auto-shrink oversized tables to page width on LaTeX export.
+;; `tabular' environments that would overflow \linewidth are wrapped in
+;; \adjustbox{max width=\linewidth}{...}; narrow tables are untouched.
+;; `longtable' is skipped — it paginates natively.
+(defun aj/latex-filter-table-autofit (text backend _info)
+  "Wrap overflowing `tabular' blocks in `\\adjustbox{max width=\\linewidth}'."
+  (when (and (org-export-derived-backend-p backend 'latex)
+             (string-match-p "\\\\begin{tabular}" text)
+             (not (string-match-p "\\\\begin{longtable}" text)))
+    (replace-regexp-in-string
+     "\\(\\\\begin{tabular}\\(?:.\\|\n\\)*?\\\\end{tabular}\\)"
+     "\\\\adjustbox{max width=\\\\linewidth}{\\1}"
+     text)))
+
+(add-to-list 'org-export-filter-table-functions
+             #'aj/latex-filter-table-autofit)
 
 ;; Open exported PDFs in sioyek
 (with-eval-after-load 'org
