@@ -3594,6 +3594,13 @@ This is the synchronous core that queries the DB and writes into the buffer."
             ;; Separator before next heading
             (insert "\n-----\n"))
         (user-error "No Journal heading found in this daily note")))
+    ;; Re-establish buffer-wide invariants. The deletion above (from `**
+    ;; Self' through the next `* '/`** ' heading) eats any `-----'
+    ;; separators and `#+LATEX: \newpage' directives that lived between
+    ;; the old Self content and the following level-1 heading, so run
+    ;; the self-healers before we're done.
+    (aj/ensure-heading-separators)
+    (aj/ensure-heading-newpages)
     ;; Render inline images
     (org-display-inline-images)))
 
