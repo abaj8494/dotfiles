@@ -123,6 +123,15 @@ Used as a `file+function' target for capture templates."
          "%(format-time-string \"%Y-%m-%d\") * \"%^{Source}\"\n  Assets:Cash  %^{Amount} AUD\n  Income:%^{Category|Other|Reimbursement|Tutoring}\n"
          :empty-lines 1)))
 
+(defun aj/capture-prompt-jump-to-ledger ()
+  "After a cash expense/income capture, offer to jump to the entry."
+  (when (and (not org-note-abort)
+             (member (org-capture-get :key) '("lc" "li"))
+             (y-or-n-p "Jump to entry? "))
+    (org-capture-goto-last-stored)))
+
+(add-hook 'org-capture-after-finalize-hook #'aj/capture-prompt-jump-to-ledger)
+
 ;; ---------------------------------------------------------------------------
 ;; Daily File Detection
 ;; ---------------------------------------------------------------------------
