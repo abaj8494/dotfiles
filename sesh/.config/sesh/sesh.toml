@@ -95,7 +95,7 @@ startup_command = "lc"
 [[session]]
 name = "code (~/c)"
 path = "~/c"
-startup_command = "l"
+startup_command = "lf"
 
 [[session]]
 name = "code (archived)"
