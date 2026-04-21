@@ -318,12 +318,28 @@
       (setq my/notmuch-pending-changes t)
       (notmuch-search-next-thread)))
 
+  (define-key notmuch-search-mode-map (kbd "m O")
+    (lambda () (interactive)
+      (notmuch-search-tag '("+opal-pending" "-inbox"))
+      (setq my/notmuch-pending-changes t)
+      (notmuch-search-next-thread)))
+
   (define-key notmuch-search-mode-map (kbd "m u")
     (lambda () (interactive)
       "Undo move - restore to inbox"
-      (notmuch-search-tag '("+inbox" "-Finance" "-Orders" "-invoice-pending"))
+      (notmuch-search-tag '("+inbox" "-Finance" "-Orders" "-invoice-pending" "-opal-pending"))
       (setq my/notmuch-pending-changes t)
       (notmuch-search-next-thread)))
+
+  (define-key notmuch-search-mode-map (kbd "m U")
+    (lambda () (interactive)
+      "Strip every tag from the current thread."
+      (let ((tags (notmuch-search-get-tags)))
+        (when tags
+          (notmuch-search-tag (mapcar (lambda (tag) (concat "-" tag)) tags))
+          (setq my/notmuch-pending-changes t)
+          (notmuch-search-next-thread)
+          (message "Cleared %d tag(s)" (length tags))))))
 
 
   ;; ---------------------------------------------------------------------------
@@ -462,11 +478,25 @@ for part in msg.walk():
       (notmuch-show-tag '("+invoice-pending" "-inbox"))
       (setq my/notmuch-pending-changes t)))
 
+  (define-key notmuch-show-mode-map (kbd "m O")
+    (lambda () (interactive)
+      (notmuch-show-tag '("+opal-pending" "-inbox"))
+      (setq my/notmuch-pending-changes t)))
+
   (define-key notmuch-show-mode-map (kbd "m u")
     (lambda () (interactive)
       "Undo move - restore to inbox"
-      (notmuch-show-tag '("+inbox" "-Finance" "-Orders" "-invoice-pending"))
+      (notmuch-show-tag '("+inbox" "-Finance" "-Orders" "-invoice-pending" "-opal-pending"))
       (setq my/notmuch-pending-changes t)))
+
+  (define-key notmuch-show-mode-map (kbd "m U")
+    (lambda () (interactive)
+      "Strip every tag from the current message."
+      (let ((tags (notmuch-show-get-tags)))
+        (when tags
+          (notmuch-show-tag (mapcar (lambda (tag) (concat "-" tag)) tags))
+          (setq my/notmuch-pending-changes t)
+          (message "Cleared %d tag(s)" (length tags))))))
 
   ;; Move to IMAP folder (for abaj/unsw)
   (define-key notmuch-show-mode-map (kbd "M")
