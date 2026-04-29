@@ -334,6 +334,35 @@ tasks.org."
 (add-hook 'org-roam-dailies-find-file-hook #'aj/daily-file-open-hook)
 
 ;; ---------------------------------------------------------------------------
+;; Date-prompt defaults — anchor schedule/deadline to the daily's date
+;; ---------------------------------------------------------------------------
+
+(defun aj/daily--file-date-time ()
+  "Return the daily's filename date as a time value, or nil if not in a daily."
+  (when (aj/daily-date-file-p)
+    (let ((base (file-name-base (buffer-file-name))))
+      (when (string-match "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\'" base)
+        (encode-time 0 0 0
+                     (string-to-number (match-string 3 base))
+                     (string-to-number (match-string 2 base))
+                     (string-to-number (match-string 1 base)))))))
+
+(defun aj/daily--anchor-org-read-date (orig-fn &rest args)
+  "Around advice: anchor `org-read-date' default to the daily's date.
+When invoked from a heading inside a daily file (e.g. via `org-schedule'
+right after a `C-c d c' capture), `org-read-date' would otherwise
+default to today. Bind `org-overriding-default-time' to the daily's
+parsed date so the calendar pops up on the day you're capturing into."
+  (let ((daily-time (aj/daily--file-date-time)))
+    (if daily-time
+        (let ((org-overriding-default-time daily-time))
+          (apply orig-fn args))
+      (apply orig-fn args))))
+
+(advice-add 'org-schedule :around #'aj/daily--anchor-org-read-date)
+(advice-add 'org-deadline :around #'aj/daily--anchor-org-read-date)
+
+;; ---------------------------------------------------------------------------
 ;; Keybindings
 ;; ---------------------------------------------------------------------------
 
