@@ -1119,7 +1119,11 @@ With prefix ARG, search from current directory instead of project root."
   (setq org-shop-seasons-file "~/Documents/new-site/content-org/private/shops/seasons.org")
   :config
   (setq org-shop-directory "~/Documents/new-site/content-org/private/shops/")
-  (org-shop-setup))
+  (org-shop-setup)
+  ;; Personal receipt-ocr workflow glue (adds C-c S A → make org-shop in a
+  ;; vsplit vterm). Lives in the receipt-ocr repo rather than upstream
+  ;; org-shop because the path is bespoke to this machine.
+  (load "~/Documents/code-private/receipt-ocr/emacs/receipt-ocr.el" nil 'nomessage))
 
 
 ;; ---------------------------------------------------------------------------
