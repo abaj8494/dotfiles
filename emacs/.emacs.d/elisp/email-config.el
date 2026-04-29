@@ -121,12 +121,16 @@
   ;; ---------------------------------------------------------------------------
   (defvar-local my/notmuch-marked-threads nil
     "List of marked thread IDs in current search buffer.")
+  ;; Survive `notmuch-search-refresh-view' — refresh re-runs
+  ;; `notmuch-search-mode' which would otherwise wipe the list via
+  ;; `kill-all-local-variables'. Without this, marks placed during a sync
+  ;; would disappear the moment the sync sentinel fires its refresh.
+  (put 'my/notmuch-marked-threads 'permanent-local t)
 
   (defun my/notmuch-search-toggle-mark ()
-    "Toggle mark on current thread."
+    "Toggle mark on current thread.
+Works during sync — only the bulk action (d/a/etc.) waits for sync."
     (interactive)
-    (when my/email-syncing
-      (user-error "Sync in progress, please wait"))
     (setq my/notmuch-last-tag-time (current-time))
     (let ((thread-id (notmuch-search-find-thread-id)))
       (if (member thread-id my/notmuch-marked-threads)
@@ -136,7 +140,9 @@
         (push thread-id my/notmuch-marked-threads)
         (notmuch-search-tag '("+marked"))))
     (notmuch-search-next-thread)
-    (message "%d marked" (length my/notmuch-marked-threads)))
+    (message "%d marked%s"
+             (length my/notmuch-marked-threads)
+             (if my/email-syncing " (syncing — action will apply once done)" "")))
 
   (defun my/notmuch-search-unmark-all ()
     "Unmark all threads."
@@ -169,6 +175,7 @@
   ;; ---------------------------------------------------------------------------
   ;; Keybindings for search mode (email list)
   ;; ---------------------------------------------------------------------------
+  (define-key notmuch-search-mode-map (kbd "SPC") 'my/notmuch-search-toggle-mark)
   (define-key notmuch-search-mode-map (kbd "x") 'my/notmuch-search-toggle-mark)
   (define-key notmuch-search-mode-map (kbd "U") 'my/notmuch-search-unmark-all)
 
