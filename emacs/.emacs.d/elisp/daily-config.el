@@ -1156,7 +1156,30 @@ Order: Journal, Recurring, Calendar, Capture, Tasks."
       ;; Ensure #+LATEX: \newpage directive before each level-1 heading
       ;; (except the first) so `C-c C-e l o' paginates top-level sections.
       (aj/ensure-heading-newpages)
-      (aj/ensure-recurring-separators))))
+      (aj/ensure-recurring-separators)
+      ;; Final pass: collapse any 2+ consecutive blank lines immediately
+      ;; below a heading down to a single blank line. Self-heals drift
+      ;; from accumulated refreshes / inserts that don't normalize spacing.
+      (aj/normalize-heading-blank-lines))))
+
+(defun aj/normalize-heading-blank-lines ()
+  "Collapse 2+ consecutive blank lines immediately following any heading to 1.
+Idempotent. Only touches the blank-line run directly under a heading;
+blank lines elsewhere in body content are left alone."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (while (re-search-forward "^\\*+ " nil t)
+        (forward-line 1)
+        (let ((blank-start (point))
+              (n 0))
+          (while (and (not (eobp)) (looking-at-p "^[ \t]*$"))
+            (forward-line 1)
+            (setq n (1+ n)))
+          (when (> n 1)
+            (delete-region blank-start (point))
+            (insert "\n")))))))
 
 (defun aj/ensure-heading-separators ()
   "Ensure triple ----- separators immediately before each level-1 heading except the first.
@@ -3501,15 +3524,27 @@ This is the synchronous core that queries the DB and writes into the buffer."
                  (existing-self (save-excursion
                                   (forward-line 1)
                                   (re-search-forward "^\\*\\* Self\\b" next-h1 t))))
-            ;; If ** Self exists, clear its content
+            ;; If ** Self exists, clear its content. Also consume any blank
+            ;; lines above the heading so the leading `\n' in the insert
+            ;; below doesn't accumulate one extra blank under * Journal on
+            ;; every refresh.
             (when existing-self
               (goto-char (match-beginning 0))
-              (let ((self-end (save-excursion
-                                (forward-line 1)
-                                (if (re-search-forward "^\\*\\*? " nil t)
-                                    (line-beginning-position)
-                                  (point-max)))))
-                (delete-region (line-beginning-position) self-end)))
+              (let* ((delete-start
+                      (save-excursion
+                        (let ((p (line-beginning-position)))
+                          (forward-line -1)
+                          (while (and (> (point) journal-end)
+                                      (looking-at-p "^[ \t]*$"))
+                            (setq p (line-beginning-position))
+                            (forward-line -1))
+                          p)))
+                     (self-end (save-excursion
+                                 (forward-line 1)
+                                 (if (re-search-forward "^\\*\\*? " nil t)
+                                     (line-beginning-position)
+                                   (point-max)))))
+                (delete-region delete-start self-end)))
             ;; Position: right after * Journal heading
             (unless existing-self
               (goto-char journal-end)
