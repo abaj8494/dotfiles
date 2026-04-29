@@ -62,6 +62,70 @@ Bypasses the hourly sync cron so ledger.abaj.ai updates immediately."
 
 (define-key global-map (kbd "C-c b p") #'aj/beancount-deploy)
 
+;; ---------------------------------------------------------------------------
+;; Scan a single document → multi-page PDF in the current directory
+;; ---------------------------------------------------------------------------
+
+(defconst aj/scan-doc-script
+  (expand-file-name "scripts/scan-doc.py" user-emacs-directory)
+  "Path to the interactive single-document scan helper.")
+
+(defun aj/scan-document (&optional arg)
+  "Open a horizontal vterm split running the single-document scan helper.
+Output PDF lands in the buffer's `default-directory' (or `$HOME' if the
+buffer has none, e.g. *scratch*). Each ADF pass in the vterm appends
+pages to the output; enter `q' in the prompt to finish and assemble.
+
+Prefix args:
+  no prefix           simplex, create a new PDF
+  \\[universal-argument]               duplex, create a new PDF
+  \\[universal-argument] \\[universal-argument]         simplex, append to an existing PDF (prompts for path)
+
+Duplex can also be toggled mid-session with `d' at the script's prompt,
+and append mode can be entered ad-hoc by typing `a' at the filename
+prompt."
+  (interactive "P")
+  (let* ((duplex (and arg (not (equal arg '(16)))))
+         (append-mode (equal arg '(16)))
+         (dir (or (and default-directory
+                       (file-directory-p default-directory)
+                       (expand-file-name default-directory))
+                  (expand-file-name "~")))
+         (append-target
+          (when append-mode
+            (let ((chosen (read-file-name
+                           "Append to PDF: " dir nil t nil
+                           (lambda (name)
+                             (or (file-directory-p name)
+                                 (string-match-p "\\.pdf\\'" name))))))
+              (unless (and chosen
+                           (file-regular-p chosen)
+                           (string-match-p "\\.pdf\\'" chosen))
+                (user-error "Not a PDF file: %s" chosen))
+              (expand-file-name chosen))))
+         (cmd (format "python3 %s%s%s %s"
+                      (shell-quote-argument aj/scan-doc-script)
+                      (if duplex " --duplex" "")
+                      (if append-target
+                          (concat " --append "
+                                  (shell-quote-argument append-target))
+                        "")
+                      (shell-quote-argument (directory-file-name dir)))))
+    (unless (file-exists-p aj/scan-doc-script)
+      (user-error "scan-doc.py not found at %s" aj/scan-doc-script))
+    (let ((default-directory dir))
+      (split-window-below)
+      (other-window 1)
+      (cond
+       ((or (featurep 'vterm) (require 'vterm nil 'noerror))
+        (vterm)
+        (vterm-send-string cmd)
+        (vterm-send-return))
+       (t
+        (compile cmd))))))
+
+(define-key global-map (kbd "C-c s") #'aj/scan-document)
+
 (provide 'aj-bindings)
 
 ;;; aj-bindings.el ends here
