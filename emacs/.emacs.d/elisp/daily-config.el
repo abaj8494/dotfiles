@@ -1,8 +1,11 @@
 ;;; daily-config.el --- Daily note configuration -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;; All daily-note functionality: recurring tasks, weather, calendar,
-;; capture templates, weekly transclusion, heading structure, navigation.
+;; Daily-notes entry point. Pulls in the focused submodules
+;; (daily-structure, daily-week, daily-recurring, daily-capture,
+;; daily-calendar, daily-garmin, daily-anki, daily-rmpp) and provides
+;; the file-open lifecycle hook, navigation, refile-on-DONE / propagate-
+;; DONE-to-tasks glue, and the `C-c d' / `C-c d r' keymaps.
 
 ;;; Code:
 
@@ -19,25 +22,19 @@
 (require 'daily-rmpp)
 
 ;; ---------------------------------------------------------------------------
-;; Variables & Config
+;; Shared state
 ;; ---------------------------------------------------------------------------
 
 (defvar aj/daily-hook-suppress nil
   "When non-nil, `aj/daily-file-open-hook' is suppressed.
-Used to prevent side-effects (overdue bring-forward, calendar refresh, etc.)
-when files are opened during org-capture.")
-
-
-
-
-;; ---------------------------------------------------------------------------
-;; OpenWeatherMap for Calendar (uses API key from authinfo.gpg)
-
+Used to prevent side-effects (overdue bring-forward, calendar refresh,
+etc.) when files are opened during org-capture, and consulted by
+`aj/propagate-done-to-tasks' so machine-driven CANCEL stamps from the
+bring-forward path don't cascade into tasks.org.")
 
 ;; ---------------------------------------------------------------------------
-;; Daily Lifecycle & Navigation
+;; Daily Lifecycle
 ;; ---------------------------------------------------------------------------
-
 
 (defun aj/daily-needs-setup-p ()
   "Return t if current daily file needs full setup.
@@ -163,6 +160,9 @@ Per-step timings are logged to *Messages* when the total exceeds
                               (nreverse aj--timings)
                               " ")))))))
 
+;; ---------------------------------------------------------------------------
+;; Navigation
+;; ---------------------------------------------------------------------------
 
 (defun aj/org-roam-dailies-goto-next-day ()
   "Go to the next day's daily note, creating it if necessary.
@@ -383,19 +383,6 @@ tasks.org."
         (org-beginning-of-line)))))
 ;; Bind refresh map to r in dailies map
 (define-key org-roam-dailies-map (kbd "r") aj/daily-refresh-map)
-
-
-;; ---------------------------------------------------------------------------
-;; Hooks & Advice
-;; ---------------------------------------------------------------------------
-
-
-;; Suppress daily-file-open-hook during org-capture to prevent side-effects
-;; (e.g. bring-forward-overdue cancelling source items while capturing).
-;; Only suppressed for actual captures, not goto (C-c d d) operations.
-
-
-
 
 
 
