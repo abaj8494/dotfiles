@@ -2807,6 +2807,24 @@ via `edge-tts' so you can react without switching windows."
 
 (define-key org-roam-dailies-map (kbd "p") #'aj/rmpp-push-daily)
 
+(defun aj/ferrari-make ()
+  "Run `make ferrari' in ~/Documents/remarkable/ferrari asynchronously.
+Output goes to the same hidden log buffer as `aj/rmpp-push-daily'.
+Plays Glass.aiff on success, Basso.aiff + edge-tts on failure."
+  (interactive)
+  (let ((project-dir (expand-file-name "~/Documents/remarkable/ferrari")))
+    (with-current-buffer (aj/rmpp--log-buffer)
+      (goto-char (point-max))
+      (insert (format-time-string "\n=== [%F %T] make ferrari starting ===\n")))
+    (message "ferrari: running make ferrari…")
+    (aj/rmpp--run-step
+     "ferrari"
+     (list "make" "-C" project-dir "ferrari")
+     (lambda ()
+       (aj/rmpp--log "=== SUCCESS ===\n")
+       (aj/rmpp--play-sound aj/rmpp--success-sound)
+       (message "ferrari: make ferrari ✓")))))
+
 ;; Create refresh keymap: C-c d r <key>
 (defvar aj/daily-refresh-map (make-sparse-keymap)
   "Keymap for daily refresh operations under C-c d r.")
