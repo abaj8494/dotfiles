@@ -2058,7 +2058,13 @@ syncs data, then inserts."
                     (aj/insert-hourly-weather-table buffer date-str)
                     (with-current-buffer buffer
                       (aj/ensure-heading-separators)
-                      (aj/ensure-recurring-separators))
+                      (aj/ensure-recurring-separators)
+                      ;; Weather insertion splices content between a
+                      ;; pre-existing `#+LATEX: \newpage' and its heading,
+                      ;; orphaning the directive inside the Calendar section.
+                      ;; Re-run the sweeper so Phase 1 deletes the orphan
+                      ;; and Phase 2 re-inserts canonically above the heading.
+                      (aj/ensure-heading-newpages))
                     (message "Weather: done for %s ✓" name))))))))))))
 
 (defun aj/fetch-calendar-weather-sync (date-str buffer)
@@ -2101,7 +2107,12 @@ cache so the calendar still has the most recent available weather."
       (aj/insert-hourly-weather-table buffer date-str)
       (with-current-buffer buffer
         (aj/ensure-heading-separators)
-        (aj/ensure-recurring-separators)))))
+        (aj/ensure-recurring-separators)
+        ;; Weather insertion splices content between a pre-existing
+        ;; `#+LATEX: \newpage' and its heading, orphaning the directive.
+        ;; Re-sweep so the orphan is deleted and a canonical directive
+        ;; is re-inserted above the next heading.
+        (aj/ensure-heading-newpages)))))
 
 (defun aj/refresh-daily-calendar-sync ()
   "Like `aj/refresh-daily-calendar' but blocks until weather is inserted.
