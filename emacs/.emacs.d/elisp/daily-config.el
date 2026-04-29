@@ -1546,6 +1546,11 @@ Entries are placed under * Capture by the capture template."
         ;; 4d. Bring forward overdue priority tasks from previous days' Recurring
         (aj/bring-forward-overdue-recurring)
         (aj/ensure-recurring-separators)
+        ;; 4e. Re-sweep #+LATEX: \newpage. Recurring/overdue inserts splice
+        ;; content between canonical newpages and their headings, orphaning
+        ;; the directive — symptom seen as a stranded `#+LATEX: \newpage'
+        ;; between * Recurring and ** Shrine in capture-born files.
+        (aj/ensure-heading-newpages)
         ;; 5. Move captured entry if user chose a Recurring target
         (when (and aj/--dailies-capture-target
                    aj/--dailies-capture-heading
@@ -2381,6 +2386,11 @@ Inserts transclude, ensures headings, populates recurring and calendar."
   ;; 3c. Bring forward overdue priority tasks from previous days' Recurring
   (aj/bring-forward-overdue-recurring)
   (aj/ensure-recurring-separators)
+  ;; 3d. Re-sweep #+LATEX: \newpage. Inserting recurring/overdue subtrees
+  ;; at section-end splices content between a canonical newpage and its
+  ;; heading, orphaning the directive. Without this sweep, capture-born
+  ;; files ship with the orphan baked in.
+  (aj/ensure-heading-newpages)
   ;; 4. Update statistics cookies
   (save-excursion
     (dolist (heading aj/headings-with-statistics)
