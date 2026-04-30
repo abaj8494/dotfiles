@@ -127,6 +127,21 @@
   ;; would disappear the moment the sync sentinel fires its refresh.
   (put 'my/notmuch-marked-threads 'permanent-local t)
 
+  (defun my/notmuch-restore-marks-from-db ()
+    "Rebuild `my/notmuch-marked-threads' from `tag:marked' in the notmuch DB.
+The +marked tag persists across Emacs restart; the lisp cache doesn't.
+Running this on `notmuch-search-mode-hook' makes `d'/`a' etc. see the
+marks again after a fresh start (or any other cache wipe). Source of
+truth is the DB tag; the lisp var is just a cache."
+    (let ((output (string-trim
+                   (shell-command-to-string
+                    "notmuch search --output=threads tag:marked"))))
+      (setq my/notmuch-marked-threads
+            (and (> (length output) 0)
+                 (split-string output "\n" t)))))
+
+  (add-hook 'notmuch-search-mode-hook #'my/notmuch-restore-marks-from-db)
+
   (defun my/notmuch-search-toggle-mark ()
     "Toggle mark on current thread.
 Works during sync — only the bulk action (d/a/etc.) waits for sync."
