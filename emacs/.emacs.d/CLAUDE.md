@@ -60,11 +60,29 @@ launchd (at login)
     package-config.el        ← Package declarations (Helm, org-roam, gptel, conda, jupyter, etc.)
     ui-config.el             ← Theme (gruber), fonts, splash screen
     org-config.el            ← Org-mode settings, LaTeX export config, link types
-    daily-config.el          ← Daily note system (org-roam-dailies hooks, recurring tasks,
-                                calendar, weather, Garmin integration, rMPP push)
+    daily-config.el          ← Daily note entry point. Requires the daily-* submodules
+                                below; hosts the file-open hook, navigation, refile-on-DONE
+                                glue, propagate-DONE-to-tasks, schedule/deadline date anchoring,
+                                and the C-c d / C-c d r keymaps.
+    daily-structure.el       ← Heading scaffolding: ensure-heading-*, separators, newpages,
+                                blank-line normalizer, daily-date-file-p, under-heading-p
+    daily-week.el            ← Week transclude (yearly-file IDs, ISO week resolver, fold-on-open)
+    daily-recurring.el       ← tasks.org agenda → due-set, subtree extract/strip, bring-forward
+                                (overdue captures + recurring), refresh-daily-recurring
+    daily-capture.el         ← org-capture + org-roam-dailies templates, lifecycle hooks,
+                                cookie-stripping advice, hook-suppression plumbing,
+                                move-capture-to-recurring
+    daily-calendar.el        ← Monthly cal table, weather (rsync + OpenWeather fallback,
+                                hourly table), mode-line wttr widget, current-hour highlighting
+    daily-garmin.el          ← ** Self section: sleep/stress chart, route maps, dashboard,
+                                garmindb sync, garmin-activity: org-link type
+    daily-anki.el            ← AnkiConnect → 14-day review chart under * TODO Anki
+    daily-rmpp.el            ← rMPP push (gmi pull → mbsync → export → scp), aj/ferrari-make,
+                                shared log-buffer / sound / edge-tts plumbing
     anki-config.el           ← Anki-editor integration
-    email-config.el          ← mu4e with mbsync/gmail-lieer
-    aj-bindings.el           ← Custom keybindings (C-c Y prefix)
+    email-config.el          ← notmuch + mbsync (Abaj/UNSW IMAP) + gmail-lieer (Gmail API)
+    aj-bindings.el           ← Personal global keybindings (C-c Y yank map, C-c b p
+                                beancount-deploy, C-c s scan-document via vterm)
     magit-bindings.el        ← Magit keybindings
     ox-hugo-bindings.el      ← ox-hugo export keybindings
     auto-save-config.el      ← Auto-save configuration
@@ -80,9 +98,25 @@ All modules use `lexical-binding: t`.
 
 ## Key Subsystems
 
-### Daily Notes (`daily-config.el`)
+### Daily Notes (`daily-config.el` + `daily-*.el`)
 
-This is the largest config file (~3400 lines). It manages org-roam daily notes with auto-populated structure.
+Manages org-roam daily notes with auto-populated structure. `daily-config.el`
+is a thin entry point (~420 lines) that requires eight focused submodules
+listed in the Config Structure above. Cross-module dependencies flow
+`daily-structure → daily-week / daily-recurring → daily-capture →
+daily-{calendar, garmin, anki, rmpp}`. Most other modules require
+`daily-structure` for heading helpers; `daily-capture`'s reposition path
+fans out into recurring + week + structure.
+
+**Module load-order gotcha**: don't put a top-level `(define-key
+aj/daily-refresh-map ...)` inside a submodule. The refresh-map is
+defvar'd in `daily-config.el`'s body, which runs *after* every
+submodule's `(require ...)`. The garmin `C-c d r j` binding originally
+lived in `daily-garmin.el` and broke load with `Symbol's value as
+variable is void: aj/daily-refresh-map` after the refactor — fixed by
+moving the `define-key` into `daily-config.el`'s keymap section and
+exposing the lambda as the named command `aj/garmin-refresh-and-jump`
+in `daily-garmin.el`.
 
 **Hook chain**: `org-roam-dailies-find-file-hook` → `aj/daily-file-open-hook` which:
 1. Detects bare files (`aj/daily-needs-setup-p` — checks for missing `* Journal`)
@@ -90,11 +124,20 @@ This is the largest config file (~3400 lines). It manages org-roam daily notes w
 3. For existing files: refreshes recurring, brings forward overdue captures, refreshes calendar
 4. Enables `org-transclusion-mode`, saves buffer
 
+**Schedule/deadline date anchoring**: `org-schedule` and `org-deadline`
+are around-advised by `aj/daily--anchor-org-read-date`
+(`daily-config.el`). When point is in a daily file the calendar prompt
+defaults to the daily's filename date instead of today, via
+`org-overriding-default-time`. Outside daily files the advice is a
+passthrough. Useful right after `C-c d c` (capture-date) where the
+captured entry needs `C-c C-s` defaulted to the day you captured into.
+
 **Keybindings** (all under `C-c d` = `org-roam-dailies-map`):
 
 | Key | Function |
 |-----|----------|
 | `C-c d d` | Go to today's daily |
+| `C-c d c` | Capture into a date (creates the daily if needed) |
 | `C-c d g` | Go to date (pick from calendar) |
 | `C-c d p` | Pull highlights from rMPP + export + push today's daily PDF |
 | `C-c d r r` | Refresh recurring tasks |
