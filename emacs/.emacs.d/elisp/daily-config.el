@@ -410,6 +410,8 @@ parsed date so the calendar pops up on the day you're capturing into."
         (goto-char (point-min))
         (re-search-forward "^\\*+ TODO Anki\\b" nil t)
         (org-beginning-of-line)))))
+;; C-c d r j — refresh Garmin Self chart (C-u also forces a sync)
+(define-key aj/daily-refresh-map (kbd "j") #'aj/garmin-refresh-and-jump)
 ;; Bind refresh map to r in dailies map
 (define-key org-roam-dailies-map (kbd "r") aj/daily-refresh-map)
 

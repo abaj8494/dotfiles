@@ -552,22 +552,27 @@ garmindb sync to download latest data and refresh when done."
     (when (string= date-str (format-time-string "%Y-%m-%d"))
       (aj/garmin-sync-and-refresh (current-buffer)))))
 
-;; Keybinding: C-c d r j (prefix arg C-u C-c d r j forces sync)
-(define-key aj/daily-refresh-map (kbd "j")
-  (lambda (force) (interactive "P")
-    (aj/insert-garmin-self-chart)
-    ;; With prefix arg, force a sync regardless of cooldown
-    (when (and force
-               (aj/daily-date-file-p)
-               (string= (file-name-sans-extension
-                          (file-name-nondirectory (buffer-file-name)))
-                         (format-time-string "%Y-%m-%d")))
-      (aj/garmin-sync-and-refresh (current-buffer) t))
-    (unless (aj/under-heading-p "^\\*+ Self\\b")
-      (when (y-or-n-p "Jump to Self heading?")
-        (goto-char (point-min))
-        (re-search-forward "^\\*+ Self\\b" nil t)
-        (org-beginning-of-line)))))
+;; The C-c d r j binding lives in daily-config.el alongside the rest of
+;; the aj/daily-refresh-map setup so the keymap is fully assembled in one
+;; place — see `aj/garmin-refresh-and-jump' below for the binding's body.
+
+(defun aj/garmin-refresh-and-jump (force)
+  "Refresh the Garmin Self chart in the current daily note.
+With prefix arg FORCE, also kick off a fresh garmindb sync regardless
+of the cooldown. Offers to jump to the Self heading afterward."
+  (interactive "P")
+  (aj/insert-garmin-self-chart)
+  (when (and force
+             (aj/daily-date-file-p)
+             (string= (file-name-sans-extension
+                        (file-name-nondirectory (buffer-file-name)))
+                       (format-time-string "%Y-%m-%d")))
+    (aj/garmin-sync-and-refresh (current-buffer) t))
+  (unless (aj/under-heading-p "^\\*+ Self\\b")
+    (when (y-or-n-p "Jump to Self heading?")
+      (goto-char (point-min))
+      (re-search-forward "^\\*+ Self\\b" nil t)
+      (org-beginning-of-line))))
 
 ;; Refresh Garmin self chart before org export (sync, no async)
 (defun aj/refresh-garmin-self-before-export (&rest _)
