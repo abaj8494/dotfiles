@@ -988,10 +988,22 @@ If QUIET is non-nil, don't show messages."
   (force-mode-line-update t)
   (let ((old-unread (my/email-total-unread))
         (needs-push my/notmuch-pending-changes))
-    ;; Build command: push first if needed, then pull, then run jobsync corrections scanner
-    (let* ((base-cmd (if needs-push
-                         "cd ~/Maildir/gmail-lieer && gmi push && gmi pull && SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a && notmuch new"
-                       "cd ~/Maildir/gmail-lieer && gmi pull && SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a && notmuch new"))
+    ;; Build command. gmi pull and mbsync touch independent maildirs so we
+    ;; fan them out in parallel and `wait' before notmuch new — drops
+    ;; wall-clock from gmi+mbsync down to max(gmi, mbsync). `wait $pid'
+    ;; surfaces that subshell's exit status, so `&&' between waits
+    ;; preserves the original "any failure aborts the chain" semantics.
+    ;; Push (when needed) still runs first — local tag changes must be
+    ;; applied upstream before pull can see a consistent view.
+    (let* ((parallel-pull
+            (concat "cd ~/Maildir/gmail-lieer && "
+                    "gmi pull & gmi_pid=$!; "
+                    "SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a & mbsync_pid=$!; "
+                    "wait $gmi_pid && wait $mbsync_pid && "
+                    "notmuch new"))
+           (base-cmd (if needs-push
+                         (concat "cd ~/Maildir/gmail-lieer && gmi push && " parallel-pull)
+                       parallel-pull))
            ;; Add jobsync corrections scanner (source config for API key)
            (cmd (concat base-cmd " && source ~/.jobsync/config && node ~/Documents/code-private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
       (setq my/notmuch-pending-changes nil)
