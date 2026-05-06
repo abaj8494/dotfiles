@@ -150,7 +150,7 @@ captured entry needs `C-c C-s` defaulted to the day you captured into.
 | `C-c d F` / `B` | Next / previous day |
 
 **rMPP push** (`C-c d p` → `aj/rmpp-push-daily`):
-- Step 1: `make ferrari-pull` (KOReader highlights → sioyek)
+- Step 1: `make ferrari-pull-highlights` (KOReader highlights → sioyek)
 - Step 2: `scripts/sync-daily.sh` (emacsclient populates → batch LaTeX export → scp → xochitl)
 - Output goes to hidden buffer ` *rmpp-push-daily*`
 - Success: Glass.aiff chime

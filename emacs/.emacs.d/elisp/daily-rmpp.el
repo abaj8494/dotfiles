@@ -2,7 +2,7 @@
 
 ;;; Commentary:
 ;; Async push of today's daily PDF to the reMarkable Paper Pro:
-;; pulls KOReader highlights via `make ferrari-pull', then runs
+;; pulls KOReader highlights via `make ferrari-pull-highlights', then runs
 ;; scripts/sync-daily.sh to export and scp into xochitl. Plays
 ;; Glass.aiff / Basso.aiff + edge-tts for completion feedback.
 ;; Also exposes aj/ferrari-make for forcing a ferrari rebuild
@@ -113,8 +113,8 @@ otherwise lose its custom PATH."
 (defun aj/rmpp-push-daily ()
   "Pull KOReader highlights from rMPP, then export + push today's daily.
 
-Step 1 runs `make ferrari-pull' so any unpulled highlights on the
-device are merged back into sioyek before we touch it further. Step 2
+Step 1 runs `make ferrari-pull-highlights' so any unpulled highlights on
+the device are merged back into sioyek before we touch it further. Step 2
 shells out to `scripts/sync-daily.sh' for the headless org→PDF export,
 UUID lookup, scp, and xochitl registration. If step 1 fails, step 2 is
 skipped and you hear about the pull failure specifically.
@@ -133,7 +133,7 @@ via `edge-tts' so you can react without switching windows."
     (message "rMPP: pulling highlights, then pushing today's daily…")
     (aj/rmpp--run-step
      "pull"
-     (list "make" "-C" project-dir "ferrari-pull")
+     (list "make" "-C" project-dir "ferrari-pull-highlights")
      (lambda ()
        (aj/rmpp--run-step
         "push"
