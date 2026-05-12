@@ -343,6 +343,7 @@
 })}
 \\setmainfont{Latin Modern Roman}[Ligatures=TeX, RawFeature={fallback=mainfallback}]
 \\setmonofont{Menlo}[Scale=0.9]
+\\usepackage{twemojis}  % weather/moon emoji rendered as TikZ (see aj/latex-filter-twemoji)
 \\usepackage{graphicx}
 \\usepackage{longtable}
 \\usepackage{adjustbox}
@@ -1526,6 +1527,51 @@ Only applies to LaTeX-based backends."
 
 (add-to-list 'org-export-filter-table-functions
              #'aj/latex-filter-table-autofit)
+
+;; ── Twemoji LaTeX export filter ──────────────────────────────────────────
+;; lualatex + luaotfload's node-mode fallback can't render Apple Color
+;; Emoji (sbix format), so weather emoji in the daily calendar section come
+;; out as monochrome silhouettes and moon-phase glyphs vanish entirely.
+;; Map them to `\texttwemoji{CODEPOINT}' from the `twemojis' package, which
+;; draws each glyph via TikZ — no font installation required, full colour.
+;; The hex codepoint key is used (e.g. "1f327" for 🌧️) rather than the
+;; name alias since it's unambiguous and matches the official Twemoji set.
+;; The U+FE0F (VS-16) variation selector is stripped by listing both
+;; with- and without-VS-16 forms; with-VS-16 entries come first so they
+;; match before the bare codepoint would.
+(defvar aj/latex-twemoji-map
+  '(("☀️" . "2600")  ("☀" . "2600")
+    ("☁️" . "2601")  ("☁" . "2601")
+    ("🌦️" . "1f326") ("🌦" . "1f326")
+    ("🌧️" . "1f327") ("🌧" . "1f327")
+    ("⛈️" . "26c8")  ("⛈" . "26c8")
+    ("❄️" . "2744")  ("❄" . "2744")
+    ("🌫️" . "1f32b") ("🌫" . "1f32b")
+    ("🌡️" . "1f321") ("🌡" . "1f321")
+    ("🌑" . "1f311")
+    ("🌒" . "1f312")
+    ("🌓" . "1f313")
+    ("🌔" . "1f314")
+    ("🌕" . "1f315")
+    ("🌖" . "1f316")
+    ("🌗" . "1f317")
+    ("🌘" . "1f318"))
+  "Alist: emoji string → Twemoji hex codepoint, consumed by
+`aj/latex-filter-twemoji' to produce \\texttwemoji{...} calls.")
+
+(defun aj/latex-filter-twemoji (output backend _info)
+  "Replace weather/moon emoji in OUTPUT with \\texttwemoji{...} calls."
+  (when (org-export-derived-backend-p backend 'latex)
+    (let ((s output))
+      (dolist (entry aj/latex-twemoji-map)
+        (setq s (replace-regexp-in-string
+                 (regexp-quote (car entry))
+                 (format "\\texttwemoji{%s}" (cdr entry))
+                 s t t)))
+      s)))
+
+(add-to-list 'org-export-filter-final-output-functions
+             #'aj/latex-filter-twemoji)
 
 ;; Open exported PDFs in sioyek
 (with-eval-after-load 'org
