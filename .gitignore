@@ -42,6 +42,8 @@ emacs/.emacs.d/url/
 emacs/.emacs.d/network-security.data
 emacs/.emacs.d/org-msg-ltximg/
 emacs/.emacs.d/*.elc
+emacs/.emacs.d/message-drafts/
+emacs/.emacs.d/scripts/__pycache__/
 .emacs.d.backup/
 emacs.el
 
@@ -61,6 +63,11 @@ karabiner/.config/karabiner/automatic_backups/
 # Kitty - generated files
 # =============================================================================
 kitty/.config/kitty/macos-launch-services-cmdline
+
+# =============================================================================
+# htop - write-replace temp files
+# =============================================================================
+htop/.config/htop/htoprc.tmp.*
 
 # =============================================================================
 # GitHub CLI - credentials (sensitive)
