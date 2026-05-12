@@ -11,8 +11,8 @@
 ;;; Code:
 
 ;; Log buffer is space-prefixed so it stays out of the normal buffer list.
-;; View with `C-x b SPC *rmpp-push-daily* RET' when debugging.
-(defconst aj/rmpp--log-buffer-name " *rmpp-push-daily*")
+;; View with `C-x b *rmpp-push-daily* RET' when debugging.
+(defconst aj/rmpp--log-buffer-name "*rmpp-push-daily*")
 (defconst aj/rmpp--success-sound "/System/Library/Sounds/Glass.aiff")
 (defconst aj/rmpp--failure-sound "/System/Library/Sounds/Basso.aiff")
 (defconst aj/rmpp--edge-tts (expand-file-name "~/miniconda3/bin/edge-tts"))
@@ -119,8 +119,8 @@ shells out to `scripts/sync-daily.sh' for the headless org→PDF export,
 UUID lookup, scp, and xochitl registration. If step 1 fails, step 2 is
 skipped and you hear about the pull failure specifically.
 
-Log output is appended to the hidden buffer ` *rmpp-push-daily*' — view
-with `C-x b SPC *rmpp-push-daily* RET' when debugging.
+Log output is appended to the buffer `*rmpp-push-daily*' — view with
+`C-x b *rmpp-push-daily* RET' when debugging.
 
 On success: plays Glass.aiff and flashes a success message.
 On failure: plays Basso.aiff, speaks the failing step and a short reason
