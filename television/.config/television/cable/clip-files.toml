@@ -6,7 +6,7 @@ requirements = ["curl", "sed", "python3", "fd"]
 [source]
 command = [
   "curl -s \"https://clip.abaj.ai/files/${CLIP_PAGE:-shared}/\" | sed -n 's|.*<a href=\"\\([^\"]*\\)\">\\(.*\\)</a>.*|\\1\\t\\2|p' | python3 -c \"import sys,urllib.parse;[print('https://clip.abaj.ai/files/${CLIP_PAGE:-shared}/'+line.split('\\t')[0]+'\\t'+urllib.parse.unquote(line.split('\\t')[1]),end='') for line in sys.stdin]\"",
-  "fd -t f -d 1 | awk '{print $0 \"\\t\" $0}'",
+  "fd -t f . \"$PWD\" --max-depth 1 -I | awk '{n=split($0,a,\"/\"); print $0 \"\\t\" a[n]}'",
 ]
 display = "{split:\\t:1}"
 output = "{split:\\t:0}"
