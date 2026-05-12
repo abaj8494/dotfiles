@@ -38,20 +38,24 @@
 ;; t = theme toggle
 (define-key aj/toggle-map (kbd "t") #'gruber-toggle)
 
-;; s = spell toggle (flyspell-mode)
-(define-key aj/toggle-map (kbd "s") #'flyspell-mode)
+;; s = spell toggle (jinx-mode — replaces flyspell, ~10x faster via libenchant)
+(define-key aj/toggle-map (kbd "s") #'jinx-mode)
 
-;; Flyspell configuration - uses same backend as ispell
-(with-eval-after-load 'flyspell
-  ;; Use aspell if available (better suggestions than ispell)
-  (when (executable-find "aspell")
-    (setq ispell-program-name "aspell")
-    (setq ispell-extra-args '("--sug-mode=ultra" "--lang=en_AU")))
-  ;; Speed up flyspell
-  (setq flyspell-issue-message-flag nil))
-
-;; Enable flyspell by default for text modes
-(add-hook 'text-mode-hook #'flyspell-mode)
+(use-package jinx
+  :straight t
+  :hook (text-mode . jinx-mode)
+  :bind (("M-$" . jinx-correct)
+         ("C-M-$" . jinx-languages))
+  :init
+  ;; enchant-2 is installed via MacPorts; the daemon's pkg-config is
+  ;; Homebrew's and won't find it without this hint.
+  (let ((macports-pcdir "/opt/local/lib/pkgconfig"))
+    (when (file-directory-p macports-pcdir)
+      (let ((cur (getenv "PKG_CONFIG_PATH")))
+        (setenv "PKG_CONFIG_PATH"
+                (if cur (concat macports-pcdir ":" cur) macports-pcdir)))))
+  :custom
+  (jinx-languages "en_AU"))
 
 (global-set-key (kbd "C-c e i") (lambda () (interactive) (find-file "~/.emacs.d/init.el")))
 (global-set-key (kbd "C-c e d") (lambda () (interactive) (find-file "~/.emacs.d/elisp/")))
