@@ -1,0 +1,42 @@
+[metadata]
+name = "calc"
+description = "Pick a computation, get prompted for args, see the result. Offline (python3 + gum)."
+requirements = ["python3", "gum"]
+
+[source]
+command = '''cat <<'EOF'
+gcd|GCD of two integers|a b
+lcm|LCM of two integers|a b
+fib|n-th Fibonacci|n
+fact|Factorial|n
+prime|Primality check|n
+factor|Prime factorisation|n
+divisors|Count divisors|n
+perfect|Perfect-number check|n
+collatz|Collatz sequence length to 1|n
+nCr|Combinations (n choose r)|n r
+nPr|Permutations (n permute r)|n r
+quad|Quadratic real roots ax^2+bx+c|a b c
+disc|Quadratic discriminant|a b c
+zpct|Z-score -> percentile|z
+pctz|Percentile -> Z-score (0..1)|p
+base|Base-N -> base-M|n from_base to_base
+hex|Decimal -> hex / bin / oct|n
+f2c|Fahrenheit -> Celsius|f
+c2f|Celsius -> Fahrenheit|c
+c2k|Celsius -> Kelvin|c
+k2c|Kelvin -> Celsius|k
+det|Matrix determinant (rows comma-separated, cells space-separated)|matrix
+dsize|Data size convert (e.g. 1.5 GiB MB)|value from_unit to_unit
+expr|Free-form Python expression (math, statistics, fractions in scope)|expression
+EOF'''
+display = "{split:|:0}  —  {split:|:1}    ({split:|:2})"
+output  = "{split:|:0}"
+
+[keybindings]
+enter = "actions:compute"
+
+[actions.compute]
+description = "Prompt for args + compute"
+command = "~/.config/television/scripts/calc.sh '{split:|:0}' '{split:|:2}'"
+mode = "execute"
