@@ -10,7 +10,7 @@ if ! [ -f "$FILE_PATH" ] && ! [ -h "$FILE_PATH" ]; then
   exit
 fi
 
-if [ -n "$INSIDE_EMACS" ] || [ "$TERM" != "xterm-kitty" ]; then
+if [ -n "$INSIDE_EMACS" ] || { [ "$TERM" != "xterm-kitty" ] && [ -z "$KITTY_WINDOW_ID" ]; }; then
   NO_IMAGE_PREVIEW=1
 fi
 
