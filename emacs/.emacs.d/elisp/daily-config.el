@@ -385,7 +385,8 @@ parsed date so the calendar pops up on the day you're capturing into."
   "Keymap for daily refresh operations under C-c d r.")
 (define-key aj/daily-refresh-map (kbd "c")
   (lambda () (interactive)
-    (aj/refresh-daily-calendar)
+    ;; Explicit refresh always bypasses the weather cache.
+    (aj/refresh-daily-calendar t)
     (unless (aj/under-heading-p "^\\* Calendar\\b")
       (when (y-or-n-p "Jump to Calendar heading?")
         (goto-char (point-min))

@@ -27,6 +27,11 @@
 (defvar aj/weather-archive-local (expand-file-name "~/.cache/weather-archive/")
   "Local cache directory for weather archive.")
 
+(defvar aj/weather-cache-ttl 1800
+  "Seconds. If the cached weather for the file's date is younger than this,
+`aj/fetch-calendar-weather-async' skips the ssh+rsync round-trip and inserts
+directly from the local cache. Set to 0 to always hit the network.")
+
 (defvar aj/weather-location-cache nil
   "Cached location data: (timestamp lat lon name).")
 
@@ -168,13 +173,17 @@ YEAR and MONTH are used to build the ID link."
             (format "%s  " link)
           (format "%s " link))))))
 
-(defun my/insert-aj-day-calendar ()
+(defun my/insert-aj-day-calendar (&optional force)
   "Insert formatted calendar for a daily org-roam note with life stats.
 Parses date from #+title: YYYY-MM-DD line.
 Outputs an org table with links to daily files.
 Σ column: Day of year (cumulative days elapsed in current year).
-ω column: Days elapsed since December 26, 2001 (AJ's birthday)."
-  (interactive)
+ω column: Days elapsed since December 26, 2001 (AJ's birthday).
+
+When FORCE is non-nil, the weather fetch ignores the local cache and
+hits the server. Otherwise a fresh cache (see `aj/weather-cache-ttl')
+short-circuits the ssh+rsync."
+  (interactive "P")
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
@@ -237,7 +246,7 @@ Outputs an org table with links to daily files.
         (org-table-align)
 
         ;; Fetch weather asynchronously and insert when ready
-        (aj/fetch-calendar-weather-async date-str (current-buffer))))))
+        (aj/fetch-calendar-weather-async date-str (current-buffer) force)))))
 
 
 ;; ---------------------------------------------------------------------------
@@ -481,51 +490,89 @@ Weather is relative to DATE-STR (the file's date), not today's date."
               (unless (bolp) (insert "\n"))
               (insert (format "\n%s forecast:\n" location-name) forecast-str "\n"))))))))
 
-(defun aj/fetch-calendar-weather-async (date-str buffer)
+(defun aj/weather-cache-fresh-p (date-str)
+  "Return non-nil if the local weather cache for DATE-STR is fresh enough
+to skip a server fetch. For today, requires the hourly file to exist and
+to have been modified within `aj/weather-cache-ttl' seconds. For other
+dates the cache is static (server only updates today/tomorrow), so any
+existing cache file counts as fresh."
+  (let* ((today-str (format-time-string "%Y-%m-%d"))
+         (is-today (string= date-str today-str))
+         (hourly (expand-file-name (concat "hourly-" date-str ".json")
+                                   aj/weather-archive-local))
+         (daily  (expand-file-name (concat date-str ".json")
+                                   aj/weather-archive-local)))
+    (cond
+     ((<= aj/weather-cache-ttl 0) nil)
+     (is-today
+      (and (file-exists-p hourly)
+           (< (- (float-time)
+                 (float-time (file-attribute-modification-time
+                              (file-attributes hourly))))
+              aj/weather-cache-ttl)))
+     (t (or (file-exists-p hourly) (file-exists-p daily))))))
+
+(defun aj/--insert-weather-from-cache-and-finalize (buffer date-str)
+  "Insert weather + hourly table into BUFFER for DATE-STR and re-sweep newpages.
+Shared tail of the async/cache-hit paths."
+  (when (buffer-live-p buffer)
+    (aj/insert-weather-from-cache buffer date-str)
+    (aj/insert-hourly-weather-table buffer date-str)
+    (with-current-buffer buffer
+      (aj/ensure-heading-separators)
+      (aj/ensure-recurring-separators)
+      ;; Weather insertion splices content between a pre-existing
+      ;; `#+LATEX: \newpage' and its heading, orphaning the directive
+      ;; inside the Calendar section. Re-run the sweeper so Phase 1
+      ;; deletes the orphan and Phase 2 re-inserts canonically above
+      ;; the heading.
+      (aj/ensure-heading-newpages))))
+
+(defun aj/fetch-calendar-weather-async (date-str buffer &optional force)
   "Fetch fresh weather from server and insert into BUFFER's Calendar section.
 Detects location from ~/.weather-location or IP, runs weather script on server,
-syncs data, then inserts."
-  (let* ((location (aj/get-weather-location))
-         (lat (number-to-string (nth 0 location)))
-         (lon (number-to-string (nth 1 location)))
-         (name (nth 2 location)))
-    (message "Weather: fetching for %s (%s, %s)..." name lat lon)
-    (make-directory aj/weather-archive-local t)
-    ;; Step 1: Run weather script on server with location args
-    (let ((fetch-proc (start-process "weather-fetch" "*weather-fetch*"
-                                     "ssh" "root@abaj.ai"
-                                     (format "/root/scripts/weather-archive.sh %s %s '%s'"
-                                             lat lon name))))
-      (set-process-sentinel
-       fetch-proc
-       (lambda (p e)
-         (if (not (string-match-p "finished" e))
-             (message "Weather: server fetch failed - %s" (string-trim e))
-           (message "Weather: server updated, syncing...")
-           ;; Step 2: Sync from server
-           (let ((sync-proc (start-process "weather-sync" nil
-                                           "rsync" "-az"
-                                           aj/weather-archive-remote
-                                           aj/weather-archive-local)))
-             (set-process-sentinel
-              sync-proc
-              (lambda (p2 e2)
-                (if (not (string-match-p "finished" e2))
-                    (message "Weather: sync failed - %s" (string-trim e2))
-                  (message "Weather: inserting into buffer...")
-                  (when (buffer-live-p buffer)
-                    (aj/insert-weather-from-cache buffer date-str)
-                    (aj/insert-hourly-weather-table buffer date-str)
-                    (with-current-buffer buffer
-                      (aj/ensure-heading-separators)
-                      (aj/ensure-recurring-separators)
-                      ;; Weather insertion splices content between a
-                      ;; pre-existing `#+LATEX: \newpage' and its heading,
-                      ;; orphaning the directive inside the Calendar section.
-                      ;; Re-run the sweeper so Phase 1 deletes the orphan
-                      ;; and Phase 2 re-inserts canonically above the heading.
-                      (aj/ensure-heading-newpages))
-                    (message "Weather: done for %s ✓" name))))))))))))
+syncs data, then inserts.
+
+When FORCE is nil (the default) and `aj/weather-cache-fresh-p' returns
+non-nil for DATE-STR, skip the ssh+rsync round-trip and insert directly
+from the local cache. Pass non-nil FORCE (e.g. from `C-c d r c') to
+unconditionally hit the server."
+  (if (and (not force)
+           (aj/weather-cache-fresh-p date-str))
+      (progn
+        (message "Weather: cache hit for %s, skipping fetch" date-str)
+        (aj/--insert-weather-from-cache-and-finalize buffer date-str))
+    (let* ((location (aj/get-weather-location))
+           (lat (number-to-string (nth 0 location)))
+           (lon (number-to-string (nth 1 location)))
+           (name (nth 2 location)))
+      (message "Weather: fetching for %s (%s, %s)..." name lat lon)
+      (make-directory aj/weather-archive-local t)
+      ;; Step 1: Run weather script on server with location args
+      (let ((fetch-proc (start-process "weather-fetch" "*weather-fetch*"
+                                       "ssh" "root@abaj.ai"
+                                       (format "/root/scripts/weather-archive.sh %s %s '%s'"
+                                               lat lon name))))
+        (set-process-sentinel
+         fetch-proc
+         (lambda (_p e)
+           (if (not (string-match-p "finished" e))
+               (message "Weather: server fetch failed - %s" (string-trim e))
+             (message "Weather: server updated, syncing...")
+             ;; Step 2: Sync from server
+             (let ((sync-proc (start-process "weather-sync" nil
+                                             "rsync" "-az"
+                                             aj/weather-archive-remote
+                                             aj/weather-archive-local)))
+               (set-process-sentinel
+                sync-proc
+                (lambda (_p2 e2)
+                  (if (not (string-match-p "finished" e2))
+                      (message "Weather: sync failed - %s" (string-trim e2))
+                    (message "Weather: inserting into buffer...")
+                    (aj/--insert-weather-from-cache-and-finalize buffer date-str)
+                    (when (buffer-live-p buffer)
+                      (message "Weather: done for %s ✓" name)))))))))))))
 
 (defun aj/fetch-calendar-weather-sync (date-str buffer)
   "Synchronous version of `aj/fetch-calendar-weather-async'.
@@ -778,13 +825,15 @@ Works for any date that has archived hourly data, plus today/tomorrow from live 
                         (forward-line -2)
                         (org-table-align)))))))))))))
 
-(defun aj/refresh-daily-calendar ()
+(defun aj/refresh-daily-calendar (&optional force)
   "Refresh calendar section for the current daily note.
-Inserts calendar table and fetches weather data (including hourly if available)."
-  (interactive)
+Inserts calendar table and fetches weather data (including hourly if available).
+With prefix arg (or non-nil FORCE), bypasses the local weather cache and
+re-fetches from the server."
+  (interactive "P")
   (unless (aj/daily-date-file-p)
     (user-error "Not in a daily note"))
-  (my/insert-aj-day-calendar)
+  (my/insert-aj-day-calendar force)
   (message "Calendar refreshed"))
 
 ;; ---------------------------------------------------------------------------
