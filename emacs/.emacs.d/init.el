@@ -21,6 +21,21 @@
 (add-to-list 'exec-path "/Library/TeX/texbin")
 (setenv "PATH" (concat "/Library/TeX/texbin:" (getenv "PATH")))
 
+;; Load the obsolete `cl' compatibility shim so `incf'/`decf' (and friends)
+;; resolve as macros at byte-compile time. jinx 2.7 still emits bare
+;; `incf'/`decf' (jinx.el:505, 509, 1018, 1034, 1097) under only
+;; `(eval-when-compile (require 'cl-lib))' — without `cl' loaded the
+;; byte-compiler bakes them as runtime function calls and the idle
+;; spell-check timer crashes with `invalid-function decf'. Loading `cl' here
+;; covers the in-process byte-compiler; the async native-comp subprocesses
+;; below (which don't load init.el) need the same shim via
+;; `native-comp-async-env-modifier-form' so jinx-*.eln doesn't bake the
+;; bare calls back in.
+(with-suppressed-warnings ((obsolete cl))
+  (require 'cl))
+(setq native-comp-async-env-modifier-form
+      '(with-suppressed-warnings ((obsolete cl)) (require 'cl)))
+
 ;; Bootstrap straight.el package manager
 (require 'bootstrap)
 
