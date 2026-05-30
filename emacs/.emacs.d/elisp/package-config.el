@@ -398,7 +398,7 @@ DECK and SCOPE are as in `ankiorg-pull-notes'."
 ;; AnkiConnect: Pull Flagged Notes with Quickfix Navigation
 ;; ---------------------------------------------------------------------------
 
-(defvar ankiorg-search-directories '("~/Documents/new-site/content-org/flashcards")
+(defvar ankiorg-search-directories '("~/lattice/notes/flashcards")
   "Directories to search for org files containing Anki note IDs.")
 
 (defun ankiorg--anki-connect (action params)
@@ -818,7 +818,7 @@ With prefix ARG, search from current directory instead of project root."
 (use-package org-roam
   :ensure t
   :custom
-  (org-roam-directory (file-truename "~/Documents/new-site/content-org/"))
+  (org-roam-directory (file-truename "~/lattice/notes/"))
   :bind (("C-c a" . org-agenda)
          ("C-c n l" . org-roam-buffer-toggle)
          ("C-c n f" . org-roam-node-find)
@@ -840,6 +840,17 @@ With prefix ARG, search from current directory instead of project root."
   ;; If using org-roam-protocol
   (require 'org-roam-protocol)
   (setq find-file-visit-truename t)
+
+  ;; Make `C-c n f' (org-roam-node-find) completion fully case-insensitive.
+  ;; Helm's default `helm-case-fold-search' is 'smart — it flips to
+  ;; case-SENSITIVE the moment the pattern contains an uppercase letter, so
+  ;; typing a capital in a node title stops matching lowercase. Force both
+  ;; helm's and completing-read's case folding on, scoped to this command only.
+  (defun aj/org-roam-node-find-case-insensitive (orig-fn &rest args)
+    (let ((helm-case-fold-search t)
+          (completion-ignore-case t))
+      (apply orig-fn args)))
+  (advice-add 'org-roam-node-find :around #'aj/org-roam-node-find-case-insensitive)
 
   ;; Hide non-navigable link types from the graph. `elisp:' links with
   ;; embedded quotes (e.g. the Garmin dashboard links) otherwise produce a
@@ -1116,14 +1127,14 @@ With prefix ARG, search from current directory instead of project root."
   :after org
   :init
   (setq org-shop-keymap-prefix "C-c S")
-  (setq org-shop-seasons-file "~/Documents/new-site/content-org/private/shops/seasons.org")
+  (setq org-shop-seasons-file "~/lattice/notes/private/shops/seasons.org")
   :config
-  (setq org-shop-directory "~/Documents/new-site/content-org/private/shops/")
+  (setq org-shop-directory "~/lattice/notes/private/shops/")
   (org-shop-setup)
   ;; Personal receipt-ocr workflow glue (adds C-c S A → make org-shop in a
   ;; vsplit vterm). Lives in the receipt-ocr repo rather than upstream
   ;; org-shop because the path is bespoke to this machine.
-  (load "~/Documents/code-private/receipt-ocr/emacs/receipt-ocr.el" nil 'nomessage))
+  (load "~/lattice/code/private/receipt-ocr/emacs/receipt-ocr.el" nil 'nomessage))
 
 
 ;; ---------------------------------------------------------------------------
