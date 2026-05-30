@@ -11,18 +11,30 @@ command = "printf '\\033[1;35m=== Content ===\\033[0m\\n' && curl -s 'https://cl
 env = { TERM = "dumb" }
 
 [keybindings]
-enter = "actions:files"
-ctrl-e = "actions:edit"
+enter = "actions:edit"
+ctrl-f = "actions:files"
+ctrl-n = "actions:new"
+ctrl-d = "actions:delete"
 ctrl-b = "actions:open-browser"
 
 [actions.files]
 description = "Browse/download/upload files (Ctrl-S to switch)"
-command = "CLIP_PAGE='{}' tv clip-files; tv clip-pages"
+command = "CLIP_PAGE='{}' $HOME/.local/bin/tv clip-files; $HOME/.local/bin/tv clip-pages"
 mode = "execute"
 
 [actions.edit]
 description = "Edit page content in Neovim"
-command = "clip-edit '{}'; tv clip-pages"
+command = "$HOME/.local/bin/clip-edit '{}'; $HOME/.local/bin/tv clip-pages"
+mode = "execute"
+
+[actions.new]
+description = "Create a new page"
+command = "$HOME/.local/bin/clip-new; $HOME/.local/bin/tv clip-pages"
+mode = "execute"
+
+[actions.delete]
+description = "Delete page (and its attachments) with confirmation"
+command = "$HOME/.local/bin/clip-delete '{}'; $HOME/.local/bin/tv clip-pages"
 mode = "execute"
 
 [actions.open-browser]

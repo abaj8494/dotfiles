@@ -20,7 +20,9 @@ enter = "actions:download"
 ctrl-u = "actions:upload"
 ctrl-e = "actions:edit"
 ctrl-k = "actions:delete"
-ctrl-p = "actions:preview-full"
+# ctrl-p moves selection up a line (preview-full still reachable via Ctrl-X action picker)
+ctrl-p = "select_prev_entry"
+ctrl-v = "actions:open-sioyek"
 ctrl-b = "actions:open-browser"
 
 [actions.download]
@@ -51,4 +53,12 @@ mode = "fork"
 [actions.open-browser]
 description = "Open in browser"
 command = "open '{split:\\t:0}'"
+mode = "fork"
+
+# Preview in sioyek, like `V` in lf. Remote clip.abaj.ai entries are downloaded to a
+# temp file first (sioyek is a local viewer and can't open URLs); local entries open
+# directly. Backgrounded so the picker stays open.
+[actions.open-sioyek]
+description = "Open/preview in sioyek"
+command = "f='{split:\\t:0}'; case \"$f\" in http*) t=\"${TMPDIR:-/tmp}/$(basename \"$f\")\"; curl -sfL \"$f\" -o \"$t\" && open -a /Applications/sioyek.app \"$t\";; *) open -a /Applications/sioyek.app \"$f\";; esac >/dev/null 2>&1 &"
 mode = "fork"
