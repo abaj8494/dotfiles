@@ -64,27 +64,32 @@ outer.right =      8
 # See: https://nikitabobko.github.io/AeroSpace/guide#binding-modes
 # 'main' binding mode must be always presented
 
+# Monitors, left-to-right (1-based, by physical position):
+#   1 = MacBook built-in
+#   2 = Gigabyte 32"
+#   3 = Gigabyte 27"
+#   4 = MSI
+# 4 workspaces per monitor → 16 workspaces total.
 [workspace-to-monitor-force-assignment]
-#1 = 1                            # Monitor sequence number from left to right. 1-based indexing
-#2 = 'main'                       # Main monitor
-#3 = 'secondary'                  # Non-main monitor in case when there are only two monitors
-#4 = 'built-in'                   # Case insensitive regex substring
-#5 = '^built-in retina display$'  # Case insensitive regex match
-#6 = 'secondary'
-#3 = 1                            # Monitor sequence number from left to right. 1-based indexing
-#6 = 2
-#1 = 3
 1 = 1
-9 = 1
+2 = 1
+3 = 1
+4 = 1
 
-2 = 2
-3 = 2
-4 = 2
 5 = 2
+6 = 2
+7 = 2
+8 = 2
 
-6 = 3
-7 = 3
-8 = 3
+9 = 3
+10 = 3
+11 = 3
+12 = 3
+
+13 = 4
+14 = 4
+15 = 4
+16 = 4
 
 
 [mode.main.binding]
@@ -123,27 +128,18 @@ cmd-shift-h = 'move left'
 cmd-shift-j = 'move down'
 cmd-shift-k = 'move up'
 cmd-shift-l = 'move right'
-# See: https://nikitabobko.github.io/AeroSpace/commands#workspace
-cmd-1 = 'workspace 1'
-cmd-2 = 'workspace 2'
-cmd-3 = 'workspace 3'
-cmd-4 = 'workspace 4'
-cmd-5 = 'workspace 5'
-cmd-6 = 'workspace 6'
-cmd-7 = 'workspace 7'
-cmd-8 = 'workspace 8'
-cmd-9 = 'workspace 9'
+# Two-digit chord workspace selection (avoids the Cmd+1+1 → workspace 1 clash).
+# Workspace switch:  cmd-0 → then 1..9        → workspaces 1..9
+#                    cmd-1 → then 0..6        → workspaces 10..16
+# Move window:       cmd-shift-0 → then 1..9  → move to workspaces 1..9
+#                    cmd-shift-1 → then 0..6  → move to workspaces 10..16
+# Inside each chord mode both `N` and `cmd-N` are bound, so it works whether
+# you keep Cmd held through the chord or release it between presses.
+cmd-0 = 'mode workspace-0x'
+cmd-1 = 'mode workspace-1x'
 
-# See: https://nikitabobko.github.io/AeroSpace/commands#move-node-to-workspace
-cmd-shift-1 = 'move-node-to-workspace 1'
-cmd-shift-2 = 'move-node-to-workspace 2'
-cmd-shift-3 = 'move-node-to-workspace 3'
-cmd-shift-4 = 'move-node-to-workspace 4'
-cmd-shift-5 = 'move-node-to-workspace 5'
-cmd-shift-6 = 'move-node-to-workspace 6'
-cmd-shift-7 = 'move-node-to-workspace 7'
-cmd-shift-8 = 'move-node-to-workspace 8'
-cmd-shift-9 = 'move-node-to-workspace 9'
+cmd-shift-0 = 'mode move-0x'
+cmd-shift-1 = 'mode move-1x'
 
 cmd-shift-f = 'fullscreen'
 
@@ -193,3 +189,87 @@ cmd-shift-l = ['join-with right', 'mode main']
 #[[on-window-detected]]
 #if.app-id = 'com.google.Chrome'
 #run = "move-node-to-workspace B"
+
+# --- Chord modes for 16-workspace navigation --------------------------------
+# Entered from main mode via cmd-0 / cmd-1 (switch) or cmd-shift-0 / cmd-shift-1
+# (move-node). Each digit returns to main mode after firing. esc/enter bails.
+
+[mode.workspace-0x.binding]
+1     = ['workspace 1', 'mode main']
+2     = ['workspace 2', 'mode main']
+3     = ['workspace 3', 'mode main']
+4     = ['workspace 4', 'mode main']
+5     = ['workspace 5', 'mode main']
+6     = ['workspace 6', 'mode main']
+7     = ['workspace 7', 'mode main']
+8     = ['workspace 8', 'mode main']
+9     = ['workspace 9', 'mode main']
+cmd-1 = ['workspace 1', 'mode main']
+cmd-2 = ['workspace 2', 'mode main']
+cmd-3 = ['workspace 3', 'mode main']
+cmd-4 = ['workspace 4', 'mode main']
+cmd-5 = ['workspace 5', 'mode main']
+cmd-6 = ['workspace 6', 'mode main']
+cmd-7 = ['workspace 7', 'mode main']
+cmd-8 = ['workspace 8', 'mode main']
+cmd-9 = ['workspace 9', 'mode main']
+esc   = 'mode main'
+enter = 'mode main'
+
+[mode.workspace-1x.binding]
+0     = ['workspace 10', 'mode main']
+1     = ['workspace 11', 'mode main']
+2     = ['workspace 12', 'mode main']
+3     = ['workspace 13', 'mode main']
+4     = ['workspace 14', 'mode main']
+5     = ['workspace 15', 'mode main']
+6     = ['workspace 16', 'mode main']
+cmd-0 = ['workspace 10', 'mode main']
+cmd-1 = ['workspace 11', 'mode main']
+cmd-2 = ['workspace 12', 'mode main']
+cmd-3 = ['workspace 13', 'mode main']
+cmd-4 = ['workspace 14', 'mode main']
+cmd-5 = ['workspace 15', 'mode main']
+cmd-6 = ['workspace 16', 'mode main']
+esc   = 'mode main'
+enter = 'mode main'
+
+[mode.move-0x.binding]
+1           = ['move-node-to-workspace 1', 'mode main']
+2           = ['move-node-to-workspace 2', 'mode main']
+3           = ['move-node-to-workspace 3', 'mode main']
+4           = ['move-node-to-workspace 4', 'mode main']
+5           = ['move-node-to-workspace 5', 'mode main']
+6           = ['move-node-to-workspace 6', 'mode main']
+7           = ['move-node-to-workspace 7', 'mode main']
+8           = ['move-node-to-workspace 8', 'mode main']
+9           = ['move-node-to-workspace 9', 'mode main']
+cmd-shift-1 = ['move-node-to-workspace 1', 'mode main']
+cmd-shift-2 = ['move-node-to-workspace 2', 'mode main']
+cmd-shift-3 = ['move-node-to-workspace 3', 'mode main']
+cmd-shift-4 = ['move-node-to-workspace 4', 'mode main']
+cmd-shift-5 = ['move-node-to-workspace 5', 'mode main']
+cmd-shift-6 = ['move-node-to-workspace 6', 'mode main']
+cmd-shift-7 = ['move-node-to-workspace 7', 'mode main']
+cmd-shift-8 = ['move-node-to-workspace 8', 'mode main']
+cmd-shift-9 = ['move-node-to-workspace 9', 'mode main']
+esc         = 'mode main'
+enter       = 'mode main'
+
+[mode.move-1x.binding]
+0           = ['move-node-to-workspace 10', 'mode main']
+1           = ['move-node-to-workspace 11', 'mode main']
+2           = ['move-node-to-workspace 12', 'mode main']
+3           = ['move-node-to-workspace 13', 'mode main']
+4           = ['move-node-to-workspace 14', 'mode main']
+5           = ['move-node-to-workspace 15', 'mode main']
+6           = ['move-node-to-workspace 16', 'mode main']
+cmd-shift-0 = ['move-node-to-workspace 10', 'mode main']
+cmd-shift-1 = ['move-node-to-workspace 11', 'mode main']
+cmd-shift-2 = ['move-node-to-workspace 12', 'mode main']
+cmd-shift-3 = ['move-node-to-workspace 13', 'mode main']
+cmd-shift-4 = ['move-node-to-workspace 14', 'mode main']
+cmd-shift-5 = ['move-node-to-workspace 15', 'mode main']
+cmd-shift-6 = ['move-node-to-workspace 16', 'mode main']
+esc         = 'mode main'
+enter       = 'mode main'
