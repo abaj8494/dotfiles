@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# lattice — manage the ~/lattice overlay.
+#
+#   lattice              dry-run the build (touch nothing)
+#   lattice apply        create dirs + relative symlinks (idempotent)
+#   lattice clean        rm -rf ~/lattice  (loses nothing — pure symlinks)
+#   lattice index        regenerate _meta/past-papers-index.org only
+#   lattice add FILE     file a past paper into the backed-up store + overlay
+#   lattice doctor       integrity check (broken / absolute symlinks)
+#
+set -euo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+PY="python3 $HERE/build.py"
+LROOT="$HOME/lattice"
+
+cmd="${1:-build}"; shift || true
+case "$cmd" in
+  build|"")   $PY ;;
+  apply)      $PY --apply ;;
+  copy)       $PY --copy "$@" ;;          # add --apply to actually copy
+  clean)      $PY --clean "$@" ;;
+  index)      $PY --index-only ;;
+  dedup)      exec python3 "$HERE/dedup.py" "$@" ;;   # add --apply to delete
+  shim)       exec "$HERE/shim.sh" "$@" ;;            # shim <docs-subdir> <lattice-subdir>
+  unshim)     src="${1:?usage: lattice unshim <docs-subdir>}"
+              S="$HOME/Documents/$src"
+              [ -L "$S" ] || { echo "$src is not a shim" >&2; exit 1; }
+              [ -d "$HOME/Documents/$src.pre-lattice" ] || { echo "no .pre-lattice backup for $src" >&2; exit 1; }
+              rm "$S"; mv "$HOME/Documents/$src.pre-lattice" "$S"; echo "reverted $src" ;;
+  project)    # lattice project <name> [material-path-relative-to-~/lattice]
+              name="${1:?usage: lattice project <name> [material-path]}"; mat="${2:-}"
+              pdir="$LROOT/1-projects/$name"; mkdir -p "$pdir"
+              if [ -n "$mat" ]; then
+                tgt="$LROOT/$mat"
+                [ -e "$tgt" ] || { echo "no such material: $tgt" >&2; exit 1; }
+                rel=$(python3 -c 'import os,sys;print(os.path.relpath(sys.argv[1],sys.argv[2]))' "$tgt" "$pdir")
+                ln -sfn "$rel" "$pdir/material"; echo "  material -> $rel"
+              fi
+              [ -f "$pdir/README.org" ] || printf '#+title: %s\n\n* Goal\n\n* Working notes\n' "$name" > "$pdir/README.org"
+              echo "project ready: 1-projects/$name  (put working files here; symlink points at material)" ;;
+  done)       # lattice done <name> -> archive the projects pointer (material stays put)
+              name="${1:?usage: lattice done <name>}"
+              mkdir -p "$LROOT/4-archive/projects"
+              mv "$LROOT/1-projects/$name" "$LROOT/4-archive/projects/$name" && \
+                echo "closed: 1-projects/$name -> 4-archive/projects/$name (linked material untouched)" ;;
+  add)        exec "$HERE/add-paper.sh" "$@" ;;
+  doctor)
+    echo -n "broken symlinks : "; find "$LROOT" -type l ! -exec test -e {} \; -print 2>/dev/null | tee /tmp/lattice-broken | wc -l | tr -d ' '
+    echo -n "absolute links  : "; find "$LROOT" -type l -lname '/*' 2>/dev/null | wc -l | tr -d ' '
+    echo -n "total symlinks  : "; find "$LROOT" -type l 2>/dev/null | wc -l | tr -d ' '
+    [ -s /tmp/lattice-broken ] && { echo "--- broken ---"; cat /tmp/lattice-broken; } || true
+    ;;
+  *) echo "usage: lattice {build|apply|clean|index|add FILE|doctor}" >&2; exit 2 ;;
+esac
