@@ -157,7 +157,7 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
     (notmuch-search-next-thread)
     (message "%d marked%s"
              (length my/notmuch-marked-threads)
-             (if my/email-syncing " (syncing — action will apply once done)" "")))
+             (if (my/email-sync-in-progress-p) " (syncing — action will apply once done)" "")))
 
   (defun my/notmuch-search-unmark-all ()
     "Unmark all threads."
@@ -198,7 +198,7 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
     (lambda ()
       "Move to trash (marked or current)"
       (interactive)
-      (when my/email-syncing
+      (when (my/email-sync-in-progress-p)
         (user-error "Sync in progress, please wait"))
       (setq my/notmuch-last-tag-time (current-time))
       (if my/notmuch-marked-threads
@@ -211,7 +211,7 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
     (lambda ()
       "Archive (marked or current)"
       (interactive)
-      (when my/email-syncing
+      (when (my/email-sync-in-progress-p)
         (user-error "Sync in progress, please wait"))
       (setq my/notmuch-last-tag-time (current-time))
       (if (and my/notmuch-marked-threads (> (length my/notmuch-marked-threads) 0))
@@ -226,7 +226,7 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
     (lambda ()
       "Undelete if trashed, otherwise toggle unread"
       (interactive)
-      (when my/email-syncing
+      (when (my/email-sync-in-progress-p)
         (user-error "Sync in progress, please wait"))
       (setq my/notmuch-last-tag-time (current-time))
       (if (member "trash" (notmuch-search-get-tags))
@@ -242,7 +242,7 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
     (lambda ()
       "Toggle flagged/starred"
       (interactive)
-      (when my/email-syncing
+      (when (my/email-sync-in-progress-p)
         (user-error "Sync in progress, please wait"))
       (setq my/notmuch-last-tag-time (current-time))
       (notmuch-search-tag
@@ -530,6 +530,66 @@ for part in msg.walk():
             (message "Gmail uses labels, not folders. Use 'l' to add labels.")
           (let ((folder (read-string "Move to folder: ")))
             (my/notmuch-move-to-folder folder))))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; File invoices on demand (Finances pipeline)
+  ;; ---------------------------------------------------------------------------
+  ;; `m i' just tags +invoice-pending; the actual classify-and-file step
+  ;; (file-invoices.sh) otherwise only runs on the Thursday 07:05 cron. This
+  ;; runs it now. Passes --no-pull (the email is already in the local notmuch
+  ;; DB, and a second `gmi pull' would fight Emacs's auto-sync for the maildir
+  ;; lock) and --push (commit + push the filed PDF so it reaches
+  ;; ledger.abaj.ai on its next pull, not the next hourly sync.sh).
+  (defvar my/finance-file-invoices-script
+    (expand-file-name "~/lattice/2-areas/finance/beancount/file-invoices.sh")
+    "Path to the invoice classify-and-file script.")
+
+  (defvar my/finance-file-invoices-process nil
+    "Running file-invoices subprocess, if any.")
+
+  (defun my/finance-file-invoices ()
+    "Classify and file all invoice-pending emails via file-invoices.sh.
+Runs asynchronously; output streams to *file-invoices*. On finish,
+refreshes notmuch buffers so the dropped invoice-pending tag shows."
+    (interactive)
+    (if (and my/finance-file-invoices-process
+             (process-live-p my/finance-file-invoices-process))
+        (message "file-invoices already running")
+      (unless (file-exists-p my/finance-file-invoices-script)
+        (user-error "Not found: %s" my/finance-file-invoices-script))
+      (let ((buf (get-buffer-create "*file-invoices*")))
+        (with-current-buffer buf
+          (let ((inhibit-read-only t)) (erase-buffer))
+          (unless (derived-mode-p 'special-mode) (special-mode)))
+        (message "Filing invoices...")
+        (setq my/finance-file-invoices-process
+              (make-process
+               :name "file-invoices"
+               :buffer buf
+               :command (list shell-file-name shell-command-switch
+                              (format "%s --no-pull --push"
+                                      (shell-quote-argument
+                                       my/finance-file-invoices-script)))
+               :sentinel
+               (lambda (proc event)
+                 (when (memq (process-status proc) '(exit signal))
+                   (let ((ok (and (string-match-p "finished" event)
+                                  (zerop (process-exit-status proc)))))
+                     (dolist (b (buffer-list))
+                       (with-current-buffer b
+                         (when (derived-mode-p 'notmuch-search-mode
+                                               'notmuch-show-mode
+                                               'notmuch-hello-mode
+                                               'notmuch-tree-mode)
+                           (ignore-errors (notmuch-refresh-this-buffer)))))
+                     (if ok
+                         (message "file-invoices: done (C-x b *file-invoices*)")
+                       (message "file-invoices FAILED — see *file-invoices*")
+                       (display-buffer (process-buffer proc)))))))))))
+
+  (define-key notmuch-search-mode-map (kbd "m I") #'my/finance-file-invoices)
+  (define-key notmuch-show-mode-map   (kbd "m I") #'my/finance-file-invoices)
+  (define-key notmuch-tree-mode-map   (kbd "m I") #'my/finance-file-invoices)
 
   ;; ---------------------------------------------------------------------------
   ;; JobSync classification rotation
@@ -858,8 +918,13 @@ see the `notmuch-fcc-dirs' comment above for why.")
   (setq auth-sources '("~/.authinfo.gpg")))
 
 ;; Use GPG key for all encryption (single passphrase cached by gpg-agent for 24h)
-;; pinentry-mac handles prompts natively and caches via gpg-agent (no loopback)
-(setq epg-user-id "aayushbajaj7@gmail.com")
+;; Loopback pinentry: Emacs prompts via its own minibuffer instead of pinentry-mac.
+;; Why: pinentry-mac fails to land when EPG runs from async contexts (capture
+;; finalize timers, oauth2 token refresh inside org-gcal post), producing
+;; "Decrypting ~/.authinfo.gpg...0%" → "Can't decrypt". gpg-agent.conf already
+;; has `allow-loopback-pinentry`. gpg-agent still caches the unlocked key for 24h.
+(setq epg-user-id "aayushbajaj7@gmail.com"
+      epg-pinentry-mode 'loopback)
 
 ;; Configure plstore to encrypt to GPG key (used by oauth2-auto for OAuth tokens)
 (require 'plstore)
@@ -909,8 +974,11 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
 (defvar my/email-unread-counts nil
   "Alist of (account . unread-count).")
 
-(defvar my/email-syncing nil
-  "Non-nil when email sync is in progress.")
+(defun my/email-sync-in-progress-p ()
+  "Return non-nil if an email sync subprocess is currently running.
+Single source of truth for sync state — derived from the process
+itself, so it can't desync from reality if a sentinel fails to fire."
+  (and my/email-sync-process (process-live-p my/email-sync-process)))
 
 (defvar my/email-account-queries
   '((gmail . "path:gmail-lieer/** and tag:inbox")
@@ -955,7 +1023,7 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
 
 (defun my/email-mode-line ()
   "Return mode-line string for email status."
-  (let ((syncing my/email-syncing)
+  (let ((syncing (my/email-sync-in-progress-p))
         (pending my/notmuch-pending-changes)
         (gmail (or (alist-get 'gmail my/email-unread-counts) 0))
         (abaj (or (alist-get 'abaj my/email-unread-counts) 0))
@@ -990,19 +1058,16 @@ Plays job sound if new mail to jobs.abaj.ai, otherwise regular sound."
   "Sync all email accounts and refresh notmuch.
 If QUIET is non-nil, don't show messages."
   (interactive)
-  ;; Don't start new sync if one is running
-  (if (and my/email-sync-process (process-live-p my/email-sync-process))
+  (if (my/email-sync-in-progress-p)
       (unless quiet (message "Sync already in progress"))
-    ;; Proceed with sync
     (email-sync-all--do-sync quiet)))
 
 (defun email-sync-all--do-sync (&optional quiet)
   "Internal function to perform the actual sync."
-  (setq my/email-syncing t)
   (setq my/email-last-sync-time (current-time))
-  (force-mode-line-update t)
   (let ((old-unread (my/email-total-unread))
-        (needs-push my/notmuch-pending-changes))
+        (needs-push my/notmuch-pending-changes)
+        (tag-time-at-start my/notmuch-last-tag-time))
     ;; Build command. gmi pull and mbsync touch independent maildirs so we
     ;; fan them out in parallel and `wait' before notmuch new — drops
     ;; wall-clock from gmi+mbsync down to max(gmi, mbsync). `wait $pid'
@@ -1020,33 +1085,50 @@ If QUIET is non-nil, don't show messages."
                          (concat "cd ~/Maildir/gmail-lieer && gmi push && " parallel-pull)
                        parallel-pull))
            ;; Add jobsync corrections scanner (source config for API key)
-           (cmd (concat base-cmd " && source ~/.jobsync/config && node ~/Documents/code-private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
-      (setq my/notmuch-pending-changes nil)
+           (cmd (concat base-cmd " && source ~/.jobsync/config && node ~/lattice/code/private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
       (unless quiet (message (if needs-push "Syncing (pushing changes)..." "Syncing...")))
+      ;; `make-process' with :sentinel attaches the handler atomically.
+      ;; `start-process' + `set-process-sentinel' has a window where the
+      ;; subprocess could exit and Emacs could lose the exit notification
+      ;; before the sentinel is installed — that was the "stuck SYNCING"
+      ;; bug.
       (setq my/email-sync-process
-            (start-process-shell-command "email-sync" "*email-sync*" cmd))
-      (set-process-sentinel
-       my/email-sync-process
-       (lambda (proc event)
-         (setq my/email-syncing nil)
-         (when (string-match-p "finished" event)
-           ;; Update unread count
-           (my/email-update-unread-count)
-           (let* ((total (my/email-total-unread))
-                  (new-mail (- total old-unread)))
-             ;; Refresh any open notmuch buffers
-             (dolist (buf (buffer-list))
-               (with-current-buffer buf
-                 (when (derived-mode-p 'notmuch-search-mode 'notmuch-show-mode 'notmuch-hello-mode)
-                   (ignore-errors (notmuch-refresh-this-buffer)))))
-             ;; Notify
-             (if (> new-mail 0)
-                 (progn
-                   (my/email-play-new-mail-sound)
-                   (message "Sync: +%d new (%d unread)" new-mail total))
-               (unless quiet
-                 (message "Sync done (%d unread)" total)))))
-         (force-mode-line-update t))))))
+            (make-process
+             :name "email-sync"
+             :buffer "*email-sync*"
+             :command (list shell-file-name shell-command-switch cmd)
+             :sentinel
+             (lambda (proc event)
+               (when (memq (process-status proc) '(exit signal))
+                 (let ((success (and (string-match-p "finished" event)
+                                     (zerop (process-exit-status proc)))))
+                   ;; Only clear pending-changes if push actually succeeded
+                   ;; AND no new tag changes happened during the sync.
+                   ;; Clearing optimistically at sync start (the old
+                   ;; behaviour) silently dropped pending edits on push
+                   ;; failure.
+                   (when (and success needs-push
+                              (equal my/notmuch-last-tag-time tag-time-at-start))
+                     (setq my/notmuch-pending-changes nil))
+                   (if success
+                       (progn
+                         (my/email-update-unread-count)
+                         (let* ((total (my/email-total-unread))
+                                (new-mail (- total old-unread)))
+                           (dolist (buf (buffer-list))
+                             (with-current-buffer buf
+                               (when (derived-mode-p 'notmuch-search-mode 'notmuch-show-mode 'notmuch-hello-mode)
+                                 (ignore-errors (notmuch-refresh-this-buffer)))))
+                           (if (> new-mail 0)
+                               (progn
+                                 (my/email-play-new-mail-sound)
+                                 (message "Sync: +%d new (%d unread)" new-mail total))
+                             (unless quiet
+                               (message "Sync done (%d unread)" total)))))
+                     (unless quiet
+                       (message "Sync failed: %s" (string-trim event))))
+                   (force-mode-line-update t))))))
+      (force-mode-line-update t))))
 
 ;; =============================================================================
 ;; Auto-sync timers
