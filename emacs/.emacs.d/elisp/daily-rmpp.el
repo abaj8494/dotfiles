@@ -89,10 +89,17 @@ On exit 0, call ON-SUCCESS. On non-zero, announce failure labelled LABEL.
 Re-establishes the miniconda PATH override for every spawn because
 `process-environment' is a dynamic variable — a let-binding around the
 outer call doesn't survive into sentinels, so the second step would
-otherwise lose its custom PATH."
+otherwise lose its custom PATH.
+
+Also prepends /sbin and /usr/sbin so subprocesses can find `ping`
+(rmsync's device guard pings devices before any operation). Emacs.app
+launched from /Applications inherits launchd's PATH, which does not
+include /sbin — without this, ping fails with `command not found`,
+the guard reports the device as unreachable, and ferrari-pull-highlights
+aborts with an `Error 2` even when both devices are up."
   (let* ((conda-bin (expand-file-name "~/miniconda3/bin"))
          (process-environment
-          (cons (concat "PATH=" conda-bin ":" (getenv "PATH"))
+          (cons (concat "PATH=" conda-bin ":/sbin:/usr/sbin:" (getenv "PATH"))
                 process-environment)))
     (aj/rmpp--log "\n--- %s: %s ---\n" label (mapconcat #'identity command " "))
     (make-process
@@ -111,13 +118,21 @@ otherwise lose its custom PATH."
              (aj/rmpp--notify-failure label))))))))
 
 (defun aj/rmpp-push-daily ()
-  "Pull KOReader highlights from rMPP, then export + push today's daily.
+  "Pull KOReader highlights from rMPP, then export + push the daily.
 
 Step 1 runs `make ferrari-pull-highlights' so any unpulled highlights on
 the device are merged back into sioyek before we touch it further. Step 2
 shells out to `scripts/sync-daily.sh' for the headless org→PDF export,
 UUID lookup, scp, and xochitl registration. If step 1 fails, step 2 is
 skipped and you hear about the pull failure specifically.
+
+Date detection: if the current buffer's file matches
+`.../daily/YYYY-MM-DD.org' AND that date is not today, pass `--date
+YYYY-MM-DD' to sync-daily.sh so backfill (future or past) dailies land
+on the device without manual flag-fiddling. The script's backfill mode
+skips today-only stages (Garmin sync, emacsclient populate, receipts/
+shops/org-attach drains) so a non-today push is fast and scoped. Falls
+through to today when called from a non-daily buffer.
 
 Log output is appended to the buffer `*rmpp-push-daily*' — view with
 `C-x b *rmpp-push-daily* RET' when debugging.
@@ -126,28 +141,38 @@ On success: plays Glass.aiff and flashes a success message.
 On failure: plays Basso.aiff, speaks the failing step and a short reason
 via `edge-tts' so you can react without switching windows."
   (interactive)
-  (let ((project-dir (expand-file-name "~/Documents/remarkable/ferrari")))
+  (let* ((project-dir (expand-file-name "~/lattice/2-areas/devices/remarkable/ferrari"))
+         (today (format-time-string "%Y-%m-%d"))
+         (buffer-date (when (and buffer-file-name
+                                 (string-match
+                                  "/daily/\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)\\.org\\'"
+                                  buffer-file-name))
+                        (match-string 1 buffer-file-name)))
+         (target-date (or buffer-date today))
+         (date-flag (when (and buffer-date (not (string= buffer-date today)))
+                      (list "--date" buffer-date)))
+         (push-script (expand-file-name "scripts/sync-daily.sh" project-dir))
+         (push-cmd (append (list "bash" push-script) date-flag)))
     (with-current-buffer (aj/rmpp--log-buffer)
       (goto-char (point-max))
-      (insert (format-time-string "\n=== [%F %T] rMPP push starting ===\n")))
-    (message "rMPP: pulling highlights, then pushing today's daily…")
+      (insert (format "\n=== [%s] rMPP push starting (date=%s%s) ===\n"
+                      (format-time-string "%F %T")
+                      target-date
+                      (if date-flag " — backfill" ""))))
+    (message "rMPP: pulling highlights, then pushing daily %s…" target-date)
     (aj/rmpp--run-step
      "pull"
      (list "make" "-C" project-dir "ferrari-pull-highlights")
      (lambda ()
-       (aj/rmpp--run-step
-        "push"
-        (list "bash"
-              (expand-file-name "scripts/sync-daily.sh" project-dir))
-        #'aj/rmpp--notify-success)))))
+       (aj/rmpp--run-step "push" push-cmd #'aj/rmpp--notify-success)))))
 
 
 (defun aj/ferrari-make ()
-  "Run `make ferrari' in ~/Documents/remarkable/ferrari asynchronously.
+  "Run `make ferrari' in ~/lattice/2-areas/devices/remarkable/ferrari asynchronously.
 Output goes to the same hidden log buffer as `aj/rmpp-push-daily'.
 Plays Glass.aiff on success, Basso.aiff + edge-tts on failure."
   (interactive)
-  (let ((project-dir (expand-file-name "~/Documents/remarkable/ferrari")))
+  (let ((project-dir (expand-file-name "~/lattice/2-areas/devices/remarkable/ferrari")))
     (with-current-buffer (aj/rmpp--log-buffer)
       (goto-char (point-max))
       (insert (format-time-string "\n=== [%F %T] make ferrari starting ===\n")))
