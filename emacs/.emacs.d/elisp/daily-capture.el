@@ -76,13 +76,13 @@ Used as a `file+function' target for capture templates."
          "** TODO %?\nSCHEDULED: %^{When}t")
         ("l" "ledger templates")
         ("lc" "cash expense" plain
-         (file+headline ,(concat "~/Documents/Finances/beancount/ledger/aayush/"
+         (file+headline ,(concat "~/lattice/2-areas/finance/beancount/ledger/aayush/"
                                  (format-time-string "%Y") ".org")
                         "Cash")
          "%(format-time-string \"%Y-%m-%d\") * \"%^{Payee}\"\n  Expenses:%^{Category|Food:Groceries|Food:Dining|Food:Takeaway|Food:Coffee|Shopping:General|Transport:Fuel|Transport:PublicTransit|Health:Medical|Entertainment:Events|Gifts|Cash|Uncategorized}  %^{Amount} AUD\n  Assets:Cash\n"
          :empty-lines 1)
         ("li" "cash income" plain
-         (file+headline ,(concat "~/Documents/Finances/beancount/ledger/aayush/"
+         (file+headline ,(concat "~/lattice/2-areas/finance/beancount/ledger/aayush/"
                                  (format-time-string "%Y") ".org")
                         "Cash")
          "%(format-time-string \"%Y-%m-%d\") * \"%^{Source}\"\n  Assets:Cash  %^{Amount} AUD\n  Income:%^{Category|Other|Reimbursement|Tutoring}\n"

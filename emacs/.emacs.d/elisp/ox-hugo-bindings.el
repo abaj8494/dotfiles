@@ -9,25 +9,35 @@
         (org-hugo-export-wim-to-md)))))
 
 
+(defvar ab/notes-root (expand-file-name "~/lattice/notes/")
+  "Org-roam / content source root (lattice-canonical).")
+(defvar ab/hugo-content-root (expand-file-name "~/lattice/code/sites/new-site/content/")
+  "Hugo markdown output root (new-site; update if new-site is cut over to lattice).")
+
 (defun ab/toggle-hugo-source-output ()
-  "Toggle between content-org source (.org) and content output (.md)."
+  "Toggle between the Org source in lattice/notes and the Hugo .md output.
+Also accepts the legacy /content-org/ path for files opened via the shim."
   (interactive)
-  (let ((file (buffer-file-name)))
+  (let ((file (buffer-file-name)) target)
     (unless file
       (user-error "Current buffer is not visiting a file"))
-    (let* ((in-org (string-match-p "/content-org/" file))
-           (target (if in-org
-                       (replace-regexp-in-string
-                        "/content-org/\\(.*\\)\\.org$"
-                        "/content/\\1.md"
-                        file)
-                     (replace-regexp-in-string
-                      "/content/\\(.*\\)\\.md$"
-                      "/content-org/\\1.org"
-                      file))))
-      (if (and target (file-exists-p target))
-          (find-file target)
-        (message "Target not found: %s" target)))))
+    (cond
+     ;; source (lattice/notes) -> output (.md)
+     ((string-prefix-p ab/notes-root file)
+      (setq target (concat ab/hugo-content-root
+                           (file-name-sans-extension (substring file (length ab/notes-root)))
+                           ".md")))
+     ;; legacy source path via the Documents shim
+     ((string-match-p "/content-org/" file)
+      (setq target (replace-regexp-in-string "/content-org/\\(.*\\)\\.org$" "/content/\\1.md" file)))
+     ;; output (.md) -> source (lattice/notes)
+     ((string-prefix-p ab/hugo-content-root file)
+      (setq target (concat ab/notes-root
+                           (file-name-sans-extension (substring file (length ab/hugo-content-root)))
+                           ".org"))))
+    (if (and target (file-exists-p target))
+        (find-file target)
+      (message "Target not found: %s" target))))
 
 (with-eval-after-load 'dired
   (define-key dired-mode-map

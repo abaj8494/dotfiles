@@ -43,7 +43,7 @@ In dired buffers, copies the current directory path."
 ;; Beancount: instant deploy to ledger.abaj.ai
 ;; ---------------------------------------------------------------------------
 
-(defconst aj/finances-dir "/Users/aayushbajaj/Documents/Finances/beancount/"
+(defconst aj/finances-dir "/Users/aayushbajaj/lattice/2-areas/finance/beancount/"
   "Root of the beancount ledger repository.")
 
 (defun aj/beancount-deploy ()

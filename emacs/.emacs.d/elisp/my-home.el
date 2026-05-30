@@ -18,10 +18,10 @@
 
 (defvar my-home--dirs
   '(("~/Documents"                     . "Documents")
-    ("~/Documents/new-site"            . "New Site")
+    ("~/lattice/code/sites/new-site"            . "New Site")
     ("~/Downloads"                     . "Downloads")
-    ("~/Documents/code"                . "Code")
-    ("~/Documents/new-site/static/doc/org/flashcards"   . "Flash Cards"))
+    ("~/lattice/code"                  . "Code")
+    ("~/lattice/code/sites/new-site/static/doc/org/flashcards"   . "Flash Cards"))
   "List of (PATH . LABEL) for quick Dired.")
 
 (defvar my-home-buffer-name "*Home*")
