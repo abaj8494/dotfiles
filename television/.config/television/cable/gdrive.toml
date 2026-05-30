@@ -1,0 +1,46 @@
+[metadata]
+name = "gdrive"
+description = "Fuzzy-find files in the Google Drive archive by name/path (PDF/image preview)"
+requirements = ["fd", "chafa", "pdftoppm", "lf", "sioyek"]
+
+[source]
+command = [
+  "fd -t f . '/Users/aayushbajaj/Documents/Google Drive'",
+  "fd -t f -H . '/Users/aayushbajaj/Documents/Google Drive'",
+]
+
+# TV does NOT pass the preview pane size to the command, so tv-preview's default
+# 80x40 chafa render overflows (clips to blank) in a split preview pane. Pass an
+# explicit size that fits the C-g popup's landscape preview (~68 wide on a 152-col
+# screen). Tuned to that popup; widen both together if you resize. tv-preview also
+# shells out to md5/chafa/pdftoppm -> full PATH is set in the C-g binding.
+[preview]
+command = "/Users/aayushbajaj/.local/bin/tv-preview '{}' 64 32"
+
+[ui]
+layout = "landscape"
+
+[keybindings]
+# C-n / C-p nav are global. ENTER uses TV's built-in confirm (outputs the path) and
+# the `C-g` window launcher opens lf at it -- far more robust than an ExternalAction.
+# ctrl-b moves the input cursor back a character (emacs-style). The sioyek/open/reveal
+# actions below are still reachable via the Ctrl-X action picker.
+ctrl-b = "go_to_prev_char"
+
+# Open the highlighted file in sioyek via macOS `open -a` (Launch Services).
+# NOTE: TV shell-quotes {} for ACTIONS, so do NOT wrap it in quotes (unlike the
+# preview command) -- '{}' yields ''path'' and breaks on spaces. Bare {} is correct.
+[actions.sioyek]
+description = "Open in sioyek"
+command = "open -a /Applications/sioyek.app {}"
+mode = "fork"
+
+[actions.open]
+description = "Open with default app"
+command = "open {}"
+mode = "fork"
+
+[actions.reveal]
+description = "Reveal in Finder"
+command = "open -R {}"
+mode = "fork"
