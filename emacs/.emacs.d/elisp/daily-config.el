@@ -413,6 +413,8 @@ parsed date so the calendar pops up on the day you're capturing into."
         (org-beginning-of-line)))))
 ;; C-c d r j — refresh Garmin Self chart (C-u also forces a sync)
 (define-key aj/daily-refresh-map (kbd "j") #'aj/garmin-refresh-and-jump)
+;; C-c d r G — push the priority chore at point to the J calendar (red all-day)
+(define-key aj/daily-refresh-map (kbd "G") #'aj/gcal-push-chore-at-point)
 ;; Bind refresh map to r in dailies map
 (define-key org-roam-dailies-map (kbd "r") aj/daily-refresh-map)
 

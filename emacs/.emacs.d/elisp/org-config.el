@@ -278,7 +278,7 @@
   (setq org-insert-heading-respect-content t)
   (setq org-log-done 'time)
   (setq org-log-into-drawer t)
-  (setq org-directory "/Users/aayushbajaj/Documents/new-site/content-org/daily/")
+  (setq org-directory "/Users/aayushbajaj/lattice/notes/daily/")
   (setq org-agenda-files nil)
   (setq org-todo-keywords
         '((sequence "TODO(t)" "WAIT(w!)" "|" "CANCEL(c!)" "DONE(d!)")))
@@ -1283,7 +1283,7 @@ Keeps equations, aligns, and inline math while stripping org syntax."
 ;; Outputs SVG only. Use C-c C-x j for tikzjax preview at point.
 
 (defvar aj/tikzjax-cli-path
-  (expand-file-name "~/Documents/new-site/static/code/tikzjax/cli.js")
+  (expand-file-name "~/lattice/code/sites/new-site/static/code/tikzjax/cli.js")
   "Path to the tikzjax CLI script.")
 
 (defvar aj/tikzjax-node-path "node"
@@ -1454,9 +1454,15 @@ Preserves #+LATEX: snippets from removed headlines by moving them up."
 (setq org-export-with-smart-quotes t)  ; #+OPTIONS: ':t
 (setq org-export-headline-levels 6)    ; #+OPTIONS: H:6
 
-;; Use latexmk for automatic reference/bibliography resolution
+;; Use latexmk for automatic reference/bibliography resolution.
+;; Two invocations — the second guards against rare single-pass runs where
+;; hyperref's `.out` wasn't read back, producing a PDF with 0 outline entries
+;; (xochitl TOC drawer empty). Trigger: 2026-05-14 daily exported with 0
+;; bookmarks despite byte-identical input producing 65 on retry. Mirror this
+;; in scripts/batch-pdf-init.el (headless export) or the two pipelines drift.
 (setq org-latex-pdf-process
-      '("latexmk -f -lualatex -shell-escape -interaction=nonstopmode %f"))
+      '("latexmk -f -lualatex -shell-escape -interaction=nonstopmode %f"
+        "latexmk -f -lualatex -shell-escape -interaction=nonstopmode %f"))
 
 ;; Note: xcolor, amssymb, and fontspec are loaded in the article class definition
 ;; to ensure proper ordering and Unicode monospace font support (Menlo)
@@ -1975,12 +1981,21 @@ Uses today's date with the time extracted from the heading."
             (when (looking-at (format "^[ \t]*:%s:" org-gcal-drawer-name))
               (re-search-forward "^[ \t]*:END:" content-end t)
               (forward-line 1))
-            ;; Get remaining body text (before any subheadings)
-            (let ((body-start (point))
-                  (body-end (save-excursion
-                              (if (re-search-forward "^\\*+ " content-end t)
-                                  (match-beginning 0)
-                                content-end))))
+            ;; Get remaining body text (before any subheadings OR daily-file
+            ;; structural markers — separator lines of dashes and `#+LATEX:'
+            ;; directives are layout glue between sections, not user content,
+            ;; and must not bleed into the gcal description / :org-gcal: drawer).
+            (let* ((body-start (point))
+                   (body-end (save-excursion
+                               (let ((stop content-end))
+                                 (dolist (re '("^\\*+ "
+                                               "^-\\{3,\\}[ \t]*$"
+                                               "^[ \t]*#\\+LATEX:"))
+                                   (save-excursion
+                                     (goto-char body-start)
+                                     (when (re-search-forward re content-end t)
+                                       (setq stop (min stop (match-beginning 0))))))
+                                 stop))))
               (setq body-text (string-trim
                                (buffer-substring-no-properties body-start body-end)))))
           ;; Append body to existing description
@@ -2028,32 +2043,143 @@ Uses today's date with the time extracted from the heading."
 ;; Push to gcal after capture finalization only if C-c C-s was used during capture
 (defun aj/gcal-after-capture-finalize ()
   "Push newly captured item to Google Calendar if scheduled via `org-schedule'.
-Deferred via a 0-delay timer so the push runs after the capture's dynamic
-context (windows, minibuffer state) has fully unwound — otherwise pinentry
-can't land and GPG decrypt of oauth2-auto.plist aborts with \"Can't decrypt\"."
+Credentials are loaded SYNCHRONOUSLY first (while the parent frame's
+minibuffer is still alive) so the gpg-agent cache gets warmed by
+pinentry/loopback. The actual push is deferred via a 0-delay timer so
+it runs after the capture's dynamic context (windows, minibuffer state)
+has fully unwound. Without the eager pre-load the deferred timer fires
+in an async context with no live minibuffer, so loopback pinentry sends
+an empty passphrase and the decrypt of ~/.authinfo.gpg or
+oauth2-auto.plist aborts with \"Bad passphrase\" / \"Can't decrypt\"."
   (when aj/--gcal-scheduled-during-capture
     (setq aj/--gcal-scheduled-during-capture nil)
-    (when-let ((marker org-capture-last-stored-marker))
-      (when (marker-buffer marker)
-        (run-at-time
-         0 nil
-         (lambda (m)
-           (condition-case err
-               (when (marker-buffer m)
-                 (with-current-buffer (marker-buffer m)
-                   (save-excursion
-                     (goto-char m)
-                     (aj/gcal-maybe-push-at-point))))
-             (error
-              (message "org-gcal post failed: %s" (error-message-string err)))))
-         marker)))))
+    (when (and aj/gcal-auto-push
+               org-capture-last-stored-marker
+               (marker-buffer org-capture-last-stored-marker))
+      ;; Warm gpg-agent + load credentials NOW, while we still have a live
+      ;; minibuffer. After this, subsequent decrypts (plstore/oauth2-auto)
+      ;; piggyback on the agent's cache and don't reprompt.
+      (condition-case err
+          (aj/gcal-load-credentials)
+        (error
+         (message "gcal credential preload failed: %s" (error-message-string err))))
+      (when aj/gcal-credentials-loaded
+        (let ((marker org-capture-last-stored-marker))
+          (run-at-time
+           0 nil
+           (lambda (m)
+             (condition-case err
+                 (when (marker-buffer m)
+                   (with-current-buffer (marker-buffer m)
+                     (save-excursion
+                       (goto-char m)
+                       (aj/gcal-maybe-push-at-point))))
+               (error
+                (message "org-gcal post failed: %s" (error-message-string err)))))
+           marker))))))
 
 (add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize t)
+
+;; Pre-warm gpg-agent + load gcal credentials when the capture buffer first
+;; opens. At this point the user's frame minibuffer is fully free, so the
+;; loopback pinentry prompt lands cleanly. By the time the capture is
+;; finalized and we try to push, the agent's cache is warm and the post
+;; runs without any prompt. Without this, the prompt fires from inside the
+;; capture-finalize hook (or its run-at-time timer) where the minibuffer
+;; state is unreliable, the callback returns empty, and gpg fails with
+;; "No passphrase given" → "Can't decrypt".
+(defun aj/gcal-prewarm-on-capture ()
+  "Pre-load gcal credentials when entering a capture buffer.
+No-op once credentials are loaded for the session."
+  (when (and aj/gcal-auto-push (not aj/gcal-credentials-loaded))
+    (condition-case err
+        (aj/gcal-load-credentials)
+      (error
+       (message "gcal prewarm failed (will retry on next capture): %s"
+                (error-message-string err))))))
+
+(add-hook 'org-capture-mode-hook #'aj/gcal-prewarm-on-capture)
 
 ;; Add advice after org is loaded
 (with-eval-after-load 'org
   (advice-add 'org-schedule :after #'aj/gcal-after-schedule)
   (advice-add 'org-deadline :after #'aj/gcal-after-schedule))
+
+;; ---------------------------------------------------------------------------
+;; Priority chores → red all-day events on the J calendar
+;; ---------------------------------------------------------------------------
+;; org-gcal has no native event-colour support: its POST payload
+;; (org-gcal--post-event) hard-codes summary/location/source/description/
+;; start/end and nothing else. We inject a Google `colorId' into that payload
+;; via contained advice (rather than editing the straight checkout, which is
+;; clobbered on update). colorId 11 = "Tomato" (red).
+
+(defvar aj/gcal-chore-color "11"
+  "Google Calendar colorId for auto-pushed chore events. 11 = Tomato (red).")
+
+(defvar aj/gcal--inject-color nil
+  "When bound to a colorId string, `org-gcal--post-event' tags its payload with it.
+Dynamically `let'-bound around `org-gcal-post-at-point' by the chore pusher.")
+
+(defun aj/gcal--inject-color-advice (orig-fun &rest args)
+  "Around advice on `org-gcal--post-event': add colorId to the event JSON.
+Active only while `aj/gcal--inject-color' holds a colorId string. Scopes a
+temporary `json-encode' redefinition to this call's dynamic extent so only
+the event payload (the alist carrying a \"summary\" key) is augmented."
+  (if (not aj/gcal--inject-color)
+      (apply orig-fun args)
+    (let ((color aj/gcal--inject-color)
+          (json-encode-orig (symbol-function 'json-encode)))
+      (cl-letf (((symbol-function 'json-encode)
+                 (lambda (obj)
+                   (when (and (consp obj) (consp (car obj))
+                              (assoc "summary" obj)
+                              (not (assoc "colorId" obj)))
+                     (setq obj (append obj (list (cons "colorId" color)))))
+                   (funcall json-encode-orig obj))))
+        (apply orig-fun args)))))
+
+(with-eval-after-load 'org-gcal
+  (advice-add 'org-gcal--post-event :around #'aj/gcal--inject-color-advice))
+
+(defun aj/gcal--daily-title-date ()
+  "Return the YYYY-MM-DD string from the current buffer's #+title:, or nil."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward
+           "^#\\+title: \\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+      (match-string 1))))
+
+(defun aj/gcal-push-chore-at-point ()
+  "Push the priority chore at point to the J calendar as a red all-day event.
+Ensures `calendar-id' (J) and `org-gcal-managed' (org) properties, gives the
+entry a date-only SCHEDULED stamp matching the daily's date (so it becomes an
+all-day event) without tripping the auto-push-on-schedule advice, then posts
+via org-gcal with red colour injected. Idempotent: org-gcal writes entry-id/
+ETag back, so re-running updates -- and, if the date changed, moves -- the
+same event rather than duplicating it."
+  (interactive)
+  (let ((date-str (aj/gcal--daily-title-date)))
+    (unless date-str
+      (user-error "Not in a daily note (no #+title date)"))
+    (aj/gcal-load-credentials)
+    (unless aj/gcal-credentials-loaded
+      (user-error "Google Calendar credentials unavailable"))
+    (save-excursion
+      (org-back-to-heading t)
+      (unless (org-entry-get nil "calendar-id")
+        (org-entry-put nil "calendar-id" aj/gcal-id-J))
+      (unless (org-entry-get nil "org-gcal-managed")
+        (org-entry-put nil "org-gcal-managed" "org"))
+      ;; Date-only SCHEDULED = the daily's date. Suppress the gcal auto-push
+      ;; advice on `org-schedule' so we don't double-post; we drive the
+      ;; coloured push ourselves below.
+      (unless (org-entry-get nil "SCHEDULED")
+        (let ((aj/gcal-auto-push nil))
+          (org-schedule nil date-str)))
+      (let ((aj/gcal--inject-color aj/gcal-chore-color))
+        (org-gcal-post-at-point t))
+      (message "Pushing chore to Google Calendar (red, all-day %s)…" date-str))))
 
 (provide 'org-config)
 ;;; org-config.el ends here
