@@ -264,10 +264,34 @@ Preserves transclusion state in current buffer."
 ;; Propagate DONE to tasks.org
 ;; ---------------------------------------------------------------------------
 
+(defun aj/tasks-entry-has-org-repeater-p ()
+  "Non-nil if the planning line of the entry at point carries a real org
+repeater (+N, ++N or .+N) in its SCHEDULED/DEADLINE timestamp.
+
+Returns nil for diary-sexp schedules (`<%%(...)>', e.g. `diary-cyclic') and for
+plain dates — neither of which `org-todo'/`org-auto-repeat-maybe' can advance.
+Reads the planning line text directly: `org-entry-get' \"SCHEDULED\" returns
+nil for a diary-sexp schedule, so it cannot be used to tell these apart."
+  (save-excursion
+    (org-back-to-heading t)
+    (forward-line 1)
+    (let ((line-end (line-end-position)))
+      (and (looking-at-p "^[ \t]*\\(?:CLOSED\\|DEADLINE\\|SCHEDULED\\):")
+           (re-search-forward
+            "<[^>\n]*\\(?:\\+\\+?\\|\\.\\+\\)[0-9]+[dwmy][^>\n]*>"
+            line-end t)
+           t))))
+
 (defun aj/propagate-done-to-tasks ()
   "When a heading is marked DONE/CANCEL under * Recurring in a daily note,
-find the corresponding heading in tasks.org and mark it DONE there too.
-This advances the repeater via org-mode's built-in `org-auto-repeat-maybe'.
+find the corresponding heading in tasks.org and advance it.
+
+For tasks with a real org repeater (+N/++N/.+N) this marks the tasks.org entry
+DONE, letting `org-auto-repeat-maybe' roll SCHEDULED forward and reset it to
+TODO. For diary-sexp (`<%%(...)>') or plain-date schedules — which have no
+repeater to advance — it only bumps LAST_REPEAT and leaves the state TODO, so
+the task keeps recurring instead of getting stranded as DONE.
+
 Suppressed when `aj/daily-hook-suppress' is non-nil so that machine-driven
 state changes (e.g. bring-forward source-CANCEL) don't cascade into
 tasks.org."
@@ -317,21 +341,24 @@ tasks.org."
                       (setq found t)))))
               (when found
                 (beginning-of-line)
-                (let ((sched (org-entry-get (point) "SCHEDULED")))
-                  (if (and sched (string-match-p "\\`<%%(" sched))
-                      ;; Diary-sexp schedule: can't be advanced by a repeater,
-                      ;; so bump LAST_REPEAT in-place and leave state as TODO.
-                      (org-entry-put (point) "LAST_REPEAT"
-                                     (format-time-string
-                                      (org-time-stamp-format t t)))
-                    ;; Standard repeater: let org advance SCHEDULED/LAST_REPEAT
-                    ;; and reset state. Auto-confirm the "N repeater intervals"
-                    ;; prompt org shows when SCHEDULED is far behind today.
+                (if (aj/tasks-entry-has-org-repeater-p)
+                    ;; Real org repeater (+N/++N/.+N): let org advance
+                    ;; SCHEDULED/LAST_REPEAT and reset the state. Auto-confirm
+                    ;; the "N repeater intervals" prompt org shows when
+                    ;; SCHEDULED is far behind today.
                     (cl-letf (((symbol-function 'y-or-n-p)
                                (lambda (&rest _) t)))
-                      (org-todo "DONE"))))
+                      (org-todo "DONE"))
+                  ;; No advanceable repeater — a diary-sexp (<%%(...)>) or a
+                  ;; plain date. Marking it DONE would strand the task (nothing
+                  ;; reverts it to TODO so it never recurs again). Bump
+                  ;; LAST_REPEAT in-place and leave the state TODO so the
+                  ;; schedule keeps re-surfacing it on its own days.
+                  (org-entry-put (point) "LAST_REPEAT"
+                                 (format-time-string
+                                  (org-time-stamp-format t t))))
                 (save-buffer)
-                (message "Propagated DONE to tasks.org: %s" heading-text)))))))))
+                (message "Propagated completion to tasks.org: %s" heading-text)))))))))
 
 (add-hook 'org-after-todo-state-change-hook #'aj/propagate-done-to-tasks)
 
