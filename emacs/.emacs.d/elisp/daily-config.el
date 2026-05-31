@@ -148,6 +148,11 @@ Per-step timings are logged to *Messages* when the total exceeds
       (when (buffer-modified-p)
         (aj/daily-time-step aj--timings "save-buffer"
           (save-buffer)))
+      ;; Push today's/future priority items to Google Calendar (deferred to an
+      ;; idle timer; no-op for past dailies or when nothing is pending).
+      (when (fboundp 'aj/gcal-maybe-sweep-on-open)
+        (aj/daily-time-step aj--timings "gcal-maybe-sweep"
+          (aj/gcal-maybe-sweep-on-open)))
       ;; Log timings if slow or debug is on
       (let ((total (- (float-time) aj--hook-start)))
         (when (or aj/daily-hook-debug
@@ -415,6 +420,8 @@ parsed date so the calendar pops up on the day you're capturing into."
 (define-key aj/daily-refresh-map (kbd "j") #'aj/garmin-refresh-and-jump)
 ;; C-c d r G — push the priority chore at point to the J calendar (red all-day)
 (define-key aj/daily-refresh-map (kbd "G") #'aj/gcal-push-chore-at-point)
+;; C-c d r g — sweep ALL priority headings in this daily to the J calendar
+(define-key aj/daily-refresh-map (kbd "g") #'aj/gcal-sweep-daily-chores)
 ;; Bind refresh map to r in dailies map
 (define-key org-roam-dailies-map (kbd "r") aj/daily-refresh-map)
 

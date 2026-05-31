@@ -146,6 +146,8 @@ captured entry needs `C-c C-s` defaulted to the day you captured into.
 | `C-c d r o` | Bring forward overdue items |
 | `C-c d r a` | Insert Anki review chart |
 | `C-c d r j` | Refresh Garmin journal data (`C-u` to force sync) |
+| `C-c d r G` | Push the priority heading **at point** to the J calendar (red all-day) |
+| `C-c d r g` | Sweep **all** priority headings in the daily to the J calendar |
 | `C-c d w` | Insert week transclude |
 | `C-c d F` / `B` | Next / previous day |
 
@@ -163,6 +165,14 @@ captured entry needs `C-c C-s` defaulted to the day you captured into.
 - `garmin-activity:` link type — on export, renders as `\includegraphics` if description is a `file:` image
 - `aj/garmin-open-activity-dashboard` — generates HTML dashboard via `~/.emacs.d/scripts/garmin-activity-dashboard.py`
 - Route maps become centered captioned figures in LaTeX (`#+CAPTION: *Gear: ...* --- N km`)
+
+**Google Calendar push** (`org-config.el`, the gcal section):
+- Priority headings (`[#A-C]`) in a daily push to the **J** calendar as **red all-day events** (colorId 11). org-gcal has no native colour support, so a contained `cl-letf` advice on `org-gcal--post-event` (`aj/gcal--inject-color-advice`) injects `colorId` into the POST JSON — *not* an edit to the straight checkout (which is clobbered on update).
+- `aj/gcal-push-chore-at-point` (`C-c d r G`) pushes the heading at point; `aj/gcal-sweep-daily-chores` (`C-c d r g`) sweeps the whole daily. The sweep matches any `[#A-C]` heading that is `TODO`/`WAIT` **or keyword-less** (so a plain `*** [#B] NSU Winter` is scheduled without becoming a carried-forward chore), and excludes `DONE`/`CANCEL` and the `* Capture` section (those are hand-scheduled via `C-c C-s`).
+- org-gcal-post-at-point is **async** (returns a deferred); the sweep chains posts **sequentially** (`aj/gcal--sweep-chain`) so concurrent entry-id/ETag writebacks don't race.
+- Idempotency via `aj/gcal--needs-push-p`: an item with an `entry-id` already scheduled for the daily's date is skipped; one whose `SCHEDULED` no longer matches the date re-posts, so a carried-forward event **moves** rather than duplicating.
+- `aj/gcal-maybe-sweep-on-open` (hooked into `aj/daily-file-open-hook`) auto-sweeps on opening **today's or a future** daily, deferred to a 1s idle timer; past dailies are never auto-swept, and credentials load (possibly prompting once) only when something is actually pending. Toggle with `aj/gcal-auto-sweep-on-open`.
+- The carry-forward scan (`aj/get-overdue-recurring-tasks`, daily-recurring.el) is **state-aware, most-recent-first**: the newest occurrence of each `(parent . heading)` decides its fate, so a chore completed yesterday isn't resurrected from a stale older daily.
 
 ### Headless Batch Export
 

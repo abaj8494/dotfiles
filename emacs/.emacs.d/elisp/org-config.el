@@ -2181,5 +2181,140 @@ same event rather than duplicating it."
         (org-gcal-post-at-point t))
       (message "Pushing chore to Google Calendar (red, all-day %s)…" date-str))))
 
+;; ---------------------------------------------------------------------------
+;; Sweep: push ALL priority headings in a daily → red all-day events
+;; ---------------------------------------------------------------------------
+;; Matches any [#A-C] heading that is open (TODO/WAIT) OR has no TODO keyword
+;; (so a plain `*** [#B] NSU Winter' lands on the calendar without becoming a
+;; carried-forward chore). DONE/CANCEL items and the * Capture section (handled
+;; by hand via C-c C-s) are excluded. org-gcal-post-at-point is async — its
+;; entry-id/ETag writeback would race if several posts ran against the same
+;; buffer at once — so the sweep chains the posts one at a time via deferred.
+
+(defvar aj/gcal-auto-sweep-on-open t
+  "When non-nil, opening today's (or a future) daily auto-sweeps its priority
+items to Google Calendar. Past dailies are never auto-swept.")
+
+(defun aj/gcal--needs-push-p (date-str)
+  "Non-nil if the heading at point should be (re)pushed to gcal for DATE-STR.
+New (no entry-id) items push; an already-synced item whose SCHEDULED no longer
+matches DATE-STR re-pushes (so a carried-forward event MOVES); an item already
+on the calendar for DATE-STR is skipped."
+  (let ((id (org-entry-get nil "entry-id"))
+        (sched (org-entry-get nil "SCHEDULED")))
+    (cond
+     ((null id) t)
+     ((null sched) t)
+     ((not (string-match-p (regexp-quote date-str) sched)) t)
+     (t nil))))
+
+(defun aj/gcal--daily-priority-markers ()
+  "Return BOL markers for pushable priority headings in the current buffer.
+A heading qualifies if it carries a [#A-C] cookie and is either open
+\(TODO/WAIT) or has no TODO keyword. The * Capture section is excluded;
+DONE/CANCEL items are excluded by the match."
+  (let ((markers '())
+        (cap-beg nil) (cap-end nil))
+    (save-excursion
+      (goto-char (point-min))
+      (when (re-search-forward "^\\* Capture\\b" nil t)
+        (setq cap-beg (line-beginning-position)
+              cap-end (save-excursion
+                        (if (re-search-forward "^\\* " nil t)
+                            (line-beginning-position) (point-max)))))
+      (goto-char (point-min))
+      (while (re-search-forward
+              "^\\*+ \\(?:\\(?:TODO\\|WAIT\\) \\)?\\[#[A-C]\\]" nil t)
+        (let ((bol (line-beginning-position)))
+          (unless (and cap-beg (>= bol cap-beg) (< bol cap-end))
+            (push (copy-marker bol) markers)))))
+    (nreverse markers)))
+
+(defun aj/gcal--daily-has-pending-push-p ()
+  "Cheaply (no network, no credential load) test if any priority heading in the
+current daily still needs a gcal push."
+  (let ((date-str (aj/gcal--daily-title-date)))
+    (and date-str
+         (cl-some (lambda (m)
+                    (with-current-buffer (marker-buffer m)
+                      (save-excursion
+                        (goto-char m)
+                        (aj/gcal--needs-push-p date-str))))
+                  (aj/gcal--daily-priority-markers)))))
+
+(defun aj/gcal--prepare-and-post (marker date-str)
+  "At MARKER, ensure gcal identity + a date-only SCHEDULED for DATE-STR, then
+post to the J calendar (red). Returns a deferred — a no-op deferred when the
+entry is already correctly synced for DATE-STR."
+  (with-current-buffer (marker-buffer marker)
+    (save-excursion
+      (goto-char marker)
+      (org-back-to-heading t)
+      (if (not (aj/gcal--needs-push-p date-str))
+          (deferred:succeed nil)
+        (unless (org-entry-get nil "calendar-id")
+          (org-entry-put nil "calendar-id" aj/gcal-id-J))
+        (unless (org-entry-get nil "org-gcal-managed")
+          (org-entry-put nil "org-gcal-managed" "org"))
+        ;; (Re)anchor a date-only SCHEDULED to this daily's date so the event is
+        ;; all-day and, if carried forward, MOVES rather than duplicates.
+        (let ((sched (org-entry-get nil "SCHEDULED")))
+          (when (or (null sched)
+                    (not (string-match-p (regexp-quote date-str) sched)))
+            (let ((aj/gcal-auto-push nil))
+              (org-schedule nil date-str))))
+        (let ((aj/gcal--inject-color aj/gcal-chore-color))
+          (org-gcal-post-at-point t))))))
+
+(defun aj/gcal--sweep-chain (markers date-str)
+  "Post MARKERS to gcal sequentially (one finishes before the next starts)."
+  (if (null markers)
+      (message "gcal sweep: done")
+    (deferred:nextc
+      (deferred:try
+        (aj/gcal--prepare-and-post (car markers) date-str)
+        :catch (lambda (err)
+                 (message "gcal sweep: error on one item: %S" err) nil))
+      (lambda (_) (aj/gcal--sweep-chain (cdr markers) date-str)))))
+
+(defun aj/gcal-sweep-daily-chores ()
+  "Push every open priority heading in the current daily to the J calendar.
+Includes keyword-less [#A-C] headings (e.g. NSU Winter); excludes the * Capture
+section and DONE/CANCEL items. Each becomes a red all-day event on the daily's
+date. Idempotent: items already synced for that date are skipped; carried items
+whose date changed are moved. Posts run sequentially to avoid writeback races."
+  (interactive)
+  (require 'deferred)
+  (let ((date-str (aj/gcal--daily-title-date)))
+    (unless date-str
+      (user-error "Not in a daily note (no #+title date)"))
+    (aj/gcal-load-credentials)
+    (unless aj/gcal-credentials-loaded
+      (user-error "Google Calendar credentials unavailable"))
+    (let ((markers (aj/gcal--daily-priority-markers)))
+      (if (null markers)
+          (message "gcal sweep: no priority items found")
+        (message "gcal sweep: pushing up to %d priority item(s)…"
+                 (length markers))
+        (aj/gcal--sweep-chain markers date-str)))))
+
+(defun aj/gcal-maybe-sweep-on-open ()
+  "From a daily's open hook: schedule a gcal sweep of today/future priority items.
+No-op when disabled, when not a dated daily, when the daily is in the past, or
+when nothing is pending. Deferred to an idle timer so it never blocks file open;
+credentials load (and may prompt once) only when there is something to push."
+  (when aj/gcal-auto-sweep-on-open
+    (let ((date-str (aj/gcal--daily-title-date)))
+      (when (and date-str
+                 (not (string< date-str (format-time-string "%Y-%m-%d")))
+                 (aj/gcal--daily-has-pending-push-p))
+        (let ((buf (current-buffer)))
+          (run-with-idle-timer
+           1 nil
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (aj/gcal-sweep-daily-chores))))))))))
+
 (provide 'org-config)
 ;;; org-config.el ends here
