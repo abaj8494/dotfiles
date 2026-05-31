@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aayushbajaj.daily-init</string>
+
+    <!-- /bin/zsh (not bash): launchd grants Full Disk Access to zsh here, and
+         the instant-deploy sub-pipeline (ferrari sync-daily.sh) needs FDA,
+         inherited down the chain only from an FDA-granted root shell. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/aayushbajaj/dotfiles/scripts/daily-init.sh</string>
+    </array>
+
+    <!-- Fire at midnight. If asleep at the time, launchd runs the missed
+         interval once on the next wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>0</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/aayushbajaj/Library/Logs/daily-init.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/aayushbajaj/Library/Logs/daily-init.launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/aayushbajaj</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
