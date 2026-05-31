@@ -514,7 +514,10 @@ present/past files."
 
 (defun aj/get-overdue-recurring-tasks (date-str)
   "Return overdue priority TODO subtrees from * Recurring in previous daily notes.
-Scans backwards from the day before DATE-STR up to 30 days.
+Scans backwards from the day before DATE-STR up to 30 days, most-recent first.
+The most recent occurrence of each (PARENT . HEADING) decides its fate: if it
+is DONE/CANCEL the chore is resolved and is NOT carried forward (and older
+stale TODO copies of it are suppressed); only a most-recent TODO/WAIT carries.
 Returns list of (PARENT-NAME HEADING-TEXT CONTENT SOURCE-FILE) tuples, tagged :overdue:."
   (let* ((parts (split-string date-str "-"))
          (year (string-to-number (nth 0 parts)))
@@ -525,6 +528,9 @@ Returns list of (PARENT-NAME HEADING-TEXT CONTENT SOURCE-FILE) tuples, tagged :o
                      (or org-roam-dailies-directory "daily")
                      org-roam-directory))
          (results '())
+         ;; Tracks (PARENT . HEADING) keys already decided by a more recent day,
+         ;; so a chore completed recently isn't resurrected from a stale old daily.
+         (seen (make-hash-table :test 'equal))
          (days-back 0)
          (max-days 30))
     (while (< days-back max-days)
@@ -553,50 +559,63 @@ Returns list of (PARENT-NAME HEADING-TEXT CONTENT SOURCE-FILE) tuples, tagged :o
                                        (if (re-search-forward "^\\*\\* " section-end t)
                                            (line-beginning-position)
                                          section-end))))
-                    ;; Find ***+ TODO/WAIT [#A-C] children within this parent
+                    ;; Find ***+ [#A-C] children within this parent, in ANY
+                    ;; state. Because days are walked most-recent first, the
+                    ;; first time we encounter a given (parent . heading)
+                    ;; settles it: DONE/CANCEL means resolved (skip), TODO/WAIT
+                    ;; means carry forward. Either way it's recorded in `seen`
+                    ;; so older stale copies of the same chore are ignored.
                     (save-excursion
                       (goto-char parent-start)
                       (while (re-search-forward
-                              "^\\(\\*\\*\\*+\\) \\(TODO\\|WAIT\\) \\[#[A-C]\\]"
+                              "^\\(\\*\\*\\*+\\) \\(TODO\\|WAIT\\|DONE\\|CANCEL\\) \\[#[A-C]\\]"
                               parent-end t)
                         (let* ((stars (match-string 1))
+                               (state (match-string 2))
                                (level (length stars))
                                (heading-start (line-beginning-position))
-                               (subtree-end
-                                (save-excursion
-                                  (forward-line 1)
-                                  (if (re-search-forward
-                                       (format "^\\*\\{2,%d\\} " level)
-                                       parent-end t)
-                                      (line-beginning-position)
-                                    parent-end)))
-                               (subtree (string-trim-right
-                                         (buffer-substring-no-properties
-                                          heading-start subtree-end)))
-                               ;; Normalize to *** level if deeper
-                               (subtree (if (> level 3)
-                                            (let ((shift (- level 3)))
-                                              (replace-regexp-in-string
-                                               (format "^\\(\\*\\{%d,\\}\\)" level)
-                                               (lambda (m)
-                                                 (make-string (- (length (match-string 1 m)) shift) ?*))
-                                               subtree))
-                                          subtree))
-                               (heading-line (car (split-string subtree "\n")))
-                               (heading-text (aj/extract-heading-name heading-line)))
-                          (when (and heading-text parent-name)
-                            ;; Strip SCHEDULED lines, CLOSED lines, and trailing separators
-                            (let ((cleaned subtree))
-                              (setq cleaned (replace-regexp-in-string
-                                             "\\(\n*-+\n*\\)+\\'" "" cleaned))
-                              (setq cleaned (replace-regexp-in-string
-                                             "\nSCHEDULED: <[^>]+>" "" cleaned))
-                              (setq cleaned (replace-regexp-in-string
-                                             "\nCLOSED: \\[[^]]+\\]" "" cleaned))
-                              (push (list parent-name heading-text
-                                          (aj/tag-headings-overdue cleaned)
-                                          prev-file)
-                                    results))))))))))))))
+                               (heading-line (buffer-substring-no-properties
+                                              heading-start (line-end-position)))
+                               (heading-text (aj/extract-heading-name heading-line))
+                               (key (cons parent-name heading-text)))
+                          (when (and heading-text parent-name
+                                     (not (gethash key seen)))
+                            (puthash key t seen)
+                            ;; Only carry forward when the most recent
+                            ;; occurrence is still open.
+                            (when (member state '("TODO" "WAIT"))
+                              (let* ((subtree-end
+                                      (save-excursion
+                                        (forward-line 1)
+                                        (if (re-search-forward
+                                             (format "^\\*\\{2,%d\\} " level)
+                                             parent-end t)
+                                            (line-beginning-position)
+                                          parent-end)))
+                                     (subtree (string-trim-right
+                                               (buffer-substring-no-properties
+                                                heading-start subtree-end)))
+                                     ;; Normalize to *** level if deeper
+                                     (subtree (if (> level 3)
+                                                  (let ((shift (- level 3)))
+                                                    (replace-regexp-in-string
+                                                     (format "^\\(\\*\\{%d,\\}\\)" level)
+                                                     (lambda (m)
+                                                       (make-string (- (length (match-string 1 m)) shift) ?*))
+                                                     subtree))
+                                                subtree))
+                                     (cleaned subtree))
+                                ;; Strip SCHEDULED lines, CLOSED lines, and trailing separators
+                                (setq cleaned (replace-regexp-in-string
+                                               "\\(\n*-+\n*\\)+\\'" "" cleaned))
+                                (setq cleaned (replace-regexp-in-string
+                                               "\nSCHEDULED: <[^>]+>" "" cleaned))
+                                (setq cleaned (replace-regexp-in-string
+                                               "\nCLOSED: \\[[^]]+\\]" "" cleaned))
+                                (push (list parent-name heading-text
+                                            (aj/tag-headings-overdue cleaned)
+                                            prev-file)
+                                      results)))))))))))))))
     (nreverse results)))
 
 (defun aj/recurring-child-exists-p (parent-name child-heading)
