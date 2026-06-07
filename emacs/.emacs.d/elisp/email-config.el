@@ -895,6 +895,16 @@ see the `notmuch-fcc-dirs' comment above for why.")
 
   (add-hook 'message-send-hook 'my/email-validate-before-send)
 
+  ;; Expand ~/.mailrc aliases on compose. notmuch's `internal' address
+  ;; completion only echoes addresses already harvested from the mail DB, so
+  ;; it can't surface a contact you haven't mailed yet (e.g. a freshly-issued
+  ;; UNSW address). mail-abbrevs reads ~/.mailrc and expands the alias key
+  ;; (type it + a separator) to the full "Name <addr>" — independent of, and
+  ;; alongside, notmuch's completion. org-msg-edit-mode keeps its headers in
+  ;; the same buffer, so hook it too.
+  (add-hook 'message-mode-hook #'mail-abbrevs-setup)
+  (add-hook 'org-msg-edit-mode-hook #'mail-abbrevs-setup)
+
   ;; Bind identity cycling in message-mode
   (add-hook 'message-mode-hook
             (lambda ()
