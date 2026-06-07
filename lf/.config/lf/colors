@@ -1,0 +1,18 @@
+# lf colors file — whitespace-separated  <pattern>  <ansi-code>  pairs.
+# Matching order (most specific first): Full Path > Dir Name (trailing /) >
+# File Type > File Name > Base Name > Extension > Default.
+# Full-path patterns expand ~ and win over everything, so they're the way to
+# tint specific directories regardless of their name.
+
+# --- lattice overlay -------------------------------------------------------
+# Full-path rules only. lf merges this on top of its built-in defaults, so
+# every other dir/file keeps its normal color — no need to restate di/ln/etc.
+~/lattice           01;38;5;208   # bold orange
+~/lattice/static	01;38;5;51
+~/lattice/notes	01;38;5;208
+~/lattice/2-areas	01;38;5;201
+~/lattice/2-areas/study	01;38;5;201
+~/Documents	01;38;5;244
+~/lattice/code/sites/new-site/static/doc	01;38;5;46
+~/lattice/code	01;38;5;196
+~/lattice/code/private	01;38;5;46

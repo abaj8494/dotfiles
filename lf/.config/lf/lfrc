@@ -120,12 +120,58 @@ cmd yank-filepath &{{
 #cmd yank-basename $basename -a -- $fx | head -c-1 | pbcopy
 
 
+# --- colour the current file/dir from inside lf ---------------------------
+# Pick a colour, write a full-path rule into ~/.config/lf/colors for the
+# selection, then relaunch lf in place (via the `lc` wrapper) so it shows at
+# once. lf only reads the colours file at startup, so there is no live reload —
+# launched bare (not via `lc`) this just saves and you restart lf yourself.
+cmd setcolor ${{
+    colors="$HOME/.config/lf/colors"
+    name=$(printf '%s\n' red orange yellow green cyan blue purple magenta white grey remove "custom…" \
+        | gum filter --header "Colour for $(basename -- "$f"):" --placeholder "type to filter…") || exit 0
+    [ -n "$name" ] || exit 0
+    case "$name" in
+        red)     code='01;38;5;196' ;;
+        orange)  code='01;38;5;208' ;;
+        yellow)  code='01;38;5;226' ;;
+        green)   code='01;38;5;46'  ;;
+        cyan)    code='01;38;5;51'  ;;
+        blue)    code='01;38;5;33'  ;;
+        purple)  code='01;38;5;141' ;;
+        magenta) code='01;38;5;201' ;;
+        white)   code='01;38;5;231' ;;
+        grey)    code='01;38;5;244' ;;
+        remove)  code='' ;;
+        *)       code=$(gum input --placeholder 'ANSI e.g. 01;38;2;255;140;0') || exit 0 ;;
+    esac
+
+    [ -f "$colors" ] || : > "$colors"
+    printf '%s\n' "$fx" | while IFS= read -r target; do
+        [ -n "$target" ] || continue
+        case "$target" in
+            "$HOME"/*) pat="~${target#"$HOME"}" ;;
+            *)         pat="$target" ;;
+        esac
+        tmp=$(mktemp)
+        awk -v p="$pat" '$1==p{next}{print}' "$colors" > "$tmp"
+        [ -n "$code" ] && printf '%s\t%s\n' "$pat" "$code" >> "$tmp"
+        mv "$tmp" "$colors"
+    done
+
+    if [ -n "$LF_RELAUNCH" ]; then
+        : > "$LF_RELAUNCH"
+        lf -remote "send $id quit"
+    else
+        lf -remote "send $id echo Colour saved — restart lf to apply."
+    fi
+}}
+
 map m
 map o
 map n
 map "'"
 map '"'
-map c
+map c setcolor
 map e
 map f
 
