@@ -210,6 +210,9 @@ export JOBSYNC_API_KEY="***REMOVED***"
 export JOBSYNC_API_URL="http://localhost:3000/api/email-sync"
 
 unalias z
+# never record ~/Documents in zoxide — it's deprecated in favour of ~/lattice (the
+# Documents shims/originals must never win a `z` jump). Globs: the dir + everything under it.
+export _ZO_EXCLUDE_DIRS="$HOME/Documents:$HOME/Documents/**"
 eval "$(zoxide init zsh)"
 
 # --- reMarkable fleet: on-demand mirror shortcuts --------------------------
