@@ -73,22 +73,35 @@
 ;; Org Babel Configuration
 ;; ---------------------------------------------------------------------------
 
-(use-package go-mode)
+;; go-mode / ob-go are optional. A flaky boot (e.g. straight can't reach GitHub
+;; because the network isn't up yet right after a reboot) must NOT abort the
+;; rest of org-config — and with it every module init.el loads afterwards.
+;; Degrade to "no go babel" and keep going.
+(defvar aj/ob-go-available nil)
+(condition-case err
+    (progn
+      (use-package go-mode)
+      (use-package ob-go
+        :straight (:host github :repo "pope/ob-go"))
+      (setq aj/ob-go-available t))
+  (error
+   (display-warning 'org-config
+     (format "go-mode/ob-go unavailable, skipping go babel: %S" err)
+     :warning)))
 
-(use-package ob-go
-  :straight (:host github :repo "pope/ob-go"))
 (org-babel-do-load-languages
  'org-babel-load-languages
- '((shell   . t)
-   (python  . t)
-   (markdown . t)
-   (js . t)
-   (jupyter . t)
-   (latex   . t)
-   (C       . t)
-   (java    . t)
-   (go      . t)
-   (gnuplot . t)))
+ (append
+  '((shell   . t)
+    (python  . t)
+    (markdown . t)
+    (js . t)
+    (jupyter . t)
+    (latex   . t)
+    (C       . t)
+    (java    . t)
+    (gnuplot . t))
+  (when aj/ob-go-available '((go . t)))))
 
 ;; Python settings
 (setq custom-tab-width 4)

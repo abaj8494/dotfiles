@@ -39,44 +39,58 @@
 ;; Bootstrap straight.el package manager
 (require 'bootstrap)
 
+;; Module loader: keep one module's failure from aborting the rest of init.
+;; Without this, an error in any `require' below (e.g. straight failing to load
+;; an optional package when the network isn't up yet right after a boot)
+;; cascades — every module after it is silently skipped, disabling large parts
+;; of the config. Log a visible warning and carry on so the editor degrades
+;; gracefully instead of coming up half-configured.
+(defun aj/safe-require (feature)
+  (condition-case err
+      (require feature)
+    (error
+     (display-warning 'init
+       (format "Failed to load %s: %S — continuing" feature err)
+       :error))))
+
 ;; Load local elisp modules needed early
-(require 'ob-markdown)
-(require 'java-lsp)
+(aj/safe-require 'ob-markdown)
+(aj/safe-require 'java-lsp)
 
 ;; Load package configurations (Helm, org-roam, gptel, etc.)
-(require 'package-config)
+(aj/safe-require 'package-config)
 
 ;; Load UI configuration (theme, fonts, splash screen)
-(require 'ui-config)
+(aj/safe-require 'ui-config)
 
 ;; Load custom variables (custom-set-variables/faces live here)
 (when (file-exists-p custom-file)
   (load custom-file))
 
 ;; Load Org-mode configuration (includes LaTeX/preview setup)
-(require 'org-config)
+(aj/safe-require 'org-config)
 
 ;; Load daily note configuration (recurring tasks, calendar, weather)
-(require 'daily-config)
+(aj/safe-require 'daily-config)
 
 ;; Load Anki-editor configuration
-(require 'anki-config)
+(aj/safe-require 'anki-config)
 
 ;; Load auto-save configuration
-(require 'auto-save-config)
+(aj/safe-require 'auto-save-config)
 
 ;; Load magit and keybindings
-(require 'magit)
-(require 'magit-bindings)
+(aj/safe-require 'magit)
+(aj/safe-require 'magit-bindings)
 
 ;; Load ox-hugo keybindings
-(require 'ox-hugo-bindings)
+(aj/safe-require 'ox-hugo-bindings)
 
 ;; Load custom keybindings (C-c Y prefix)
-(require 'aj-bindings)
+(aj/safe-require 'aj-bindings)
 
 ;; Load email configuration (mu4e with mbsync)
-(require 'email-config)
+(aj/safe-require 'email-config)
 
 ;; Start Emacs server (for emacsclient) if not already running
 (require 'server)
