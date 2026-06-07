@@ -127,6 +127,7 @@ M = RES / "11200. - mathematics"
 Y12 = M / "112006. - year 12"
 Y11 = M / "112005. - year 11"
 E = RES / "11201. - english"
+SCI = RES / "11202. - science"
 
 PAPER_SOURCES = [
     (M / "112001. - year 7" / "1120010. - past papers",   "mathematics", "year-7",  None),
@@ -141,6 +142,16 @@ PAPER_SOURCES = [
     (Y12 / "1120062. - extension 1" / "11200620. - past papers","mathematics","year-12","extension-1"),
     (Y12 / "1120063. - extension 2" / "11200630. - past papers","mathematics","year-12","extension-2"),
     (E / "112011. - past papers",                          "english", "year-12", None),
+    # --- science (recovered 2026-06-05: excluded as *past papers* but missing from PAPER_SOURCES,
+    #     so dropped from lattice; HSC-numbered filenames carry no year, so year-level is explicit) ---
+    (SCI / "bio"  / "past papers" / "yr11", "biology",   "year-11", None),
+    (SCI / "bio"  / "past papers" / "yr12", "biology",   "year-12", None),
+    (SCI / "phys" / "past papers" / "yr11", "physics",   "year-11", None),
+    (SCI / "phys" / "past papers" / "yr12", "physics",   "year-12", None),
+    (SCI / "chem" / "past papers" / "yr11", "chemistry", "year-11", None),
+    (SCI / "chem" / "past papers" / "yr12", "chemistry", "year-12", None),
+    (SCI / "112021. - year 11" / "1120200. - chemistry" / "11202000. - past papers", "chemistry", "year-11", None),
+    (SCI / "112021. - year 11" / "1120201. - physics"   / "11202010. - past papers", "physics",   "year-11", None),
     # staging piles: ylevel/stream are None -> parsed per-file from the filename
     (M / "sort",                                           "mathematics", None, None),
 ]
