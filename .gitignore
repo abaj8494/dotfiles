@@ -45,6 +45,7 @@ emacs/.emacs.d/*.elc
 emacs/.emacs.d/elisp/*.elc
 emacs/.emacs.d/message-drafts/
 emacs/.emacs.d/scripts/__pycache__/
+lattice/__pycache__/
 .emacs.d.backup/
 emacs.el
 
