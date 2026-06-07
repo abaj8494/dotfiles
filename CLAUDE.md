@@ -60,7 +60,7 @@ When **adding** a config:
   - `Prefix+T` → themed fzf-tmux sesh picker (calls `~/.config/sesh/scripts/picker.sh`)
   - `Prefix+C-t` → tv channel picker in a popup
   - `Prefix+C-l` → `sesh last` (jump to previously-attached sesh session)
-  - `startup.sh` runs via `run-shell -b` after TPM (3s delay). Continuum auto-restore is **off** — only auto-save (every 5 min) is active. Manual restore: `Prefix+C-r`.
+  - `startup.sh` runs via `run-shell -b` after TPM (3s delay). Continuum auto-restore is **off** — only auto-save (every 5 min) is active. Manual restore: `Prefix+C-S-r` (Ctrl-Shift-R; rebound off the resurrect default `C-r`, which needs `extended-keys on`).
   - **Popup PATH gotcha**: `display-popup -E` runs commands under a stripped PATH (`~/.opencode/bin:/opt/homebrew/bin:/bin:/usr/bin`) — `~/.local/bin` is *not* included. Binaries installed there (e.g. `tv`) must be invoked by absolute path or wrapped, otherwise the popup snaps shut with a silent "command not found".
 - **`zsh`** — oh-my-zsh + powerlevel10k. Note: the `z` plugin is loaded by oh-my-zsh, then `unalias z` + `eval "$(zoxide init zsh)"` replaces it with zoxide (while keeping `z` as the invocation). The old z database (`zsh/.config/zsh/.z`) was imported into zoxide via `zoxide import --from=z --merge`. Also: a `tmux()` shell function wraps the CLI so that bare `tmux` (no args, outside tmux) runs `tmux attach` first — this avoids spawning an unnamed `0` session alongside the pre-warmed sesh sessions. `tmux <args>` still passes through unchanged.
 - **`watchdog`** — LaunchAgents only. Two agents:
