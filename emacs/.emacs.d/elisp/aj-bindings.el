@@ -126,6 +126,68 @@ prompt."
 
 (define-key global-map (kbd "C-c s") #'aj/scan-document)
 
+;; ---------------------------------------------------------------------------
+;; Pull files from ~/Downloads into the current directory  (C-c M)
+;; ---------------------------------------------------------------------------
+
+(defvar aj/pull-source-dir (expand-file-name "~/Downloads/")
+  "Default source directory for `aj/pull-from-downloads'.")
+
+(defun aj/pull--source-files (dir)
+  "Return basenames of non-dot entries in DIR, newest first."
+  (let ((entries (directory-files dir t directory-files-no-dot-files-regexp t)))
+    (mapcar #'file-name-nondirectory
+            (sort entries
+                  (lambda (a b)
+                    (time-less-p
+                     (file-attribute-modification-time (file-attributes b))
+                     (file-attribute-modification-time (file-attributes a))))))))
+
+(defun aj/pull-from-downloads (&optional copy)
+  "Move file(s) from a source dir into the current directory.
+
+Prompts for the source directory with `aj/pull-source-dir' (~/Downloads)
+prefilled — hit RET to accept or edit/navigate to another dir. Then offers
+that dir's entries newest-first in a Helm picker: mark several with \\`C-SPC',
+RET to confirm. Destination is the dired directory when point is in dired
+\(reverted afterward), otherwise `default-directory'. With prefix arg COPY,
+copy instead of move."
+  (interactive "P")
+  (require 'helm)
+  (let* ((src (file-name-as-directory
+               (read-directory-name "Pull from: " aj/pull-source-dir
+                                    aj/pull-source-dir t)))
+         (dest (if (derived-mode-p 'dired-mode)
+                   (dired-current-directory)
+                 default-directory))
+         (names (aj/pull--source-files src)))
+    (unless names
+      (user-error "No files in %s" src))
+    (let ((chosen (helm-comp-read
+                   (format "%s from %s → %s: "
+                           (if copy "Copy" "Move")
+                           (abbreviate-file-name src)
+                           (abbreviate-file-name dest))
+                   names
+                   :marked-candidates t
+                   :must-match t
+                   :buffer "*helm pull files*"))
+          (n 0))
+      (dolist (name chosen)
+        (let ((s (expand-file-name name src))
+              (d (expand-file-name name dest)))
+          (when (or (not (file-exists-p d))
+                    (yes-or-no-p (format "%s exists in destination; overwrite? "
+                                         name)))
+            (if copy (copy-file s d t) (rename-file s d t))
+            (setq n (1+ n)))))
+      (when (derived-mode-p 'dired-mode)
+        (revert-buffer))
+      (message "%s %d file(s) into %s"
+               (if copy "Copied" "Moved") n (abbreviate-file-name dest)))))
+
+(define-key global-map (kbd "C-c M") #'aj/pull-from-downloads)
+
 (provide 'aj-bindings)
 
 ;;; aj-bindings.el ends here
