@@ -1884,6 +1884,29 @@ Uses today's date with the time extracted from the heading."
           (setq aj/gcal-credentials-loaded t)
           (message "org-gcal ready"))))))
 
+(declare-function oauth2-auto--plstore-read "oauth2-auto")
+
+(defun aj/gcal-prewarm-token-cache ()
+  "Synchronously decrypt the org-gcal OAuth token store to warm gpg-agent.
+Call this from an INTERACTIVE context (a command body or a find-file hook)
+before launching any deferred org-gcal post — never from a deferred/timer.
+
+Why: org-gcal reads the refresh token by decrypting `oauth2-auto.plist'
+(plstore) on every token fetch (its plstore cache is disabled upstream). Emacs
+runs under loopback pinentry (`epa-pinentry-mode' = loopback), so that decrypt's
+passphrase prompt must land in the minibuffer — which is unusable from a
+deferred/process-filter callback, where gpg then fails with \"Can't decrypt\".
+One synchronous decrypt here unlocks the key; gpg-agent (max-cache-ttl 86400)
+serves it to the later async decrypts with no prompt. No network, no re-auth —
+just a plstore read."
+  (when aj/gcal-credentials-loaded
+    (require 'oauth2-auto)
+    (condition-case err
+        (dolist (id (list aj/gcal-id-J aj/gcal-id-personal))
+          (ignore-errors (oauth2-auto--plstore-read id 'org-gcal)))
+      (error (message "gcal token prewarm failed: %s"
+                      (error-message-string err))))))
+
 ;; Wrapper commands - load credentials, then call org-gcal
 (defun aj/gcal-sync ()
   "Sync with Google Calendar."
@@ -2172,12 +2195,14 @@ via org-gcal with red colour injected. Idempotent: org-gcal writes entry-id/
 ETag back, so re-running updates -- and, if the date changed, moves -- the
 same event rather than duplicating it."
   (interactive)
+  (require 'deferred)
   (let ((date-str (aj/gcal--daily-title-date)))
     (unless date-str
       (user-error "Not in a daily note (no #+title date)"))
     (aj/gcal-load-credentials)
     (unless aj/gcal-credentials-loaded
       (user-error "Google Calendar credentials unavailable"))
+    (aj/gcal-prewarm-token-cache)
     (save-excursion
       (org-back-to-heading t)
       (unless (org-entry-get nil "calendar-id")
@@ -2190,8 +2215,11 @@ same event rather than duplicating it."
       (unless (org-entry-get nil "SCHEDULED")
         (let ((aj/gcal-auto-push nil))
           (org-schedule nil date-str)))
-      (let ((aj/gcal--inject-color aj/gcal-chore-color))
-        (org-gcal-post-at-point t))
+      (let ((m (point-marker)))
+        (deferred:nextc
+          (let ((aj/gcal--inject-color aj/gcal-chore-color))
+            (org-gcal-post-at-point t))
+          (lambda (_) (aj/gcal--stamp-synced-date m date-str) nil)))
       (message "Pushing chore to Google Calendar (red, all-day %s)…" date-str))))
 
 ;; ---------------------------------------------------------------------------
@@ -2208,24 +2236,52 @@ same event rather than duplicating it."
   "When non-nil, opening today's (or a future) daily auto-sweeps its priority
 items to Google Calendar. Past dailies are never auto-swept.")
 
+(defun aj/gcal--stamp-synced-date (marker date-str)
+  "Record DATE-STR as `gcal-synced-date' for the entry at MARKER, then save.
+Called from a post deferred's success callback so the property reflects the
+date the Google event actually sits on — the authority `aj/gcal--needs-push-p'
+uses to decide whether a (carried-forward) item must be re-pushed/moved. Saving
+also persists org-gcal's own entry-id/ETag writeback, which the post just made."
+  (when (markerp marker)
+    (let ((buf (marker-buffer marker)))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (save-excursion
+            (goto-char marker)
+            (org-back-to-heading t)
+            (org-entry-put nil "gcal-synced-date" date-str))
+          (when (buffer-modified-p) (save-buffer)))))))
+
 (defun aj/gcal--needs-push-p (date-str)
   "Non-nil if the heading at point should be (re)pushed to gcal for DATE-STR.
-New (no entry-id) items push; an already-synced item whose SCHEDULED no longer
-matches DATE-STR re-pushes (so a carried-forward event MOVES); an item already
-on the calendar for DATE-STR is skipped."
+Pushes when there is no `entry-id' yet; when there is no recorded
+`gcal-synced-date' (so a pre-existing or carried-forward event re-syncs once);
+or when `gcal-synced-date' differs from DATE-STR — the carried-forward case,
+where the copied property still holds the OLD date and the Google event must
+MOVE. An item whose `gcal-synced-date' already equals DATE-STR is skipped.
+
+`gcal-synced-date' (not `SCHEDULED') is the authority here. SCHEDULED records
+the date we WANT the event on, but only a completed push proves what date the
+event actually sits on. Keying idempotency off SCHEDULED stranded carried-
+forward events: the carry-forward (or the sweep's own re-anchor) rewrote
+SCHEDULED to today before the move PATCH had landed, so every later sweep saw
+SCHEDULED == today and skipped — leaving the event on the previous day."
   (let ((id (org-entry-get nil "entry-id"))
-        (sched (org-entry-get nil "SCHEDULED")))
+        (synced (org-entry-get nil "gcal-synced-date")))
     (cond
      ((null id) t)
-     ((null sched) t)
-     ((not (string-match-p (regexp-quote date-str) sched)) t)
+     ((null synced) t)
+     ((not (string= synced date-str)) t)
      (t nil))))
 
 (defun aj/gcal--daily-priority-markers ()
   "Return BOL markers for pushable priority headings in the current buffer.
 A heading qualifies if it carries a [#A-C] cookie and is either open
 \(TODO/WAIT) or has no TODO keyword. The * Capture section is excluded;
-DONE/CANCEL items are excluded by the match."
+DONE/CANCEL items are excluded by the match; headings inside org-transclusion
+regions are excluded (they are live read-only mirrors of another file — their
+identity writeback can't persist in this buffer, so every sweep would re-post
+them as fresh duplicates; schedule those from their source file instead)."
   (let ((markers '())
         (cap-beg nil) (cap-end nil))
     (save-excursion
@@ -2239,7 +2295,8 @@ DONE/CANCEL items are excluded by the match."
       (while (re-search-forward
               "^\\*+ \\(?:\\(?:TODO\\|WAIT\\) \\)?\\[#[A-C]\\]" nil t)
         (let ((bol (line-beginning-position)))
-          (unless (and cap-beg (>= bol cap-beg) (< bol cap-end))
+          (unless (or (and cap-beg (>= bol cap-beg) (< bol cap-end))
+                      (get-char-property bol 'org-transclusion-type))
             (push (copy-marker bol) markers)))))
     (nreverse markers)))
 
@@ -2276,8 +2333,15 @@ entry is already correctly synced for DATE-STR."
                     (not (string-match-p (regexp-quote date-str) sched)))
             (let ((aj/gcal-auto-push nil))
               (org-schedule nil date-str))))
-        (let ((aj/gcal--inject-color aj/gcal-chore-color))
-          (org-gcal-post-at-point t))))))
+        (deferred:nextc
+          (let ((aj/gcal--inject-color aj/gcal-chore-color))
+            (org-gcal-post-at-point t))
+          (lambda (_)
+            ;; Post landed — record the date the event now sits on so the next
+            ;; sweep can tell "already synced for today" from "carried forward,
+            ;; must move" without trusting SCHEDULED. See `aj/gcal--needs-push-p'.
+            (aj/gcal--stamp-synced-date marker date-str)
+            nil))))))
 
 (defun aj/gcal--sweep-chain (markers date-str)
   "Post MARKERS to gcal sequentially (one finishes before the next starts)."
@@ -2304,6 +2368,9 @@ whose date changed are moved. Posts run sequentially to avoid writeback races."
     (aj/gcal-load-credentials)
     (unless aj/gcal-credentials-loaded
       (user-error "Google Calendar credentials unavailable"))
+    ;; Decrypt the token store now (interactive context) so the deferred posts
+    ;; below don't hit a loopback-pinentry prompt they can't satisfy.
+    (aj/gcal-prewarm-token-cache)
     (let ((markers (aj/gcal--daily-priority-markers)))
       (if (null markers)
           (message "gcal sweep: no priority items found")
@@ -2314,20 +2381,140 @@ whose date changed are moved. Posts run sequentially to avoid writeback races."
 (defun aj/gcal-maybe-sweep-on-open ()
   "From a daily's open hook: schedule a gcal sweep of today/future priority items.
 No-op when disabled, when not a dated daily, when the daily is in the past, or
-when nothing is pending. Deferred to an idle timer so it never blocks file open;
-credentials load (and may prompt once) only when there is something to push."
+when nothing is pending. The actual posting is deferred to an idle timer so it
+never blocks file open; credentials load (and may prompt once) only when there
+is something to push.
+
+Credential load AND the token-store decrypt (`aj/gcal-prewarm-token-cache')
+happen HERE, synchronously, while the open hook still runs in interactive
+context — not inside the idle timer. Under loopback pinentry a passphrase prompt
+fired from the timer's deferred posts can't reach the minibuffer and gpg fails
+with \"Can't decrypt\"; warming the agent up front (cached 24h) avoids that."
   (when aj/gcal-auto-sweep-on-open
     (let ((date-str (aj/gcal--daily-title-date)))
       (when (and date-str
                  (not (string< date-str (format-time-string "%Y-%m-%d")))
                  (aj/gcal--daily-has-pending-push-p))
-        (let ((buf (current-buffer)))
-          (run-with-idle-timer
-           1 nil
-           (lambda ()
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (aj/gcal-sweep-daily-chores))))))))))
+        (aj/gcal-load-credentials)
+        (when aj/gcal-credentials-loaded
+          (aj/gcal-prewarm-token-cache)
+          (let ((buf (current-buffer)))
+            (run-with-idle-timer
+             1 nil
+             (lambda ()
+               (when (buffer-live-p buf)
+                 (with-current-buffer buf
+                   (aj/gcal-sweep-daily-chores)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Hide completed chores: delete their calendar event on DONE/CANCEL
+;; ---------------------------------------------------------------------------
+;; When a priority chore on the J calendar is finished, its red all-day event
+;; should disappear so the Home-Assistant kiosk calendar card only ever shows
+;; outstanding chores. We delete the Google event but KEEP the org heading (now
+;; DONE/CANCEL) — the daily's record stays, and the carry-forward state machine
+;; in daily-recurring.el still sees the resolved keyword and won't resurrect it.
+;;
+;; We deliberately do NOT call `org-gcal-delete-at-point': it ends in
+;; `org-gcal--handle-cancelled-entry' → `org-gcal--maybe-remove-entry', and with
+;; `org-gcal-remove-api-cancelled-events' = t (set above) that DELETES the whole
+;; org subtree. Its cleanup also runs in an async `:finally', so a `let'-binding
+;; around the call can't neutralise it. Instead we drive `org-gcal--delete-event'
+;; directly and strip the gcal drawer + identity properties ourselves.
+
+(defvar org-state)
+(defvar aj/daily-hook-suppress)
+(declare-function aj/daily-date-file-p "daily-structure")
+(declare-function org-gcal--get-id "org-gcal")
+(declare-function org-gcal--delete-event "org-gcal")
+(defvar org-gcal-drawer-name)
+(defvar org-gcal-calendar-id-property)
+(defvar org-gcal-entry-id-property)
+(defvar org-gcal-etag-property)
+
+(defun aj/gcal--strip-event-at-marker (marker)
+  "Remove the :org-gcal: drawer and gcal identity properties at MARKER.
+Mirrors the cleanup `org-gcal-delete-at-point' does on success, minus the
+heading-deletion side effect. Leaves the heading text (and its DONE/CANCEL
+keyword) intact."
+  (when (buffer-live-p (marker-buffer marker))
+    (org-with-point-at marker
+      (org-back-to-heading t)
+      (let ((bound (save-excursion (outline-next-heading) (point))))
+        (save-excursion
+          (when (re-search-forward
+                 (format "^[ \t]*:%s:[^z-a]*?\n[ \t]*:END:[ \t]*\n?"
+                         (regexp-quote org-gcal-drawer-name))
+                 bound 'noerror)
+            (replace-match "" 'fixedcase))))
+      (org-entry-delete marker org-gcal-calendar-id-property)
+      (org-entry-delete marker org-gcal-entry-id-property)
+      (org-entry-delete marker org-gcal-etag-property)
+      (org-entry-delete marker "gcal-synced-date")
+      (org-entry-delete marker "org-gcal-managed"))))
+
+(defun aj/gcal-delete-event-at-point ()
+  "Delete the Google event for the entry at point WITHOUT removing the heading.
+Returns a deferred. A no-op deferred when the entry has no event-id/calendar-id."
+  (require 'org-gcal)
+  (require 'deferred)
+  (save-excursion
+    (org-back-to-heading t)
+    (let* ((marker (point-marker))
+           (event-id (org-gcal--get-id (point)))
+           (etag (org-entry-get (point) org-gcal-etag-property))
+           (calendar-id (org-entry-get (point) org-gcal-calendar-id-property)))
+      (if (not (and event-id calendar-id))
+          (deferred:succeed nil)
+        (deferred:nextc
+          ;; org-gcal--delete-event destroys the marker it's given, so hand it a copy.
+          (org-gcal--delete-event calendar-id event-id etag (copy-marker marker))
+          (lambda (_)
+            (aj/gcal--strip-event-at-marker marker)
+            nil))))))
+
+(defun aj/gcal-hide-done-chore (&rest _)
+  "On DONE/CANCEL, delete the chore's J-calendar event so it leaves the calendar.
+Hooked on `org-after-todo-state-change-hook'. No-op during suppressed state
+changes (`aj/daily-hook-suppress' — e.g. the carry-forward source-CANCEL in
+daily-recurring.el), so a carried-forward item MOVES forward rather than being
+deleted off the calendar. Only fires for J-managed entries that actually carry
+an entry-id. Keeps the org heading; just removes the event + gcal identity."
+  (when (and (not (bound-and-true-p aj/daily-hook-suppress))
+             (boundp 'org-state)
+             (member org-state '("DONE" "CANCEL"))
+             (buffer-file-name)
+             (fboundp 'aj/daily-date-file-p)
+             (aj/daily-date-file-p))
+    (let ((cal (org-entry-get nil "calendar-id"))
+          (id  (org-entry-get nil "entry-id")))
+      (when (and id cal (string= cal aj/gcal-id-J))
+        (condition-case err
+            (progn
+              (aj/gcal-load-credentials)
+              (when aj/gcal-credentials-loaded
+                (require 'deferred)
+                ;; This hook fires synchronously from the user's DONE/CANCEL
+                ;; command, but the delete's token decrypt happens in the
+                ;; deferred below — warm the agent here so loopback pinentry
+                ;; isn't summoned from that callback.
+                (aj/gcal-prewarm-token-cache)
+                (let ((buf (current-buffer)))
+                  (deferred:$
+                    (deferred:try
+                      (aj/gcal-delete-event-at-point)
+                      :catch (lambda (e)
+                               (message "gcal hide-done: delete failed: %S" e) nil))
+                    (deferred:nextc it
+                      (lambda (_)
+                        (when (buffer-live-p buf)
+                          (with-current-buffer buf
+                            (when (buffer-modified-p) (save-buffer))))
+                        (message "gcal: completed chore removed from calendar")))))))
+          (error
+           (message "gcal hide-done error: %s" (error-message-string err))))))))
+
+(add-hook 'org-after-todo-state-change-hook #'aj/gcal-hide-done-chore)
 
 (provide 'org-config)
 ;;; org-config.el ends here
