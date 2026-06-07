@@ -229,7 +229,11 @@ local function pruneLayoutHistory()
   end
 end
 
-local function saveLayout(reason)
+-- opts.historyOnly: write the timestamped snapshot but never touch
+-- latest.json. Used by the post-restore save so a partial/half-converged
+-- restore can't overwrite the good pre-crash baseline that latest.json holds.
+local function saveLayout(reason, opts)
+  opts = opts or {}
   hs.task.new(AEROSPACE, function(exitCode, stdout, stderr)
     if exitCode ~= 0 then
       layoutLog(string.format("save reason=%s aerospace-failed exit=%d %s",
@@ -250,10 +254,12 @@ local function saveLayout(reason)
     local body  = hs.json.encode(snap, true)
     local stamp = os.date("%Y%m%d-%H%M%S")
     writeFile(string.format("%s/snapshot-%s.json", LAYOUT_DIR, stamp), body)
-    -- Refuse to overwrite latest.json with an empty capture: sleep/lock
-    -- transients can return 0 windows, and we don't want to nuke the only
-    -- good pre-reboot snapshot.
-    if #snap > 0 then
+    if opts.historyOnly then
+      layoutLog(string.format("save reason=%s windows=%d history-only", reason or "timer", #snap))
+    elseif #snap > 0 then
+      -- Refuse to overwrite latest.json with an empty capture: sleep/lock
+      -- transients can return 0 windows, and we don't want to nuke the only
+      -- good pre-reboot snapshot.
       writeFile(LAYOUT_LATEST, body)
       layoutLog(string.format("save reason=%s windows=%d", reason or "timer", #snap))
     else
@@ -262,6 +268,50 @@ local function saveLayout(reason)
     pruneLayoutHistory()
   end, { "list-windows", "--all", "--format", LIST_FORMAT }):start()
 end
+
+-- ── App launching ─────────────────────────────────────────────────────────
+-- A crash leaves apps un-relaunched, so the restorer has to *start* them, not
+-- just move existing windows. Default launcher is `open -b <bundle>`; override
+-- per-bundle below for apps that need a special incantation.
+local OPEN         = "/usr/bin/open"
+local EMACS_CLIENT = "/Applications/MacPorts/Emacs.app/Contents/MacOS/bin/emacsclient"
+
+-- Emacs is a launchd `runatload` daemon: it auto-starts on boot and holds all
+-- buffer state. We must NOT `open -b org.gnu.Emacs` (spawns a second, non-daemon
+-- Emacs) and must NOT kickstart -k the daemon (kills live state). Just ask the
+-- running daemon for a GUI frame — the same final step as the `er` shell alias,
+-- minus the destructive restart. Each call makes one frame, so multi-frame
+-- layouts converge over successive ticks. If the daemon isn't up yet this
+-- no-ops and the next tick retries.
+local LAUNCHERS = {
+  ["org.gnu.Emacs"] = function(cb)
+    hs.task.new(EMACS_CLIENT, function(code, _, err) cb(code, err) end,
+      { "-c", "-n" }):start()
+  end,
+}
+
+-- Bundles to never auto-launch during restore (leave these windows dead).
+local NO_LAUNCH = {}
+
+local function launchApp(bundle, cb)
+  local fn = LAUNCHERS[bundle]
+  if fn then return fn(cb) end
+  hs.task.new(OPEN, function(code, _, err) cb(code, err) end, { "-b", bundle }):start()
+end
+
+-- Convergence-based restore. A single pass can't work after a crash: heavy
+-- apps (JVM/Ghidra, Docker) take far longer than any fixed delay to relaunch,
+-- and apps macOS didn't bring back aren't running at all. So we reconcile on a
+-- short loop — match live windows to the saved layout, move mismatches, and
+-- launch any bundle that still has no window — until everything is placed or
+-- the time budget runs out.
+local CONVERGE_TICK     = 2     -- seconds between reconciliation passes
+local CONVERGE_BUDGET   = 120   -- total seconds to wait for apps to appear
+local LAUNCH_COOLDOWN   = 5      -- per-bundle min seconds between launch attempts
+local LAUNCH_MAX_TRIES  = 3      -- give up launching a bundle after this many tries
+
+local restoreInFlight = false
+local reconTimer = nil
 
 local function restoreLayout(opts)
   opts = opts or {}
@@ -280,96 +330,151 @@ local function restoreLayout(opts)
     if opts.onDone then opts.onDone(false) end
     return
   end
+  if restoreInFlight then
+    layoutLog("restore: already in flight, ignoring")
+    if opts.onDone then opts.onDone(false) end
+    return
+  end
 
-  hs.task.new(AEROSPACE, function(exitCode, stdout, stderr)
-    if exitCode ~= 0 then
-      layoutLog(string.format("restore: aerospace list failed exit=%d %s",
-        exitCode, (stderr or ""):gsub("\n", " | ")))
-      if opts.onDone then opts.onDone(false) end
-      return
+  -- Build the desired set, dropping legacy frame-only entries (pre-Aerospace
+  -- snapshots with no workspace field — nothing actionable).
+  local desired, legacy = {}, 0
+  for _, e in ipairs(snap) do
+    if e.workspace and e.workspace ~= "" then
+      table.insert(desired, { workspace = e.workspace, bundle = e.bundle,
+                              title = e.title or "", done = false })
+    else
+      legacy = legacy + 1
     end
+  end
+  if #desired == 0 then
+    layoutLog(string.format("restore: nothing actionable (legacy=%d)", legacy))
+    if opts.onDone then opts.onDone(false) end
+    return
+  end
 
-    local live = parseAerospaceList(stdout)
-    -- group live windows by bundle; matches consume from the pool so
-    -- multi-window apps map 1:1 across the saved set.
-    local byBundle = {}
-    for _, w in ipairs(live) do
-      byBundle[w.bundle] = byBundle[w.bundle] or {}
-      table.insert(byBundle[w.bundle], w)
+  restoreInFlight = true
+  local deadline    = os.time() + CONVERGE_BUDGET
+  local lastLaunch  = {}   -- bundle -> os.time() of last launch attempt
+  local launchTries = {}   -- bundle -> attempts so far
+  local moved, launched = 0, 0
+
+  local function remainingCount()
+    local n = 0
+    for _, e in ipairs(desired) do if not e.done then n = n + 1 end end
+    return n
+  end
+
+  local function finish(reason)
+    restoreInFlight = false
+    local remaining = remainingCount()
+    layoutLog(string.format("restore %s: moved=%d launched=%d placed=%d/%d unresolved=%d legacy=%d",
+      reason, moved, launched, #desired - remaining, #desired, remaining, legacy))
+    if not opts.quiet then
+      hs.notify.new({
+        title = "Window layout restored",
+        informativeText = string.format("%d placed, %d launched, %d unresolved",
+          #desired - remaining, launched, remaining),
+      }):send()
     end
+    if opts.onDone then opts.onDone(true) end
+  end
 
-    local moves, skipped, missing, legacy = {}, 0, 0, 0
-    for _, entry in ipairs(snap) do
-      if not entry.workspace or entry.workspace == "" then
-        -- legacy frame-only snapshot from the pre-Aerospace version of
-        -- this code: nothing actionable, just skip.
-        legacy = legacy + 1
-        goto continue
-      end
-      local pool = byBundle[entry.bundle]
-      local matched
-      if pool and #pool > 0 then
-        for i, w in ipairs(pool) do
-          if w.title == entry.title then
-            matched = table.remove(pool, i)
-            break
-          end
-        end
-        matched = matched or table.remove(pool, 1)  -- positional fallback
-      end
-      if matched then
-        if matched.workspace == entry.workspace then
-          skipped = skipped + 1
-        else
-          table.insert(moves, { id = matched.id, workspace = entry.workspace,
-                                bundle = entry.bundle, title = entry.title })
-        end
-      else
-        missing = missing + 1
-      end
-      ::continue::
-    end
-
-    if legacy > 0 and #moves == 0 and skipped == 0 then
-      layoutLog(string.format("restore: legacy snapshot (%d entries, no workspace field) — skipping", legacy))
-      if opts.onDone then opts.onDone(false) end
-      return
-    end
-
-    layoutLog(string.format("restore plan: moves=%d already-placed=%d missing=%d legacy=%d",
-      #moves, skipped, missing, legacy))
-
-    -- Run moves sequentially — concurrent move-node-to-workspace calls
-    -- can race aerospace's internal model.
-    local i, moved, failed = 1, 0, 0
-    local function runNext()
-      if i > #moves then
-        layoutLog(string.format("restore done: moved=%d failed=%d already-placed=%d missing=%d",
-          moved, failed, skipped, missing))
-        if not opts.quiet then
-          hs.notify.new({
-            title = "Window layout restored",
-            informativeText = string.format("%d moved, %d in place, %d missing",
-              moved, skipped, missing),
-          }):send()
-        end
-        if opts.onDone then opts.onDone(true) end
+  -- One reconciliation pass.
+  local tick
+  tick = function()
+    hs.task.new(AEROSPACE, function(exitCode, stdout, stderr)
+      if exitCode ~= 0 then
+        layoutLog(string.format("restore tick: aerospace list failed exit=%d %s",
+          exitCode, (stderr or ""):gsub("\n", " | ")))
+        if os.time() >= deadline then return finish("timeout") end
+        reconTimer = hs.timer.doAfter(CONVERGE_TICK, tick)
         return
       end
-      local m = moves[i]; i = i + 1
-      hs.task.new(AEROSPACE, function(code, _, errOut)
-        if code == 0 then
-          moved = moved + 1
-        else
-          failed = failed + 1
-          layoutLog(string.format("restore move %s→%s failed: %s",
-            m.bundle or "?", m.workspace, (errOut or ""):gsub("\n", " | ")))
+
+      local live = parseAerospaceList(stdout)
+      -- group live windows by bundle; matches consume from the pool so
+      -- multi-window apps map 1:1 across the saved set.
+      local byBundle = {}
+      for _, w in ipairs(live) do
+        byBundle[w.bundle] = byBundle[w.bundle] or {}
+        table.insert(byBundle[w.bundle], w)
+      end
+
+      local moves    = {}
+      local needLaunch = {}   -- bundle present as a key when a window is still missing
+      for _, e in ipairs(desired) do
+        if not e.done then
+          local pool = byBundle[e.bundle]
+          local matched
+          if pool and #pool > 0 then
+            if e.title ~= "" then
+              for i, w in ipairs(pool) do
+                if w.title == e.title then matched = table.remove(pool, i); break end
+              end
+            end
+            matched = matched or table.remove(pool, 1)  -- positional fallback
+          end
+          if matched then
+            if matched.workspace == e.workspace then
+              e.done = true
+            else
+              table.insert(moves, { entry = e, id = matched.id })
+            end
+          else
+            needLaunch[e.bundle] = true
+          end
         end
-        runNext()
-      end, { "move-node-to-workspace", "--window-id", m.id, m.workspace }):start()
-    end
-    runNext()
-  end, { "list-windows", "--all", "--format", LIST_FORMAT }):start()
+      end
+
+      -- Launch bundles that still lack a window (throttled + capped per bundle).
+      local now = os.time()
+      for bundle in pairs(needLaunch) do
+        local tries = launchTries[bundle] or 0
+        local cooled = not lastLaunch[bundle] or (now - lastLaunch[bundle]) >= LAUNCH_COOLDOWN
+        if not NO_LAUNCH[bundle] and tries < LAUNCH_MAX_TRIES and cooled then
+          lastLaunch[bundle]  = now
+          launchTries[bundle] = tries + 1
+          launched = launched + 1
+          layoutLog(string.format("restore: launching %s (try %d)", bundle, tries + 1))
+          launchApp(bundle, function(code, err)
+            if code ~= 0 then
+              layoutLog(string.format("restore: launch %s failed exit=%s %s",
+                bundle, tostring(code), (err or ""):gsub("\n", " | ")))
+            end
+          end)
+        end
+      end
+
+      -- Run moves sequentially — concurrent move-node-to-workspace calls can
+      -- race aerospace's internal model — then decide whether to tick again.
+      local mi = 1
+      local function runMove()
+        if mi > #moves then
+          if remainingCount() == 0 then return finish("converged") end
+          if os.time() >= deadline then return finish("timeout") end
+          reconTimer = hs.timer.doAfter(CONVERGE_TICK, tick)
+          return
+        end
+        local m = moves[mi]; mi = mi + 1
+        hs.task.new(AEROSPACE, function(code, _, errOut)
+          if code == 0 then
+            moved = moved + 1
+            m.entry.done = true
+          else
+            layoutLog(string.format("restore move %s→%s failed: %s",
+              m.entry.bundle or "?", m.entry.workspace, (errOut or ""):gsub("\n", " | ")))
+          end
+          runMove()
+        end, { "move-node-to-workspace", "--window-id", m.id, m.entry.workspace }):start()
+      end
+      runMove()
+    end, { "list-windows", "--all", "--format", LIST_FORMAT }):start()
+  end
+
+  layoutLog(string.format("restore start: desired=%d legacy=%d budget=%ds",
+    #desired, legacy, CONVERGE_BUDGET))
+  tick()
 end
 
 -- Boot detection: kern.boottime's sec field changes on every reboot. We
@@ -405,7 +510,10 @@ else
       -- Mark this boot as handled regardless of success, so hs.reload()s
       -- don't retrigger. Manual hotkey (cmd+ctrl+alt+R) is the escape hatch.
       if bootSec then writeFile(BOOT_MARKER, bootSec) end
-      saveLayout("post-restore")  -- fresh baseline after the dust settles
+      -- History-only: a partial restore (apps that never relaunched) must not
+      -- overwrite latest.json — that's the pre-crash baseline restore reads.
+      -- The 30-min timer refreshes latest.json once you're back in steady state.
+      saveLayout("post-restore", { historyOnly = true })
     end })
   end)
 end
