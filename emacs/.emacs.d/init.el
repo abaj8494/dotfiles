@@ -45,13 +45,41 @@
 ;; cascades — every module after it is silently skipped, disabling large parts
 ;; of the config. Log a visible warning and carry on so the editor degrades
 ;; gracefully instead of coming up half-configured.
+(defvar aj/failed-modules nil
+  "Features whose load threw during init, kept in load order for a deferred retry.")
+
 (defun aj/safe-require (feature)
+  "Require FEATURE without letting its failure abort the rest of init.
+A mid-file error (commonly a transient boot race: straight still cloning
+an optional package, the network not up yet, the build dir not on
+load-path) otherwise truncates that file silently AND skips every module
+required afterwards. Record the failure for `aj/retry-failed-modules' and
+carry on, so the editor never comes up half-configured without saying so."
   (condition-case err
-      (require feature)
+      (prog1 (require feature)
+        (setq aj/failed-modules (delq feature aj/failed-modules)))
     (error
+     (add-to-list 'aj/failed-modules feature t)
      (display-warning 'init
-       (format "Failed to load %s: %S — continuing" feature err)
-       :error))))
+       (format "Failed to load %s: %S — will retry once init settles" feature err)
+       :warning))))
+
+(defun aj/retry-failed-modules ()
+  "Re-attempt any module that lost a boot-time race in `aj/safe-require'.
+Those races resolve within seconds (straight finishes, load-path settles),
+and a truncated module never `provide'd its feature, so `require' reloads
+the whole file from scratch — this time running it to completion. Anything
+still broken afterwards is a real fault, surfaced loudly rather than left
+to be discovered days later as a missing feature."
+  (when aj/failed-modules
+    (dolist (feature (copy-sequence aj/failed-modules))
+      (aj/safe-require feature))
+    (if aj/failed-modules
+        (display-warning 'init
+          (format "Modules still failing after retry: %S.
+Inspect *Warnings* for the cause, then M-x aj/reload-config." aj/failed-modules)
+          :emergency)
+      (message "aj/retry-failed-modules: all previously-failed modules now loaded"))))
 
 ;; Load local elisp modules needed early
 (aj/safe-require 'ob-markdown)
@@ -91,6 +119,11 @@
 
 ;; Load email configuration (mu4e with mbsync)
 (aj/safe-require 'email-config)
+
+;; Retry any module that lost a boot-time race above, once the daemon has
+;; settled (straight done, network up, load-path populated). Without this, a
+;; transient miss leaves the config silently half-loaded until the next restart.
+(run-at-time 5 nil #'aj/retry-failed-modules)
 
 ;; Start Emacs server (for emacsclient) if not already running
 (require 'server)

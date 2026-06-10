@@ -74,16 +74,26 @@
 ;; ---------------------------------------------------------------------------
 
 ;; go-mode / ob-go are optional. A flaky boot (e.g. straight can't reach GitHub
-;; because the network isn't up yet right after a reboot) must NOT abort the
-;; rest of org-config — and with it every module init.el loads afterwards.
+;; because the network isn't up yet right after a reboot, or the build dir isn't
+;; on load-path yet) must NOT abort the rest of org-config — and with it the
+;; gcal section far below and every module init.el loads afterwards.
 ;; Degrade to "no go babel" and keep going.
+;;
+;; NB: `use-package' downgrades a load failure to its own warning and does NOT
+;; re-signal, so the condition-case here never trips on a missing package — it
+;; would still set the flag t, and the unguarded `(require 'ob-go)' inside
+;; `org-babel-do-load-languages' below would then throw and truncate the file.
+;; So gate the flag on the actual `require' results (noerror, so they can't
+;; throw), not on use-package staying silent.
 (defvar aj/ob-go-available nil)
 (condition-case err
     (progn
       (use-package go-mode)
       (use-package ob-go
         :straight (:host github :repo "pope/ob-go"))
-      (setq aj/ob-go-available t))
+      (setq aj/ob-go-available
+            (and (require 'go-mode nil t)
+                 (require 'ob-go nil t))))
   (error
    (display-warning 'org-config
      (format "go-mode/ob-go unavailable, skipping go babel: %S" err)
