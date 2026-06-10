@@ -61,6 +61,32 @@
     (org-transclusion-fringe . (:foreground "#6a5a8e" :background unspecified)))
   "Transclusion face colors for gruber-lighter theme.")
 
+;; ---------------------------------------------------------------------------
+;; Code face colors — variables & methods
+;; ---------------------------------------------------------------------------
+;; The stock gruber faces render variable names / property accesses near-white
+;; (#f4f4ff), which washes out against the default text.  Give variables and
+;; methods a VSCode-style light blue (dark) / readable blue (light) so they
+;; stand out.  Covers both classic font-lock and tree-sitter face names.
+
+(defvar gruber-themes-dark-code-colors
+  '((font-lock-variable-name-face  . (:foreground "#9cdcfe"))  ; VSCode light blue
+    (font-lock-variable-use-face   . (:foreground "#9cdcfe"))
+    (font-lock-property-name-face  . (:foreground "#9cdcfe"))
+    (font-lock-property-use-face   . (:foreground "#9cdcfe"))
+    (font-lock-function-name-face  . (:foreground "#9cdcfe"))
+    (font-lock-function-call-face  . (:foreground "#9cdcfe")))
+  "Variable/method face colors for gruber-darker theme.")
+
+(defvar gruber-themes-light-code-colors
+  '((font-lock-variable-name-face  . (:foreground "#005cc5"))  ; readable blue on white
+    (font-lock-variable-use-face   . (:foreground "#005cc5"))
+    (font-lock-property-name-face  . (:foreground "#005cc5"))
+    (font-lock-property-use-face   . (:foreground "#005cc5"))
+    (font-lock-function-name-face  . (:foreground "#005cc5"))
+    (font-lock-function-call-face  . (:foreground "#005cc5")))
+  "Variable/method face colors for gruber-lighter theme.")
+
 (defun gruber-themes--get-current-variant ()
   "Return the current gruber theme variant: 'dark, 'light, or nil."
   (let ((theme (car custom-enabled-themes)))
@@ -123,10 +149,26 @@
             (apply #'set-face-attribute face nil
                    (gruber-themes--plist-to-args spec))))))))
 
+(defun gruber-themes--apply-code-faces ()
+  "Apply variable/method face colors based on current theme variant."
+  (let* ((variant (gruber-themes--get-current-variant))
+         (colors (pcase variant
+                   ('dark gruber-themes-dark-code-colors)
+                   ('light gruber-themes-light-code-colors)
+                   (_ nil))))
+    (when colors
+      (dolist (entry colors)
+        (let ((face (car entry))
+              (spec (cdr entry)))
+          (when (facep face)
+            (apply #'set-face-attribute face nil
+                   (gruber-themes--plist-to-args spec))))))))
+
 (defun gruber-themes--on-theme-change (&optional _theme)
   "Hook function to apply customizations when theme changes."
   (gruber-themes--apply-headings)
-  (gruber-themes--apply-transclusion))
+  (gruber-themes--apply-transclusion)
+  (gruber-themes--apply-code-faces))
 
 ;;;###autoload
 (defun gruber-toggle ()

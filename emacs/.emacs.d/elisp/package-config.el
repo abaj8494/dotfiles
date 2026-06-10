@@ -112,6 +112,49 @@
   (eval-after-load 'jupyter-org-extensions
     '(unbind-key "C-c h" jupyter-org-interaction-mode-map)))
 
+;; ---------------------------------------------------------------------------
+;; Corfu — modern, capf-native in-buffer completion popup
+;; ---------------------------------------------------------------------------
+;; As-you-type inline completion driven purely by
+;; `completion-at-point-functions': LSP/pyright, elisp, and the jupyter kernel
+;; capf all feed it.  `helm-mode' keeps owning the *minibuffer* (M-x,
+;; find-file); corfu-mode sets a buffer-local `completion-in-region-function'
+;; so in-buffer popups win wherever it's active.
+(use-package corfu
+  :straight t
+  :init (global-corfu-mode)
+  :custom
+  (corfu-auto t)            ; pop up automatically
+  (corfu-auto-prefix 2)     ; after 2 chars (matches company config)
+  (corfu-auto-delay 0.15)
+  (corfu-cycle t)
+  (corfu-quit-no-match 'separator)
+  (corfu-preselect 'prompt)
+  :config
+  ;; `ispell-completion-at-point' (a text-mode capf) auto-pops dictionary
+  ;; words on any 2+ char prose, which (a) is noise and (b) hijacks TAB while
+  ;; the popup is up — breaking org-tempo `<sj'+TAB expansion (TAB then accepts
+  ;; "sjaak" instead of letting `org-cycle' expand the template).  Drop it so
+  ;; corfu only auto-pops where a real capf exists (src blocks, links, roam).
+  (defun aj/corfu-drop-ispell-capf ()
+    (remove-hook 'completion-at-point-functions #'ispell-completion-at-point t))
+  (add-hook 'text-mode-hook #'aj/corfu-drop-ispell-capf))
+
+;; ---------------------------------------------------------------------------
+;; Hideshow — fold functions/blocks in code buffers (incl. C-c ' src edits)
+;; ---------------------------------------------------------------------------
+;; The org `C-c '' edit buffer is a plain `python-mode' buffer, so hideshow
+;; works there like any prog buffer.  Syntax-aware: folds defs, classes, and
+;; bracketed blocks.
+(use-package hideshow
+  :straight (:type built-in)
+  :hook (prog-mode . hs-minor-mode)
+  :bind (:map hs-minor-mode-map
+              ("<backtab>" . hs-toggle-hiding)   ; Shift-TAB: fold at point
+              ("C-c f"     . hs-toggle-hiding)
+              ("C-c F"     . hs-hide-all)
+              ("C-c U"     . hs-show-all)))
+
 (use-package sqlite3
   :straight (:host github :repo "pekingduck/emacs-sqlite3-api"))
 

@@ -190,9 +190,73 @@
    ;; Default — indent
    (t (indent-for-tab-command))))
 
-;; Jupyter-python mode mapping
-(add-to-list 'org-src-lang-modes '("jupyter-python" . python))
+;; Jupyter-python mode mapping — use tree-sitter for richer fontification
+;; (method calls, attribute access, variable uses), which needs font-lock
+;; level 4 (see below).
+;;
+;; emacs-jupyter re-registers ("jupyter-python" . python) on *every* org
+;; buffer via `org-babel-jupyter-make-local-aliases' (an `org-mode-hook'),
+;; using `add-to-list' — which prepends that entry to the front whenever it's
+;; absent.  `org-src-get-lang-mode' uses `assoc' (first match wins), so a lone
+;; python-ts entry gets shadowed.  Force python-ts to the front AND keep the
+;; python entry present, so jupyter's `add-to-list' is a permanent no-op and
+;; the order never flips back.
+(setq org-src-lang-modes
+      (cons '("jupyter-python" . python-ts)
+            (cons '("jupyter-python" . python)
+                  (assoc-delete-all "jupyter-python" org-src-lang-modes))))
 (add-to-list 'org-src-lang-modes '("chess" . latex))
+
+;; Tree-sitter only emits the call/property/variable-use faces at level 4;
+;; the default 3 leaves method calls uncolored.
+(setq treesit-font-lock-level 4)
+
+;;; Kernel-backed completion in jupyter src edit buffers (C-c ') -------------
+;; emacs-jupyter's `org-babel-edit-prep:jupyter' enables
+;; `jupyter-repl-interaction-mode', which already puts
+;; `jupyter-completion-at-point' on `completion-at-point-functions' (live
+;; introspection of the running kernel).  But it leaves TAB bound to plain
+;; indentation, so completion was only reachable via M-TAB.  Letting TAB fall
+;; through to `completion-at-point' once the line is indented routes TAB into
+;; the jupyter kernel capf (no company/corfu installed; the default
+;; *Completions* UI is used).  Advising the base `:jupyter' op covers
+;; `:jupyter-python' too, since that name is a symbol-indirection defalias.
+(with-eval-after-load 'ob-jupyter
+  (defun aj/jupyter-edit-buffer-completion (&rest _)
+    "Let TAB drive kernel completion in a jupyter src edit buffer."
+    (setq-local tab-always-indent 'complete))
+  (advice-add 'org-babel-edit-prep:jupyter :after
+              #'aj/jupyter-edit-buffer-completion))
+
+;; In the C-c ' edit buffer the major mode is `python-ts-mode' (a sibling of
+;; `python-mode' under `python-base-mode'), which matches neither the
+;; `org-mode' nor `jupyter-repl-mode' specialisation of
+;; `jupyter-code-context' — so the *default* method fires and sends only the
+;; current line to the kernel.  That's why `dot.at<TAB>' fails: the kernel
+;; never sees the `dot = graphviz.Digraph(...)' line above, and (unless the
+;; cell was executed) `dot' isn't a live object to introspect either.  Send
+;; the whole edit buffer instead so the kernel's Jedi can infer types from the
+;; definitions above point.  Scoped to org-src buffers; plain python files
+;; fall through to the default line-context method.
+(with-eval-after-load 'jupyter-client
+  (cl-defmethod jupyter-code-context ((_type (eql completion))
+                                      &context (major-mode python-base-mode))
+    (if (bound-and-true-p org-src-mode)
+        (list (buffer-substring-no-properties (point-min) (point-max))
+              (- (point) (point-min)))
+      (cl-call-next-method)))
+
+  ;; The edit buffer / inline blocks now use `python-ts-mode', but emacs-jupyter
+  ;; derives the kernel's language mode from the file extension via
+  ;; `set-auto-mode' (-> `python-mode'), and `jupyter-repl-associate-buffer'
+  ;; compares it with a strict `eq'.  Without this, association fails with
+  ;; "Cannot associate buffer to REPL.  Wrong `major-mode'" and the kernel
+  ;; completion capf is never installed.  Canonicalise the kernel language mode
+  ;; to the tree-sitter variant so the comparison matches.
+  (defun aj/jupyter-prefer-ts-mode (mode)
+    (if (eq mode 'python-mode) 'python-ts-mode mode))
+  (advice-add 'jupyter-kernel-language-mode :filter-return
+              #'aj/jupyter-prefer-ts-mode))
 
 ;; ---------------------------------------------------------------------------
 ;; Chess babel blocks - render LaTeX chess diagrams to images
