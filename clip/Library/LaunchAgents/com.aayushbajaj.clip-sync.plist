@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aayushbajaj.clip-sync</string>
+
+    <!-- Watches the pasteboard and pushes text-only copies to clip.abaj.ai.
+         Script lives in the repo and is referenced by absolute path (same
+         convention as daily-init.sh). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/aayushbajaj/dotfiles/scripts/clip-sync.sh</string>
+    </array>
+
+    <!-- Long-running poller: start at login, restart if it ever dies. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/aayushbajaj/Library/Logs/clip-sync.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/aayushbajaj/Library/Logs/clip-sync.launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/aayushbajaj</string>
+    </dict>
+
+    <!-- Cheap background poller: nice it and de-prioritise its IO. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityBackgroundIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>
