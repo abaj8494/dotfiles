@@ -51,7 +51,19 @@ MODE_TO_ESCL = {
 
 
 def build_scan_xml(duplex: bool, dpi: int, mode: str) -> bytes:
-    duplex_elt = "  <scan:Duplex>true</scan:Duplex>\n" if duplex else ""
+    # Scan-region Height is in 1/300" (escl:ThreeHundredthsOfInches). Simplex
+    # can image the DS-940DW's full AdfSimplexInputCaps MaxHeight — 36600 =
+    # 122" — so an arbitrarily long sheet (fold-out manual page, long receipt)
+    # scans in one pass instead of being cut off. AdfDuplex caps at 4200 = 14",
+    # so duplex passes must stay there.
+    #
+    # Duplex MUST be pinned explicitly. With no <scan:Duplex> element the
+    # scanner falls back to its duplex default, which re-imposes the 14" cap
+    # and silently jams / truncates anything longer (this is why long docs
+    # weren't working). So always emit it: false for simplex — which is what
+    # unlocks the full 122" — and true for duplex.
+    height = 4200 if duplex else 36600
+    duplex_elt = "  <scan:Duplex>%s</scan:Duplex>\n" % ("true" if duplex else "false")
     color_mode = MODE_TO_ESCL[mode]
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -61,7 +73,7 @@ def build_scan_xml(duplex: bool, dpi: int, mode: str) -> bytes:
         "  <pwg:ScanRegions>\n"
         "    <pwg:ScanRegion>\n"
         "      <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>\n"
-        "      <pwg:Height>4200</pwg:Height>\n"
+        f"      <pwg:Height>{height}</pwg:Height>\n"
         "      <pwg:Width>2550</pwg:Width>\n"
         "      <pwg:XOffset>0</pwg:XOffset>\n"
         "      <pwg:YOffset>0</pwg:YOffset>\n"
