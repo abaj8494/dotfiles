@@ -5,8 +5,8 @@ requirements = ["fd", "chafa", "pdftoppm", "lf", "sioyek"]
 
 [source]
 command = [
-  "fd -t f . '/Users/aayushbajaj/Documents/Google Drive'",
-  "fd -t f -H . '/Users/aayushbajaj/Documents/Google Drive'",
+  "fd -t f . '/Users/aayushbajaj/lattice'",
+  "fd -t f -H . '/Users/aayushbajaj/lattice'",
 ]
 
 # TV does NOT pass the preview pane size to the command, so tv-preview's default

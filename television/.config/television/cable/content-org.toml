@@ -4,10 +4,10 @@ description = "Jump into a content-org area (flashcards, daily, roam, shops) and
 
 [source]
 command = """printf '%s\\n' \
-  'flashcards|/Users/aayushbajaj/Documents/new-site/content-org/flashcards' \
-  'daily|/Users/aayushbajaj/Documents/new-site/content-org/daily' \
-  'roam|/Users/aayushbajaj/Documents/new-site/content-org/roam' \
-  'shops|/Users/aayushbajaj/Documents/new-site/content-org/private/shops'"""
+  'flashcards|/Users/aayushbajaj/lattice/notes/flashcards' \
+  'daily|/Users/aayushbajaj/lattice/notes/daily' \
+  'roam|/Users/aayushbajaj/lattice/notes/roam' \
+  'shops|/Users/aayushbajaj/lattice/notes/private/shops'"""
 display = "{split:|:0}"
 output  = "{split:|:1}"
 

@@ -4,7 +4,7 @@ description = "Pick a code repo under ~/c or ~/Documents/code-archived and open 
 requirements = ["fd", "sesh"]
 
 [source]
-command = "fd -t d -d 2 . ~/c ~/Documents/code-archived"
+command = "fd -t d -d 2 . ~/c ~/lattice/code/archived"
 display = "{split:/:-2..}"
 
 [preview]
