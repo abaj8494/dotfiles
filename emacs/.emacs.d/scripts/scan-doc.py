@@ -49,6 +49,11 @@ MODE_TO_ESCL = {
     "color": "RGB24",
 }
 
+# Scan-region width in escl:ThreeHundredthsOfInches (1/300"). 2550 = 8.5".
+# Shared by build_scan_xml and the raw-1bit decoder so the pixel width it
+# derives (REGION_WIDTH_UNITS * dpi / 300) always matches what we asked for.
+REGION_WIDTH_UNITS = 2550
+
 
 def build_scan_xml(duplex: bool, dpi: int, mode: str) -> bytes:
     # Scan-region Height is in 1/300" (escl:ThreeHundredthsOfInches). Simplex
@@ -74,7 +79,7 @@ def build_scan_xml(duplex: bool, dpi: int, mode: str) -> bytes:
         "    <pwg:ScanRegion>\n"
         "      <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>\n"
         f"      <pwg:Height>{height}</pwg:Height>\n"
-        "      <pwg:Width>2550</pwg:Width>\n"
+        f"      <pwg:Width>{REGION_WIDTH_UNITS}</pwg:Width>\n"
         "      <pwg:XOffset>0</pwg:XOffset>\n"
         "      <pwg:YOffset>0</pwg:YOffset>\n"
         "    </pwg:ScanRegion>\n"
@@ -188,24 +193,63 @@ def post_scan(base: str, duplex: bool, dpi: int, mode: str) -> str:
     return loc.lstrip("/")
 
 
-def sniff_and_name(body: bytes, tmpdir: Path, idx: int) -> Path:
+def save_raw_1bit(body: bytes, tmpdir: Path, idx: int, dpi: int) -> Path | None:
+    """Decode a headerless 1-bit ADF raster into a 1-bit PNG, or None.
+
+    In bw mode (escl:BlackAndWhite1) the DS-940DW ignores the
+    application/pdf DocumentFormatExt and streams raw packed 1-bit
+    pixels with no container — first bytes look like 0xff runs (the
+    white margin), which sniff_and_name can't fingerprint. We know the
+    geometry: width is the fixed scan region (REGION_WIDTH_UNITS in
+    1/300") scaled to the active dpi, rows are byte-padded, so
+    height = len / stride. PWG bi-level packs 1=black; PIL '1' uses
+    1=white, hence the per-byte bitwise-NOT before frombytes. Returns
+    the PNG path on success, or None if the body doesn't fit the raster
+    shape (so the caller can fall back to .bin and preserve the bytes).
+    """
+    width_px = round(REGION_WIDTH_UNITS * dpi / 300)
+    stride = (width_px + 7) // 8
+    if width_px <= 0 or len(body) < stride * 2 or len(body) % stride != 0:
+        return None
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    height = len(body) // stride
+    img = Image.frombytes("1", (width_px, height), body.translate(_BIT_INVERT))
+    path = tmpdir / f"page-{idx:04d}.png"
+    img.save(path)
+    return path
+
+
+# Per-byte bitwise-NOT table: flips PWG 1=black raster into PIL 1=white.
+_BIT_INVERT = bytes(255 - i for i in range(256))
+
+
+def sniff_and_name(body: bytes, tmpdir: Path, idx: int, dpi: int) -> Path:
     """Save body to tmpdir with an extension matching its magic bytes.
 
     The Brother scanner is asked for application/pdf but will happily
-    return JPEG for some pages anyway. Mirrors scan.py's behavior.
+    return JPEG for some pages, or — in bw mode — a headerless raw 1-bit
+    raster (decoded via save_raw_1bit). Mirrors scan.py's behavior.
     """
     if body[:3] == b"\xff\xd8\xff":
         ext = ".jpg"
     elif body[:4] == b"%PDF":
         ext = ".pdf"
     else:
+        raw = save_raw_1bit(body, tmpdir, idx, dpi)
+        if raw is not None:
+            return raw
         ext = ".bin"  # unknown — let merge diagnose by content
     path = tmpdir / f"page-{idx:04d}{ext}"
     path.write_bytes(body)
     return path
 
 
-def fetch_all_pages(base: str, job_path: str, tmpdir: Path, next_idx: int) -> list[Path]:
+def fetch_all_pages(
+    base: str, job_path: str, tmpdir: Path, next_idx: int, dpi: int
+) -> list[Path]:
     """Drain /NextDocument until 404; save each page with its real extension."""
     out: list[Path] = []
     while True:
@@ -220,7 +264,7 @@ def fetch_all_pages(base: str, job_path: str, tmpdir: Path, next_idx: int) -> li
             raise
         except urllib.error.URLError:
             break
-        out.append(sniff_and_name(body, tmpdir, next_idx + len(out)))
+        out.append(sniff_and_name(body, tmpdir, next_idx + len(out), dpi))
     return out
 
 
@@ -672,7 +716,7 @@ def main() -> int:
                 print("  posting job…", end=" ", flush=True)
                 job = post_scan(base, duplex, dpi, mode)
                 print("pulling…", end=" ", flush=True)
-                new_pages = fetch_all_pages(base, job, tmp, len(pages))
+                new_pages = fetch_all_pages(base, job, tmp, len(pages), dpi)
             except urllib.error.HTTPError as e:
                 print(f"\n  HTTP {e.code}: {e.reason}")
                 if e.code == 409:
