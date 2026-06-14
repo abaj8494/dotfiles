@@ -27,6 +27,12 @@
 (add-to-list 'exec-path "/usr/local/bin")
 (setenv "PATH" (concat "/usr/local/bin:" (getenv "PATH")))
 
+;; GUI Emacs doesn't inherit the shell's R_PROFILE_USER (set in .zshrc), so R
+;; subprocesses started here — ESS and ob-R — would miss the stowed Rprofile and
+;; hit "trying to use CRAN without setting a mirror" on install.packages. Point
+;; them at the same stowed profile (~/.config/R/Rprofile → ~/dotfiles/r).
+(setenv "R_PROFILE_USER" (expand-file-name "~/.config/R/Rprofile"))
+
 ;; Set non-nil once ESS loads, so org-config can enable the R babel language
 ;; defensively (same guard pattern as aj/ob-go-available) — a flaky boot where
 ;; straight can't fetch ESS then skips (R . t) instead of truncating org-config.
