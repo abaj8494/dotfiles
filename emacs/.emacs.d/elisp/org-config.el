@@ -111,7 +111,8 @@
     (C       . t)
     (java    . t)
     (gnuplot . t))
-  (when aj/ob-go-available '((go . t)))))
+  (when aj/ob-go-available '((go . t)))
+  (when (bound-and-true-p aj/ob-R-available) '((R . t)))))
 
 ;; Python settings
 (setq custom-tab-width 4)

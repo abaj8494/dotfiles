@@ -95,6 +95,11 @@ Inspect *Warnings* for the cause, then M-x aj/reload-config." aj/failed-modules)
 (when (file-exists-p custom-file)
   (load custom-file))
 
+;; Load R/ESS + Org-Babel R support. BEFORE org-config so `aj/ob-R-available'
+;; is set when its `org-babel-do-load-languages' block decides whether to
+;; enable the R language.
+(aj/safe-require 'r-config)
+
 ;; Load Org-mode configuration (includes LaTeX/preview setup)
 (aj/safe-require 'org-config)
 
