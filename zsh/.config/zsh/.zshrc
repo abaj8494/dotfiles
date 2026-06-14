@@ -228,7 +228,7 @@ _rmpp_mirror() {
         print -u2 "rmsync is already running (mirror/merge/sync) — aborting to avoid state-file races"
         return 1
     fi
-    (cd "$HOME/Documents/remarkable-paper-pro" && \
+    (cd "$HOME/lattice/2-areas/devices/remarkable/ferrari" && \
         /Users/aayushbajaj/miniconda3/bin/python3 -m rmsync mirror "$@")
 }
 ferrari() { _rmpp_mirror --from porsche --to ferrari "$@"; }
