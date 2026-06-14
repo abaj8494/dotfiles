@@ -1,0 +1,3 @@
+## User R profile — stowed from ~/dotfiles/r (loaded via R_PROFILE_USER set in .zshrc)
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))

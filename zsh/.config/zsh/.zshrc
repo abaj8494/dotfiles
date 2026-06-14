@@ -125,6 +125,9 @@ export PATH=$PATH:$GOPATH/bin
 
 export EDITOR=/opt/homebrew/bin/nvim
 
+# Keep R's user profile out of ~; stowed at ~/dotfiles/r/.config/R/Rprofile
+export R_PROFILE_USER="$HOME/.config/R/Rprofile"
+
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
 __conda_setup="$('/Users/aayushbajaj/miniconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
