@@ -33,6 +33,12 @@
 
 (setq package-enable-at-startup nil)
 
+;; Prefer newer .el over a stale .elc. Without this, `load' always picks the
+;; .elc when present even if the source is newer — so an out-of-date compiled
+;; module silently shadows edits (this bit org-config.elc: a pre-guard-fix
+;; bytecode kept throwing on ob-go long after the source was fixed).
+(setq load-prefer-newer t)
+
 ;; ---------------------------------------------------------------------------
 ;; Native Compilation Setup for macOS (Apple Silicon)
 ;; ---------------------------------------------------------------------------
