@@ -70,4 +70,23 @@
         native-comp-deferred-compilation t          ; Compile in background
         native-comp-enable-subr-trampolines nil))   ; Disable if causing issues
 
+;; ---------------------------------------------------------------------------
+;; Frame chrome: drop the menu bar (and tool bar / scroll bars)
+;; ---------------------------------------------------------------------------
+;; Set via default-frame-alist in early-init so the bars are never drawn —
+;; no startup flash — plus the *-mode calls cover frames created later.
+;;
+;; macOS caveat: on this Cocoa build (MacPorts emacs-app), `menu-bar-mode -1'
+;; does NOT remove the menu bar at the very top of the SCREEN — that bar is
+;; owned by macOS and always shown for the focused GUI app; only the OS can
+;; hide it (System Settings ▸ Desktop & Dock ▸ "Automatically hide and show the
+;; menu bar", or full-screen). What it (and tool-bar-mode) DO remove is the
+;; in-window chrome at the top of the Emacs frame — most visibly the tool bar.
+(push '(menu-bar-lines . 0) default-frame-alist)
+(push '(tool-bar-lines . 0) default-frame-alist)
+(push '(vertical-scroll-bars) default-frame-alist)
+(when (fboundp 'menu-bar-mode)   (menu-bar-mode -1))
+(when (fboundp 'tool-bar-mode)   (tool-bar-mode -1))
+(when (fboundp 'scroll-bar-mode) (scroll-bar-mode -1))
+
 ;;; early-init.el ends here
