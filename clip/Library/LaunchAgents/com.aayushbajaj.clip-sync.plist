@@ -5,13 +5,13 @@
     <key>Label</key>
     <string>com.aayushbajaj.clip-sync</string>
 
-    <!-- Watches the pasteboard and pushes text-only copies to clip.abaj.ai.
-         Script lives in the repo and is referenced by absolute path (same
-         convention as daily-init.sh). -->
+    <!-- Bidirectional pasteboard ⇄ clip.abaj.ai (text + image). The script + its
+         helper live in the PRIVATE remarkable repo (clip-image-sync), referenced by
+         absolute path — device IPs/sync glue are kept out of this public dotfiles repo. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/aayushbajaj/dotfiles/scripts/clip-sync.sh</string>
+        <string>/Users/aayushbajaj/lattice/2-areas/devices/remarkable/ferrari/clip-image-sync/mac/clip-sync.sh</string>
     </array>
 
     <!-- Long-running poller: start at login, restart if it ever dies. -->
