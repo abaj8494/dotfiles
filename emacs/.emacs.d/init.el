@@ -136,11 +136,45 @@ Inspect *Warnings* for the cause, then M-x aj/reload-config." aj/failed-modules)
   (server-start))
 
 ;; Reload Emacs configuration
-(defun aj/reload-config ()
-  "Reload Emacs configuration by re-evaluating init.el."
-  (interactive)
-  (load-file (expand-file-name "init.el" user-emacs-directory))
-  (message "Emacs configuration reloaded!"))
+(defun aj/reload-config (&optional full)
+  "Reload Emacs configuration.
+
+By default, reload the config module shown in the current buffer — i.e.
+the file you just edited.  This is the common case and the one the old
+behaviour silently broke: init.el loads every module via `require'
+\(through `aj/safe-require'), and `require' is a no-op once a feature is
+loaded, so re-running init.el never re-evaluated an already-loaded
+module.  Re-`load'ing the visited file forces a fresh evaluation, so the
+edit actually takes effect.
+
+With a prefix arg (C-u), or when the current buffer is not a config .el
+under `user-emacs-directory', force a full reload: re-`load' every
+locally provided module file in place, then re-run init.el for its own
+top-level forms.  We `load' rather than `unload-feature' + `require' so
+function definitions are overwritten in place and never pass through a
+void window — otherwise the mode-line (which evals `my/email-mode-line'
+and friends every redisplay) errors repeatedly during the reload gap."
+  (interactive "P")
+  (let ((file (buffer-file-name)))
+    (if (and (not full)
+             file
+             (string-suffix-p ".el" file)
+             (file-in-directory-p file (expand-file-name "elisp" user-emacs-directory)))
+        (progn
+          (load-file file)
+          (message "Reloaded %s" (file-name-nondirectory file)))
+      ;; Full reload: re-load each of our own elisp/ modules fresh (in
+      ;; place, so no symbol is ever transiently void), leaving
+      ;; straight-loaded package features untouched.  Then load init.el
+      ;; for its top-level forms — its `require's are now no-ops, which is
+      ;; fine since the modules were just reloaded above.
+      (let ((dir (expand-file-name "elisp" user-emacs-directory)))
+        (dolist (feature (copy-sequence features))
+          (let ((f (locate-library (symbol-name feature))))
+            (when (and f (file-in-directory-p f dir))
+              (ignore-errors (load f nil t))))))
+      (load-file (expand-file-name "init.el" user-emacs-directory))
+      (message "Emacs configuration fully reloaded!"))))
 
 (global-set-key (kbd "C-c R") #'aj/reload-config)
 
