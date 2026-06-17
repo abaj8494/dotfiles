@@ -1143,9 +1143,17 @@ With prefix ARG, search from current directory instead of project root."
   :config
   (require 'auth-source)
   ;; Set Claude as the default backend
-  (setq gptel-model 'claude-sonnet-4-20250514
+  (setq gptel-model 'claude-sonnet-4-6
         gptel-backend (gptel-make-anthropic "Claude"
                         :stream t
+                        ;; gptel 0.9.9.3 ships a stale model list (its newest
+                        ;; Anthropic entry is the now-retired Sonnet 4), so the
+                        ;; `gptel-menu' switcher offers dead models.  Pin the
+                        ;; current line-up explicitly until the package updates.
+                        :models '(claude-opus-4-8
+                                  claude-opus-4-7
+                                  claude-sonnet-4-6
+                                  claude-haiku-4-5)
                         :key (auth-source-pick-first-password
                               :host "api.anthropic.com")))
   :bind (("C-c g g" . gptel)              ; Open gptel chat buffer
