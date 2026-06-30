@@ -116,6 +116,44 @@
         notmuch-address-save-filename "~/.cache/notmuch-addresses")
   (notmuch-address-setup)
 
+  ;; TAB address completion vs corfu. `notmuch-address-setup' registers
+  ;; `notmuch-address-expand-name' on `message-completion-alist', and
+  ;; `message-completion-function' (the compose-buffer capf) surfaces it by
+  ;; returning a *function* — message.el's legacy "completion-in-region"
+  ;; protocol. But `global-corfu-mode' advises `completion--capf-wrapper'
+  ;; (`corfu--capf-wrapper-advice') to only accept capfs returning a
+  ;; `(beg end table . plist)' list; the function form silently fails the
+  ;; pcase and gets dropped. So plain `completion-at-point' — which is what
+  ;; `message-tab' calls under Emacs 30 — never reaches notmuch, and TAB on a
+  ;; To:/Cc:/Bcc: line does nothing. (`notmuch-address-expand-name' itself
+  ;; works fine when called directly.) Rather than disable corfu in compose
+  ;; buffers (losing its body completion), gate TAB: in an address header,
+  ;; call notmuch directly; elsewhere defer to the mode's normal TAB.
+  (defun aj/notmuch-in-address-header-p ()
+    "Non-nil if point is within a To:/Cc:/Bcc:/From:… header line."
+    (and (not (message-in-body-p))
+         (save-excursion
+           (beginning-of-line)
+           ;; climb any continuation lines to the header field start
+           (while (and (looking-at-p "[ \t]") (zerop (forward-line -1))))
+           (let ((case-fold-search t))
+             (looking-at-p notmuch-address-completion-headers-regexp)))))
+
+  (defun aj/compose-tab ()
+    "Address-aware TAB for compose buffers.
+In an address header, complete via notmuch directly (corfu drops
+message.el's function-returning capf, so `completion-at-point' never
+reaches it). Elsewhere defer to the buffer's normal TAB."
+    (interactive)
+    (if (aj/notmuch-in-address-header-p)
+        (notmuch-address-expand-name)
+      (if (derived-mode-p 'org-msg-edit-mode)
+          (org-msg-tab)
+        (message-tab))))
+
+  (define-key notmuch-message-mode-map (kbd "TAB") #'aj/compose-tab)
+  (define-key notmuch-message-mode-map (kbd "<tab>") #'aj/compose-tab)
+
   ;; ---------------------------------------------------------------------------
   ;; Marking system for bulk operations
   ;; ---------------------------------------------------------------------------
@@ -1078,24 +1116,28 @@ If QUIET is non-nil, don't show messages."
   (let ((old-unread (my/email-total-unread))
         (needs-push my/notmuch-pending-changes)
         (tag-time-at-start my/notmuch-last-tag-time))
-    ;; Build command. gmi pull and mbsync touch independent maildirs so we
-    ;; fan them out in parallel and `wait' before notmuch new — drops
-    ;; wall-clock from gmi+mbsync down to max(gmi, mbsync). `wait $pid'
-    ;; surfaces that subshell's exit status, so `&&' between waits
-    ;; preserves the original "any failure aborts the chain" semantics.
-    ;; Push (when needed) still runs first — local tag changes must be
-    ;; applied upstream before pull can see a consistent view.
-    (let* ((parallel-pull
+    ;; Build command. `gmi sync' (push+pull in one op) and mbsync touch
+    ;; independent maildirs, so we fan them out in parallel and `wait' before
+    ;; notmuch new — drops wall-clock to max(gmi, mbsync). `wait $pid' surfaces
+    ;; each subshell's exit status, so `&&' between waits keeps "any failure
+    ;; aborts the chain".
+    ;;
+    ;; Use `gmi sync', NOT `gmi push && gmi pull'. A partial push — local tag
+    ;; edits that collide with server-side changes ("remote has changed, will
+    ;; not update") — is normal and self-heals on the next run. But as a
+    ;; separate `gmi push &&' prefix its non-zero exit short-circuited the pull,
+    ;; so a routine push backlog silently stalled ALL fetching until drained by
+    ;; hand. `gmi sync' pushes first internally, tolerates a partial push
+    ;; (exit 0, retries next run), and still completes the pull. `needs-push'
+    ;; is kept only for the sentinel's pending-changes bookkeeping below.
+    (let* ((parallel-sync
             (concat "cd ~/Maildir/gmail-lieer && "
-                    "gmi pull & gmi_pid=$!; "
+                    "gmi sync & gmi_pid=$!; "
                     "SASL_PATH=~/.sasl2:/usr/lib/sasl2 mbsync -a & mbsync_pid=$!; "
                     "wait $gmi_pid && wait $mbsync_pid && "
                     "notmuch new"))
-           (base-cmd (if needs-push
-                         (concat "cd ~/Maildir/gmail-lieer && gmi push && " parallel-pull)
-                       parallel-pull))
            ;; Add jobsync corrections scanner (source config for API key)
-           (cmd (concat base-cmd " && source ~/.jobsync/config && node ~/lattice/code/private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
+           (cmd (concat parallel-sync " && source ~/.jobsync/config && node ~/lattice/code/private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
       (unless quiet (message (if needs-push "Syncing (pushing changes)..." "Syncing...")))
       ;; `make-process' with :sentinel attaches the handler atomically.
       ;; `start-process' + `set-process-sentinel' has a window where the
@@ -1243,7 +1285,12 @@ Also suppress the `*Org Preview LaTeX Output*' log buffer that
     (define-key org-msg-edit-mode-map (kbd "C-c C-f C-b") #'message-goto-bcc)
     (define-key org-msg-edit-mode-map (kbd "C-c C-f C-s") #'message-goto-subject)
     (define-key org-msg-edit-mode-map (kbd "C-c C-f C-f") #'message-goto-from)
-    (define-key org-msg-edit-mode-map (kbd "C-c C-i") #'my/email-cycle-identity))
+    (define-key org-msg-edit-mode-map (kbd "C-c C-i") #'my/email-cycle-identity)
+    ;; Address-aware TAB (see `aj/compose-tab' in the notmuch block): org-msg
+    ;; binds `<tab>' to `org-msg-tab', which routes header TAB into the same
+    ;; corfu-broken `completion-at-point'. Override both event forms.
+    (define-key org-msg-edit-mode-map (kbd "<tab>") #'aj/compose-tab)
+    (define-key org-msg-edit-mode-map (kbd "TAB") #'aj/compose-tab))
 
   (org-msg-mode))
 

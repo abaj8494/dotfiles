@@ -197,7 +197,11 @@ Keep PROPERTIES drawers that contain CATEGORY."
             (push pl result))))
        ;; Inside PROPERTIES
        (in-properties
-        (push line properties-lines)
+        ;; Drop :ID: so a node-id'd template heading (e.g. ** Birthdays,
+        ;; reachable via org-roam-node-find) doesn't propagate its id into
+        ;; every daily and collide. Keep CATEGORY and the rest of the drawer.
+        (unless (string-match-p "^:ID:" line)
+          (push line properties-lines))
         (when (string-match-p "^:CATEGORY:" line)
           (setq properties-has-category t)))
        ;; LAST_REPEAT lines

@@ -20,6 +20,29 @@
 
 ;; Font is set via custom-set-faces in custom-vars.el
 
+;; ---------------------------------------------------------------------------
+;; Colour emoji
+;; ---------------------------------------------------------------------------
+;; macOS renders colour emoji from "Apple Color Emoji"; an X session has no
+;; such font and falls back to Noto.  When the config was tweaked for an X
+;; server session, the monochrome "Noto Emoji" started winning the emoji
+;; script on macOS too — collapsing every emoji to a black-and-white outline.
+;; Pin the right colour-emoji font per display *type* rather than globally:
+;; `window-system' is nil at load time under the launchd daemon (frames attach
+;; later), so gate off each frame's own backend and re-run on every new frame.
+(defun aj/set-emoji-font (&optional frame)
+  "Prepend a colour-emoji font to FRAME's emoji fontset for its display type.
+ns/mac frames use Apple Color Emoji; X frames keep the Noto fallback."
+  (when (display-graphic-p frame)
+    (let ((family (pcase (framep (or frame (selected-frame)))
+                    ((or 'ns 'mac) "Apple Color Emoji")
+                    ('x "Noto Color Emoji"))))
+      (when (and family (member family (font-family-list frame)))
+        (set-fontset-font t 'emoji (font-spec :family family) frame 'prepend)))))
+
+(add-hook 'after-make-frame-functions #'aj/set-emoji-font)
+(mapc #'aj/set-emoji-font (frame-list))
+
 ;; Load gruber-themes for toggle and ergonomic headings
 (require 'gruber-themes)
 

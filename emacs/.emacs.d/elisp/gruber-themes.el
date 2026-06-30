@@ -65,26 +65,73 @@
 ;; Code face colors — variables & methods
 ;; ---------------------------------------------------------------------------
 ;; The stock gruber faces render variable names / property accesses near-white
-;; (#f4f4ff), which washes out against the default text.  Give variables and
-;; methods a VSCode-style light blue (dark) / readable blue (light) so they
-;; stand out.  Covers both classic font-lock and tree-sitter face names.
+;; (#f4f4ff), which washes out against the default text.  Recolour the
+;; identifier faces along VSCode semantic lines so call sites, variables and
+;; types read distinctly (previously they were all one blue, so e.g. in
+;; `G = Graph(graph)' the call `Graph' looked the same as the variables).
+;; Covers both classic font-lock and tree-sitter face names:
+;;   - variable *bindings* (assignment targets / params) → deeper blue
+;;   - variable *uses* / properties                      → light blue
+;;   - functions / methods (defs and calls)              → yellow
+;;   - classes / types                                   → teal
+;; Splitting the binding face from the use face mirrors VSCode's
+;; write-vs-read distinction: in `G = Graph(graph)' the bound `G' reads a
+;; shade darker than the referenced `graph'.
 
 (defvar gruber-themes-dark-code-colors
-  '((font-lock-variable-name-face  . (:foreground "#9cdcfe"))  ; VSCode light blue
-    (font-lock-variable-use-face   . (:foreground "#9cdcfe"))
+  '((font-lock-variable-name-face  . (:foreground "#569cd6"))  ; bindings — deeper blue
+    (font-lock-variable-use-face   . (:foreground "#9cdcfe"))  ; uses — VSCode light blue
     (font-lock-property-name-face  . (:foreground "#9cdcfe"))
     (font-lock-property-use-face   . (:foreground "#9cdcfe"))
-    (font-lock-function-name-face  . (:foreground "#9cdcfe"))
-    (font-lock-function-call-face  . (:foreground "#9cdcfe")))
+    (font-lock-function-name-face  . (:foreground "#dcdcaa"))  ; VSCode function yellow
+    (font-lock-function-call-face  . (:foreground "#dcdcaa"))
+    (font-lock-type-face           . (:foreground "#4ec9b0"))  ; VSCode class/type teal
+    ;; Crisp base text inside src blocks.  `org-block' inherits `shadow'
+    ;; (#52494e), so in the inline block view every token without its own
+    ;; font-lock colour — commas, periods, operators, numbers — falls back to
+    ;; that grey (they look fine under `C-c '', which has no `org-block').  Pin
+    ;; the foreground to the default so nothing in a block renders grey.
+    (org-block                     . (:foreground "#e4e4ef"))
+    ;; Bracket-pair colours, cycling gold/orchid/blue by nesting depth
+    ;; (VSCode dark+ bracket-pair-colorization).  Applied to the
+    ;; `rainbow-delimiters' depth faces; see package-config.el.
+    (rainbow-delimiters-depth-1-face   . (:foreground "#ffd700"))  ; gold
+    (rainbow-delimiters-depth-2-face   . (:foreground "#da70d6"))  ; orchid
+    (rainbow-delimiters-depth-3-face   . (:foreground "#179fff"))  ; light blue
+    (rainbow-delimiters-depth-4-face   . (:foreground "#ffd700"))
+    (rainbow-delimiters-depth-5-face   . (:foreground "#da70d6"))
+    (rainbow-delimiters-depth-6-face   . (:foreground "#179fff"))
+    (rainbow-delimiters-depth-7-face   . (:foreground "#ffd700"))
+    (rainbow-delimiters-depth-8-face   . (:foreground "#da70d6"))
+    (rainbow-delimiters-depth-9-face   . (:foreground "#179fff"))
+    (rainbow-delimiters-unmatched-face . (:foreground "#ff5555"))  ; stray paren — red
+    (rainbow-delimiters-mismatched-face . (:foreground "#ff5555")))
   "Variable/method face colors for gruber-darker theme.")
 
 (defvar gruber-themes-light-code-colors
-  '((font-lock-variable-name-face  . (:foreground "#005cc5"))  ; readable blue on white
-    (font-lock-variable-use-face   . (:foreground "#005cc5"))
+  '((font-lock-variable-name-face  . (:foreground "#001080"))  ; bindings — deep navy
+    (font-lock-variable-use-face   . (:foreground "#005cc5"))  ; uses — readable blue
     (font-lock-property-name-face  . (:foreground "#005cc5"))
     (font-lock-property-use-face   . (:foreground "#005cc5"))
-    (font-lock-function-name-face  . (:foreground "#005cc5"))
-    (font-lock-function-call-face  . (:foreground "#005cc5")))
+    (font-lock-function-name-face  . (:foreground "#795e26"))  ; VSCode light function
+    (font-lock-function-call-face  . (:foreground "#795e26"))
+    (font-lock-type-face           . (:foreground "#267f99"))  ; VSCode light type teal
+    ;; Crisp base text inside src blocks — pin `org-block' to the light
+    ;; default foreground so no in-block token falls back to `shadow' grey.
+    (org-block                     . (:foreground "#2e2e2e"))
+    ;; Bracket-pair colours for light bg — same gold/orchid/blue cycle,
+    ;; darkened for contrast against the lighter background.
+    (rainbow-delimiters-depth-1-face   . (:foreground "#b58900"))  ; gold
+    (rainbow-delimiters-depth-2-face   . (:foreground "#a626a4"))  ; orchid/purple
+    (rainbow-delimiters-depth-3-face   . (:foreground "#005cc5"))  ; blue
+    (rainbow-delimiters-depth-4-face   . (:foreground "#b58900"))
+    (rainbow-delimiters-depth-5-face   . (:foreground "#a626a4"))
+    (rainbow-delimiters-depth-6-face   . (:foreground "#005cc5"))
+    (rainbow-delimiters-depth-7-face   . (:foreground "#b58900"))
+    (rainbow-delimiters-depth-8-face   . (:foreground "#a626a4"))
+    (rainbow-delimiters-depth-9-face   . (:foreground "#005cc5"))
+    (rainbow-delimiters-unmatched-face . (:foreground "#d70000"))  ; stray paren — red
+    (rainbow-delimiters-mismatched-face . (:foreground "#d70000")))
   "Variable/method face colors for gruber-lighter theme.")
 
 (defun gruber-themes--get-current-variant ()
@@ -205,6 +252,14 @@
 
 ;; Register the hook
 (add-hook 'enable-theme-functions #'gruber-themes--on-theme-change)
+
+;; `rainbow-delimiters' usually loads *after* the theme is applied at startup
+;; (it's deferred until the first prog-mode buffer), so its depth faces don't
+;; exist yet when `gruber-themes--apply-code-faces' first runs and are skipped
+;; by the `facep' guard — leaving rainbow-delimiters' own default colours.
+;; Re-apply once the faces actually exist.
+(with-eval-after-load 'rainbow-delimiters
+  (gruber-themes--apply-code-faces))
 
 (provide 'gruber-themes)
 ;;; gruber-themes.el ends here

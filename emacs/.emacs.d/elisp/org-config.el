@@ -127,9 +127,25 @@
           (lambda () (setq indent-tabs-mode nil)))
 
 ;;; LSP in Org python src blocks --------------------------------
-;; Make Org's python edit buffer look like a real file so pyright can attach.
+;; Make Org's python edit buffer look like a real file so pyright can attach,
+;; then turn on *semantic tokens* there for the class/function/variable colours
+;; tree-sitter can't infer (it only sees calls, not what a name resolves to).
+;;
+;; Pyright sees only the single block — it has no cross-block context — so this
+;; is deliberately colours-only:
+;;   - completion stays with the jupyter kernel (it knows the live session;
+;;     pyright on one block can't see symbols defined in other blocks);
+;;   - diagnostics are off, else every cross-block symbol shows as an
+;;     "undefined name" error;
+;;   - where pyright can't resolve a symbol it simply emits no token, and the
+;;     tree-sitter colours (incl. the CapWords->type rule above) show through.
+;; `lsp-semantic-tokens-enable' is flipped buffer-locally: the global default
+;; stays nil (see java-lsp.el) so Java sessions don't pay the token-streaming
+;; cost.  lsp-mode advertises the client capability unconditionally, so the
+;; per-buffer flag is enough for pyright to serve tokens here.
 (with-eval-after-load 'org
-  (defun ab/org-babel-edit-prep:python (_info)
+  (defun aj/org-src-pyright-attach (&rest _)
+    "Attach pyright to an Org python/jupyter src edit buffer for colours only."
     (let* ((org-dir (expand-file-name
                      (or (and (buffer-file-name)
                               (file-name-directory (buffer-file-name)))
@@ -138,13 +154,20 @@
       (setq-local default-directory org-dir)
       (setq-local buffer-file-name fake-file)
       (setq-local lsp-buffer-uri (lsp--path-to-uri fake-file))
+      (setq-local lsp-semantic-tokens-enable t)   ; the point of all this
+      (setq-local lsp-completion-enable nil)       ; leave completion to the kernel
+      (setq-local lsp-diagnostics-provider :none)  ; single-block view => noise
+      (setq-local lsp-modeline-diagnostics-enable nil)
       (when (and (fboundp 'lsp-workspace-root)
                  (null (lsp-workspace-root org-dir)))
         (lsp-workspace-folders-add org-dir))
       (unless (bound-and-true-p lsp-mode)
         (require 'lsp-pyright)
         (lsp-deferred))))
-  (defalias 'org-babel-edit-prep:python #'ab/org-babel-edit-prep:python))
+  ;; `#+begin_src python' dispatches to org-babel-edit-prep:python directly …
+  (defalias 'org-babel-edit-prep:python #'aj/org-src-pyright-attach)
+  ;; … `jupyter-python' goes through emacs-jupyter's edit-prep, so piggy-back.
+  (advice-add 'org-babel-edit-prep:jupyter :after #'aj/org-src-pyright-attach))
 
 ;;; AUCTeX completion in Org latex src blocks --------------------------------
 ;; Use AUCTeX's LaTeX-mode (not Emacs built-in latex-mode) for src blocks.
@@ -221,6 +244,45 @@
 ;; Tree-sitter only emits the call/property/variable-use faces at level 4;
 ;; the default 3 leaves method calls uncolored.
 (setq treesit-font-lock-level 4)
+
+;; ---------------------------------------------------------------------------
+;; Semantic-ish highlighting: colour CapWords constructor calls as types
+;; ---------------------------------------------------------------------------
+;; Tree-sitter is purely syntactic: it sees `Graph(graph)' as a *call* and
+;; paints `Graph' with `font-lock-function-call-face', identical to any
+;; function.  A language server would know `Graph' is a class.  As a cheap
+;; stand-in, treat a call whose target is a CapWords identifier (PEP 8 class
+;; convention) — `Graph(...)' or `module.Digraph(...)' — as a type, so
+;; constructors get the class colour while ordinary `compute(...)' calls stay
+;; function-coloured.  Appended as an *overriding* rule under its own
+;; `aj-constructor' feature, after the built-in `function' feature so it wins,
+;; and enabled at the top font-lock level.
+;;
+;; NB: this only lands where fontification goes through stock tree-sitter —
+;; notably org's inline src-block fontification, where `indent-bars' is skipped
+;; (see package-config.el).  In a live `python-ts-mode' file `indent-bars'
+;; owns the region function and swallows the override; there `lsp-pyright'
+;; semantic tokens are the real answer.
+(defun aj/python-ts-semantic-types ()
+  "Colour CapWords constructor calls as types in `python-ts-mode'."
+  (unless (memq 'aj-constructor (apply #'append treesit-font-lock-feature-list))
+    (setq-local treesit-font-lock-settings
+                (append treesit-font-lock-settings
+                        (treesit-font-lock-rules
+                         :language 'python
+                         :feature 'aj-constructor
+                         :override t
+                         '((call function: (identifier) @font-lock-type-face
+                                 (:match "\\`[A-Z]" @font-lock-type-face))
+                           (call function:
+                                 (attribute attribute: (identifier) @font-lock-type-face)
+                                 (:match "\\`[A-Z]" @font-lock-type-face))))))
+    (setq-local treesit-font-lock-feature-list
+                (let ((fl (copy-tree treesit-font-lock-feature-list)))
+                  (setf (car (last fl)) (append (car (last fl)) '(aj-constructor)))
+                  fl))
+    (treesit-font-lock-recompute-features)))
+(add-hook 'python-ts-mode-hook #'aj/python-ts-semantic-types)
 
 ;;; Kernel-backed completion in jupyter src edit buffers (C-c ') -------------
 ;; emacs-jupyter's `org-babel-edit-prep:jupyter' enables
@@ -380,6 +442,138 @@
   (setq org-edit-src-content-indentation 0))
 
 ;; ---------------------------------------------------------------------------
+;; Keep #+begin_src / #+end_src fences pinned to the block's own column
+;; ---------------------------------------------------------------------------
+;; With `org-src-tab-acts-natively', `org-indent-line' treats the fence lines
+;; as code and indents them to the language's column — so hitting RET at the
+;; start of #+end_src (electric-indent re-indents the line) shoves the fence
+;; out to the last code line's indentation.  Just turning native indent off
+;; doesn't help: org's fallback then indents the fence "like the line above"
+;; (still the code column).  Pin fence lines to the indentation of their own
+;; #+begin_src instead (column 0 for a top-level block).
+(defun aj/org-indent-line--pin-src-fences (orig)
+  "Around-advice: indent a #+begin_src/#+end_src fence to its block column."
+  (if (let ((case-fold-search t))
+        (save-excursion
+          (forward-line 0)
+          (looking-at-p "[ \t]*#\\+\\(?:begin\\|end\\)_src\\b")))
+      (let ((col (ignore-errors
+                   (save-excursion
+                     (goto-char (org-element-property :begin (org-element-at-point)))
+                     (current-indentation)))))
+        ;; `indent-line-to' is documented to leave point at the end of the
+        ;; indentation, i.e. BOL for a column-0 fence.  When this advice fires
+        ;; during programmatic indentation (org-tempo's `<s'+TAB inserts a
+        ;; `#+begin_src' fence then runs `indent-according-to-mode' mid-build),
+        ;; that point-leak yanks point to BOL and the rest of the template gets
+        ;; inserted *before* the fence — producing a reversed block.  Preserve
+        ;; point; the re-indentation is a buffer edit and persists regardless.
+        (save-excursion (indent-line-to (or col 0))))
+    (funcall orig)))
+(advice-add 'org-indent-line :around #'aj/org-indent-line--pin-src-fences)
+
+;; ---------------------------------------------------------------------------
+;; Auto-tangle on C-c C-c
+;; ---------------------------------------------------------------------------
+;; `C-c C-c' on a src block *executes* it; it does not tangle.  Wire tangling
+;; onto the same key for blocks that declare a `:tangle' target, so the on-disk
+;; file (e.g. Graph.py) stays in sync as you work.  `org-ctrl-c-ctrl-c-hook'
+;; runs on the actual keypress (not on exports or programmatic execution) and,
+;; because this returns nil, org still goes on to execute the block as usual.
+;; Tangle the *whole buffer* (not just the block at point) so a target
+;; assembled from several blocks is written completely rather than clobbered
+;; down to the one block under point.  Guarded so a tangle error can never
+;; block execution of the cell.
+(defun aj/org-tangle-on-ctrl-c-ctrl-c ()
+  "Tangle the buffer when C-c C-c runs on a src block with a `:tangle' target.
+Returns nil so org still executes the block; a no-op elsewhere."
+  (when (org-in-src-block-p)
+    (let ((tangle (cdr (assq :tangle (nth 2 (org-babel-get-src-block-info t))))))
+      (when (and tangle (not (equal tangle "no")))
+        (condition-case err
+            (org-babel-tangle)
+          (error (message "Auto-tangle failed: %s" (error-message-string err)))))))
+  nil)
+(add-hook 'org-ctrl-c-ctrl-c-hook #'aj/org-tangle-on-ctrl-c-ctrl-c)
+
+;; ---------------------------------------------------------------------------
+;; Indent / dedent a whole src block from the org view (no C-c ')
+;; ---------------------------------------------------------------------------
+;; `org-src-tab-acts-natively' already makes TAB / `indent-region' indent code
+;; natively inside an inline block.  These wrap that for the *whole block at
+;; point* in one key, via `org-babel-do-in-edit-buffer' — the edit buffer is
+;; spun up and synced back transiently, so you never leave the org buffer.
+;;   C-c TAB        → re-indent (normalise) the block natively
+;;   C-c S-TAB      → shift the block left one indentation level
+(defun aj/org-indent-src-block ()
+  "Re-indent the whole src block at point using its language's indentation.
+Outside a src block fall back to `org-ctrl-c-tab', preserving org's
+default on this key."
+  (interactive)
+  (if (org-in-src-block-p)
+      (progn
+        (org-babel-do-in-edit-buffer
+         (indent-region (point-min) (point-max)))
+        (message "Re-indented src block"))
+    (call-interactively #'org-ctrl-c-tab)))
+
+(defun aj/org-dedent-src-block ()
+  "Shift the whole src block at point left by one indentation level.
+Preserves relative structure; refuses (with a message) if any line is
+already at the left margin, so the block's nesting is never flattened."
+  (interactive)
+  (if (not (org-in-src-block-p))
+      (message "Not in a src block")
+    (org-babel-do-in-edit-buffer
+     (let ((step (if (and (boundp 'python-indent-offset) python-indent-offset)
+                     python-indent-offset 4))
+           (min-indent most-positive-fixnum))
+       (save-excursion
+         (goto-char (point-min))
+         (while (not (eobp))
+           (unless (looking-at-p "[ \t]*$")
+             (setq min-indent (min min-indent (current-indentation))))
+           (forward-line 1)))
+       (if (>= min-indent step)
+           (progn
+             (indent-rigidly (point-min) (point-max) (- step))
+             (message "Dedented src block one level"))
+         (message "Can't dedent: a line is already at the left margin"))))))
+
+(with-eval-after-load 'org
+  (define-key org-mode-map (kbd "C-c TAB")       #'aj/org-indent-src-block)
+  (define-key org-mode-map (kbd "C-c <backtab>") #'aj/org-dedent-src-block)
+  (define-key org-mode-map (kbd "C-c S-TAB")     #'aj/org-dedent-src-block))
+
+;; ---------------------------------------------------------------------------
+;; Don't comma-escape *indented* code lines in src blocks
+;; ---------------------------------------------------------------------------
+;; On write-back from a src edit buffer (C-c ', or `org-babel-do-in-edit-
+;; buffer'), org guards block content by prepending a comma to any line
+;; beginning with `*' or `#+', so it can't be misread as a headline/keyword.
+;; Its regexp allows leading whitespace, so it also escapes *indented* lines —
+;; turning Python star-unpacking / `*args' (e.g. `    *evidence, query = xs')
+;; into `    ,*evidence', which reads as broken.  (Org strips the comma again
+;; on execute/tangle/export, so the code always *ran* fine — it just looked
+;; wrong in the buffer.)  Only a column-0 `*'/`#+' can actually collide with
+;; org syntax, so after the stock escaper runs, strip the comma it added to
+;; indented lines; column-0 escaping is left intact.
+(defun aj/org-escape-code-in-region--col0 (orig beg end)
+  "Run ORIG region-escaping, then un-escape *indented* `*'/`#+' lines.
+Leaves column-0 escaping — the only case that can be mistaken for a
+headline/keyword — untouched."
+  (let ((m (copy-marker end)))
+    (funcall orig beg end)
+    (save-excursion
+      (goto-char beg)
+      (while (re-search-forward "^[ \t]+\\(,\\),*\\(?:\\*\\|#\\+\\)" m t)
+        (replace-match "" nil nil nil 1)))
+    (set-marker m nil)))
+(with-eval-after-load 'org-src
+  (advice-add 'org-escape-code-in-region :around
+              #'aj/org-escape-code-in-region--col0))
+
+;; ---------------------------------------------------------------------------
 ;; Org Templates
 ;; ---------------------------------------------------------------------------
 
@@ -388,7 +582,8 @@
   (setq org-babel-default-header-args:jupyter-python
         '((:session . "leet")))
   (add-to-list 'org-structure-template-alist '("sj" . "src jupyter-python"))
-  (add-to-list 'org-structure-template-alist '("sp" . "src python")))
+  (add-to-list 'org-structure-template-alist '("sp" . "src python"))
+  (add-to-list 'org-structure-template-alist '("sr" . "src R")))
 
 ;; Org element compatibility shim for packages expecting Org 9.7 AST API
 (with-eval-after-load 'org-element
@@ -1941,6 +2136,11 @@ Uses today's date with the time extracted from the heading."
   "Personal Google Calendar ID.")
 (defvar aj/gcal-id-J "437e8c9ab6b11de9d298569fcb54570982215d88b36512facbc8846b0c3317c1@group.calendar.google.com"
   "Shared 'J' calendar ID.")
+(defvar aj/gcal-id-tasks "e3581335a338ae0cf988226d6bed357cfaff163c24f530be15d53e40ec544332@group.calendar.google.com"
+  "Dedicated 'Tasks' calendar ID — receives the scheduled/moved chore sweep.
+Distinct from the shared `aj/gcal-id-J' so personal task chores don't clutter
+the shared calendar. Set this to the real calendar id (Google Calendar →
+Settings for the Tasks calendar → Integrate calendar → Calendar ID).")
 (defvar aj/gcal-credentials-loaded nil
   "Non-nil if org-gcal credentials have been loaded.")
 
@@ -2281,7 +2481,7 @@ same event rather than duplicating it."
     (save-excursion
       (org-back-to-heading t)
       (unless (org-entry-get nil "calendar-id")
-        (org-entry-put nil "calendar-id" aj/gcal-id-J))
+        (org-entry-put nil "calendar-id" aj/gcal-id-tasks))
       (unless (org-entry-get nil "org-gcal-managed")
         (org-entry-put nil "org-gcal-managed" "org"))
       ;; Date-only SCHEDULED = the daily's date. Suppress the gcal auto-push
@@ -2398,14 +2598,21 @@ entry is already correctly synced for DATE-STR."
       (if (not (aj/gcal--needs-push-p date-str))
           (deferred:succeed nil)
         (unless (org-entry-get nil "calendar-id")
-          (org-entry-put nil "calendar-id" aj/gcal-id-J))
+          (org-entry-put nil "calendar-id" aj/gcal-id-tasks))
         (unless (org-entry-get nil "org-gcal-managed")
           (org-entry-put nil "org-gcal-managed" "org"))
-        ;; (Re)anchor a date-only SCHEDULED to this daily's date so the event is
+        ;; (Re)anchor a DATE-ONLY SCHEDULED to this daily's date so the event is
         ;; all-day and, if carried forward, MOVES rather than duplicates.
+        ;; Re-anchor not only on a missing/wrong date but also when SCHEDULED
+        ;; carries a time-of-day: a timed SCHEDULED (e.g. <2026-06-15 Mon 10:00>,
+        ;; inherited by a carried-forward chore) otherwise slips through and
+        ;; org-gcal pushes a *timed* event instead of the intended red all-day
+        ;; chore — the malformed state behind the recurring gcal-sweep failures.
+        ;; `org-schedule' with a date-only string reliably strips the time.
         (let ((sched (org-entry-get nil "SCHEDULED")))
           (when (or (null sched)
-                    (not (string-match-p (regexp-quote date-str) sched)))
+                    (not (string-match-p (regexp-quote date-str) sched))
+                    (string-match-p "[0-9][0-9]:[0-9][0-9]" sched))
             (let ((aj/gcal-auto-push nil))
               (org-schedule nil date-str))))
         (deferred:nextc
@@ -2422,12 +2629,23 @@ entry is already correctly synced for DATE-STR."
   "Post MARKERS to gcal sequentially (one finishes before the next starts)."
   (if (null markers)
       (message "gcal sweep: done")
-    (deferred:nextc
-      (deferred:try
-        (aj/gcal--prepare-and-post (car markers) date-str)
-        :catch (lambda (err)
-                 (message "gcal sweep: error on one item: %S" err) nil))
-      (lambda (_) (aj/gcal--sweep-chain (cdr markers) date-str)))))
+    (let ((m (car markers)))
+      (deferred:nextc
+        (deferred:try
+          (aj/gcal--prepare-and-post m date-str)
+          :catch (lambda (err)
+                   ;; Name the offending heading + the real error so a stuck
+                   ;; item is diagnosable, instead of an anonymous "one item".
+                   (message "gcal sweep: error on %S: %S"
+                            (or (ignore-errors
+                                  (with-current-buffer (marker-buffer m)
+                                    (save-excursion
+                                      (goto-char m)
+                                      (org-get-heading t t t t))))
+                                "?")
+                            err)
+                   nil))
+        (lambda (_) (aj/gcal--sweep-chain (cdr markers) date-str))))))
 
 (defun aj/gcal-sweep-daily-chores ()
   "Push every open priority heading in the current daily to the J calendar.
@@ -2549,12 +2767,14 @@ Returns a deferred. A no-op deferred when the entry has no event-id/calendar-id.
             nil))))))
 
 (defun aj/gcal-hide-done-chore (&rest _)
-  "On DONE/CANCEL, delete the chore's J-calendar event so it leaves the calendar.
+  "On DONE/CANCEL, delete the chore's calendar event so it leaves the calendar.
 Hooked on `org-after-todo-state-change-hook'. No-op during suppressed state
 changes (`aj/daily-hook-suppress' — e.g. the carry-forward source-CANCEL in
 daily-recurring.el), so a carried-forward item MOVES forward rather than being
-deleted off the calendar. Only fires for J-managed entries that actually carry
-an entry-id. Keeps the org heading; just removes the event + gcal identity."
+deleted off the calendar. Only fires for entries on the dedicated Tasks
+calendar that actually carry an entry-id — events on the shared J calendar
+are left in place when completed. Keeps the org heading; just removes the
+event + gcal identity."
   (when (and (not (bound-and-true-p aj/daily-hook-suppress))
              (boundp 'org-state)
              (member org-state '("DONE" "CANCEL"))
@@ -2563,7 +2783,7 @@ an entry-id. Keeps the org heading; just removes the event + gcal identity."
              (aj/daily-date-file-p))
     (let ((cal (org-entry-get nil "calendar-id"))
           (id  (org-entry-get nil "entry-id")))
-      (when (and id cal (string= cal aj/gcal-id-J))
+      (when (and id cal (equal cal aj/gcal-id-tasks))
         (condition-case err
             (progn
               (aj/gcal-load-credentials)
@@ -2589,7 +2809,16 @@ an entry-id. Keeps the org heading; just removes the event + gcal identity."
           (error
            (message "gcal hide-done error: %s" (error-message-string err))))))))
 
-(add-hook 'org-after-todo-state-change-hook #'aj/gcal-hide-done-chore)
+;; Pin this BEFORE the other todo-state hooks. `my/org-roam-copy-todo-to-today'
+;; (daily-config.el) fires on DONE under * Recurring and leaks point onto the
+;; * Tasks heading via its nested `org-roam-dailies--capture' (no save-excursion
+;; around it). At the default depth `aj/gcal-hide-done-chore' ran *after* that
+;; leak and read `entry-id' at the wrong heading (nil) -> the inner `when'
+;; failed, so the calendar event was silently never deleted and completed
+;; chores lingered on the J calendar. The negative depth runs the delete while
+;; point is still on the chore (and before any earlier hook can error-abort the
+;; chain via `run-hooks').
+(add-hook 'org-after-todo-state-change-hook #'aj/gcal-hide-done-chore -50)
 
 (provide 'org-config)
 ;;; org-config.el ends here

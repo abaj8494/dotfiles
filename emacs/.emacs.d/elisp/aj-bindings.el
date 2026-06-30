@@ -10,17 +10,34 @@
 (define-key global-map (kbd "C-c Y") my/yank-map)
 
 (defun my/yank-file-path ()
-  "Copy the full path of the current file or directory to the clipboard.
-In dired buffers, copies the current directory path."
+  "Copy the full path of the current file to the clipboard.
+In dired, copies the path of the file at point.  On the `.' entry it
+copies the basename of the current directory; on `..' it copies the
+basename of the parent directory."
   (interactive)
   (cond
    (buffer-file-name
     (kill-new buffer-file-name)
     (message "Copied: %s" buffer-file-name))
    ((derived-mode-p 'dired-mode)
-    (let ((dir (dired-current-directory)))
-      (kill-new dir)
-      (message "Copied: %s" dir)))
+    (let ((name (dired-get-filename 'no-dir t))
+          copied)
+      (cond
+       ((null name)
+        (message "No file on this line"))
+       ((string= name ".")
+        (setq copied (file-name-nondirectory
+                      (directory-file-name (dired-current-directory)))))
+       ((string= name "..")
+        (setq copied (file-name-nondirectory
+                      (directory-file-name
+                       (file-name-directory
+                        (directory-file-name (dired-current-directory)))))))
+       (t
+        (setq copied (dired-get-filename nil t))))
+      (when copied
+        (kill-new copied)
+        (message "Copied: %s" copied))))
    (t
     (message "Buffer is not visiting a file or directory"))))
 
@@ -187,6 +204,121 @@ copy instead of move."
                (if copy "Copied" "Moved") n (abbreviate-file-name dest)))))
 
 (define-key global-map (kbd "C-c M") #'aj/pull-from-downloads)
+
+;; ---------------------------------------------------------------------------
+;; Documentation at point — one key, routed to the right backend
+;; ---------------------------------------------------------------------------
+;; `C-c k' shows docs for the symbol at point in a separate buffer, picking the
+;; backend that actually knows the symbol in this context:
+;;   - org `jupyter-' src block → the block's live kernel
+;;     (`jupyter-org-inspect-src-block'), the only path that works inside org
+;;     itself (LSP has no backing file/workspace there);
+;;   - a real source file under LSP → pyright hover docs in *lsp-help*;
+;;   - any buffer with an attached Jupyter client (REPL, `C-c '' edit buffer)
+;;     → the kernel's docstring (IPython `obj?').
+;;   - org `R' src block → ESS help (`?symbol') from the block's live `:session'
+;;     process (or any running R), mirroring how jupyter- blocks query a kernel.
+(defun aj/ess-doc-at-point ()
+  "Show R help for the symbol at point via this src block's ESS session.
+Resolves the inferior R process from the block's `:session' header, or
+falls back to any running ESS process, then queries it for `?symbol'."
+  (let* ((info (org-babel-get-src-block-info t))
+         (session (cdr (assq :session (nth 2 info))))
+         (buf (and session (not (string= session "none"))
+                   (org-babel-comint-buffer-livep session)))
+         (proc (or (and buf (get-buffer-process buf))
+                   (and (bound-and-true-p ess-process-name-list)
+                        (get-process (caar ess-process-name-list))))))
+    (unless proc
+      (user-error "No live R session — run a block first (C-c C-c)"))
+    (let ((ess-current-process-name (process-name proc)))
+      (ess-display-help-on-object
+       (or (thing-at-point 'symbol t)
+           (ess-find-help-file "Help on"))))))
+
+(defun aj/doc-at-point ()
+  "Show documentation for the symbol at point in a separate buffer."
+  (interactive)
+  (cond
+   ((and (derived-mode-p 'org-mode)
+         (fboundp 'jupyter-org-inspect-src-block)
+         (org-in-src-block-p)
+         (string-prefix-p "jupyter-"
+                          (or (car (org-babel-get-src-block-info t)) "")))
+    (jupyter-org-inspect-src-block))
+   ((and (derived-mode-p 'org-mode)
+         (org-in-src-block-p)
+         (member (car (org-babel-get-src-block-info t)) '("R" "r")))
+    (aj/ess-doc-at-point))
+   ((and (bound-and-true-p lsp-mode) (fboundp 'lsp-describe-thing-at-point))
+    (lsp-describe-thing-at-point))
+   ((and (fboundp 'jupyter-inspect-at-point)
+         (bound-and-true-p jupyter-current-client))
+    (jupyter-inspect-at-point))
+   (t (user-error "No documentation backend (LSP or Jupyter) active here"))))
+
+(define-key global-map (kbd "C-c k") #'aj/doc-at-point)
+
+;; ---------------------------------------------------------------------------
+;; VSCode-style region indent / outdent with TAB and Shift-TAB
+;; ---------------------------------------------------------------------------
+;; With an active region, TAB shifts every selected line right one indent
+;; level and Shift-TAB shifts left — *rigidly* (whitespace only), so it works
+;; even on code that doesn't parse yet, unlike Emacs's default syntactic
+;; re-indent.  The region stays selected so you can press again.  With no
+;; region, each key keeps its existing meaning in that mode (org folding,
+;; python indent, hideshow toggle).
+(defun aj/indent-step ()
+  "One indentation step for the current buffer (python offset, else 4)."
+  (or (and (boundp 'python-indent-offset) python-indent-offset) 4))
+
+(defun aj/shift-region (cols)
+  "Rigidly shift the active region by COLS columns, keeping it selected."
+  (let* ((beg (save-excursion (goto-char (region-beginning))
+                              (line-beginning-position)))
+         (end (save-excursion (goto-char (region-end))
+                              (if (bolp) (point) (line-beginning-position 2))))
+         (deactivate-mark nil))
+    (indent-rigidly beg end cols)))
+
+(defun aj/region-tab (fallback)
+  "Shift region right if active; else call FALLBACK interactively."
+  (if (use-region-p) (aj/shift-region (aj/indent-step))
+    (call-interactively fallback)))
+
+(defun aj/region-backtab (fallback)
+  "Shift region left if active; else call FALLBACK interactively."
+  (if (use-region-p) (aj/shift-region (- (aj/indent-step)))
+    (call-interactively fallback)))
+
+(defun aj/python-tab () (interactive) (aj/region-tab #'indent-for-tab-command))
+(defun aj/python-backtab () (interactive) (aj/region-backtab #'hs-toggle-hiding))
+(defun aj/org-tab ()
+  (interactive)
+  (if (and (use-region-p) (org-in-src-block-p))
+      (aj/shift-region (aj/indent-step))
+    (call-interactively #'org-cycle)))
+(defun aj/org-backtab ()
+  (interactive)
+  (if (and (use-region-p) (org-in-src-block-p))
+      (aj/shift-region (- (aj/indent-step)))
+    (call-interactively #'org-shifttab)))
+
+;; python covers both real .py files and the `C-c '' edit buffer (python-ts).
+;; `<backtab>' there is owned by hideshow's minor-mode map, so rebind it there.
+(with-eval-after-load 'python
+  (when (boundp 'python-base-mode-map)
+    (define-key python-base-mode-map (kbd "<tab>") #'aj/python-tab))
+  ;; Stop the "Can't guess python-indent-offset, using defaults: 4" chatter:
+  ;; tiny snippets (src-block fontification / edit buffers) can't be guessed,
+  ;; and we always use 4 anyway — silence the warning.
+  (setq python-indent-guess-indent-offset-verbose nil))
+(with-eval-after-load 'hideshow
+  (define-key hs-minor-mode-map (kbd "<backtab>") #'aj/python-backtab))
+
+(with-eval-after-load 'org
+  (define-key org-mode-map (kbd "<tab>")     #'aj/org-tab)
+  (define-key org-mode-map (kbd "<backtab>") #'aj/org-backtab))
 
 (provide 'aj-bindings)
 

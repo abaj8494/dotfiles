@@ -124,10 +124,14 @@ end)
 caffeinateWatcher:start()
 rpiLog(string.format("watcher armed (external monitors at boot=%s)", tostring(hasExternalMonitors())))
 
--- screen.watcher: catch external-monitor unplug as a sleep trigger. The
--- caffeinate watcher only fires on sleep/wake/lock; unplugging the external
--- display while the Mac stays awake doesn't trip any of those, so the Pi
--- would otherwise stay lit after the Mac goes laptop-only.
+-- screen.watcher: mirror external-monitor plug/unplug onto the Pi. The
+-- caffeinate watcher only fires on sleep/wake/lock; plugging or unplugging the
+-- external display while the Mac stays awake doesn't trip any of those.
+--   * unplug (had external, now laptop-only) → off, so the Pi doesn't stay lit
+--     after the Mac goes laptop-only.
+--   * re-plug (was laptop-only, now external present) → on, the symmetric wake.
+--     Re-plugging doesn't emit a screensDidWake/Unlock, so without this the Pi
+--     would sit dark until the next lock/unlock cycle.
 local prevHadExternal = hasExternalMonitors()
 screenWatcher = hs.screen.watcher.new(function()
   local hasExt = hasExternalMonitors()
@@ -135,6 +139,9 @@ screenWatcher = hs.screen.watcher.new(function()
   if prevHadExternal and not hasExt then
     rpiLog("external monitor unplugged → rpi off")
     rpiDisplay("off")
+  elseif not prevHadExternal and hasExt then
+    rpiLog("external monitor re-plugged → rpi on")
+    rpiDisplay("on")
   end
   prevHadExternal = hasExt
 end)

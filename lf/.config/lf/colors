@@ -9,10 +9,11 @@
 # every other dir/file keeps its normal color — no need to restate di/ln/etc.
 ~/lattice           01;38;5;208   # bold orange
 ~/lattice/static	01;38;5;51
-~/lattice/notes	01;38;5;208
 ~/lattice/2-areas	01;38;5;201
 ~/lattice/2-areas/study	01;38;5;201
 ~/Documents	01;38;5;244
 ~/lattice/code/sites/new-site/static/doc	01;38;5;46
-~/lattice/code	01;38;5;196
 ~/lattice/code/private	01;38;5;46
+~/lattice/notes	01;38;5;46
+~/lattice/code	01;38;5;33
+~/lattice/notes/uni	01;38;5;201

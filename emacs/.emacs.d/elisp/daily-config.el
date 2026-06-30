@@ -201,50 +201,78 @@ chronologically previous day, not just the previous existing note."
 
 (defun my/org-roam-copy-todo-to-today ()
   "Refile the current heading to today's daily note under the 'Tasks' heading.
-Preserves transclusion state in current buffer."
+Preserves transclusion state and restores point/buffer in the source.
+
+This runs from `org-after-todo-state-change-hook' (see the DONE-copy lambda
+below), so it MUST NOT leak point or the current buffer: `org-roam-dailies--capture'
+switches into today's daily and `save-window-excursion' restores only the window
+configuration, not buffer/point. Leaking them previously (a) compared today's
+file against itself — never refiling, so the cross-file copy silently never
+happened — and (b) left point on today's `* Tasks' heading, which broke later
+hooks that read entry properties at point. The source context is captured up
+front and restored in `unwind-protect'."
   (interactive)
-  (let ((org-refile-keep t) ;; Set to nil to move instead of copy
-        (org-after-refile-insert-hook #'save-buffer)
-        (source-buffer (current-buffer))
-        (source-transclusion-active (bound-and-true-p org-transclusion-mode))
-        today-file
-        pos)
-    ;; Open today's daily and ensure "Tasks" heading exists
-    (save-window-excursion
-      (org-roam-dailies--capture (current-time) t)
-      (setq today-file (buffer-file-name))
-      ;; Create "Tasks" heading if it doesn't exist (for older dailies)
-      (goto-char (point-min))
-      (unless (re-search-forward "^\\* Tasks\\b" nil t)
-        (goto-char (point-max))
-        (unless (bolp) (insert "\n"))
-        (insert "* Tasks [/]\n"))
-      ;; Ensure cookie exists on Tasks heading
-      (aj/ensure-heading-has-statistics-cookie "Tasks")
-      ;; Get position of Tasks heading
-      (goto-char (point-min))
-      (re-search-forward "^\\* Tasks\\b" nil t)
-      (setq pos (point))
-      (save-buffer))
+  (let* ((org-refile-keep t) ;; Set to nil to move instead of copy
+         (org-after-refile-insert-hook #'save-buffer)
+         (source-buffer (current-buffer))
+         (source-file (buffer-file-name source-buffer))
+         (source-marker (point-marker))
+         (source-transclusion-active (bound-and-true-p org-transclusion-mode))
+         today-file
+         pos)
+    (unwind-protect
+        (progn
+          ;; Open today's daily and ensure "Tasks" heading exists.
+          (save-window-excursion
+            (org-roam-dailies--capture (current-time) t)
+            (setq today-file (buffer-file-name))
+            ;; Create "Tasks" heading if it doesn't exist (for older dailies)
+            (goto-char (point-min))
+            (unless (re-search-forward "^\\* Tasks\\b" nil t)
+              (goto-char (point-max))
+              (unless (bolp) (insert "\n"))
+              (insert "* Tasks [/]\n"))
+            ;; Ensure cookie exists on Tasks heading
+            (aj/ensure-heading-has-statistics-cookie "Tasks")
+            ;; Get position of Tasks heading
+            (goto-char (point-min))
+            (re-search-forward "^\\* Tasks\\b" nil t)
+            (setq pos (point))
+            (save-buffer))
 
-    ;; Only refile if the target file is different than the current file
-    (unless (equal (file-truename today-file)
-                   (file-truename (buffer-file-name)))
-      (org-refile nil nil (list "Tasks" today-file nil pos))
-      ;; Update statistics cookie in target file
-      (with-current-buffer (find-file-noselect today-file)
-        (save-excursion
-          (goto-char (point-min))
-          (when (re-search-forward "^\\* Tasks\\b" nil t)
-            (org-update-statistics-cookies nil)))
-        (save-buffer)))
+          ;; Only refile if today's daily is a DIFFERENT file than the source.
+          ;; Compare against `source-file' (captured before the capture switched
+          ;; buffers) — reading the live buffer here would compare today against
+          ;; today and never refile.
+          (unless (and source-file
+                       (equal (file-truename today-file)
+                              (file-truename source-file)))
+            ;; `org-refile' acts on the heading at point in the current buffer,
+            ;; so return to the source heading first.
+            (when (buffer-live-p source-buffer)
+              (with-current-buffer source-buffer
+                (save-excursion
+                  (goto-char source-marker)
+                  (org-refile nil nil (list "Tasks" today-file nil pos)))))
+            ;; Update statistics cookie in target file
+            (with-current-buffer (find-file-noselect today-file)
+              (save-excursion
+                (goto-char (point-min))
+                (when (re-search-forward "^\\* Tasks\\b" nil t)
+                  (org-update-statistics-cookies nil)))
+              (save-buffer))))
 
-    ;; Restore transclusion mode in source buffer if it was active
-    (when (and source-transclusion-active
-               (buffer-live-p source-buffer))
-      (with-current-buffer source-buffer
-        (unless (bound-and-true-p org-transclusion-mode)
-          (org-transclusion-mode 1))))))
+      ;; --- cleanup: always restore the source buffer + point (so downstream
+      ;; todo-state hooks see the chore at point, not today's * Tasks), and
+      ;; re-enable transclusion if it was on.
+      (when (buffer-live-p source-buffer)
+        (set-buffer source-buffer)
+        (when (marker-position source-marker)
+          (goto-char source-marker))
+        (when (and source-transclusion-active
+                   (not (bound-and-true-p org-transclusion-mode)))
+          (org-transclusion-mode 1)))
+      (set-marker source-marker nil))))
 
 ;; Copy DONE headings to today's Tasks — but ONLY when the state change
 ;; happens inside a daily file under * Recurring or * Capture.  Without

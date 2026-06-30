@@ -122,6 +122,15 @@ Inspect *Warnings* for the cause, then M-x aj/reload-config." aj/failed-modules)
 ;; Load custom keybindings (C-c Y prefix)
 (aj/safe-require 'aj-bindings)
 
+;; Ferrari (rMPP) dired push: `C-c F' in a dired buffer under ~/lattice/notes
+;; rsyncs the marked files/dirs onto the device. The module lives off-repo in
+;; the ferrari project; put its scripts dir on `load-path' so `aj/safe-require'
+;; can pick it up (and degrade gracefully if that checkout is absent).
+(add-to-list 'load-path
+             (expand-file-name
+              "~/lattice/2-areas/devices/remarkable/ferrari/scripts"))
+(aj/safe-require 'ferrari-dired-push)
+
 ;; Load email configuration (mu4e with mbsync)
 (aj/safe-require 'email-config)
 

@@ -46,17 +46,57 @@
 ;; ---------------------------------------------------------------------------
 (electric-pair-mode 1)
 
+;; In org-mode, `<' / `>' are paren-matched in the syntax table (timestamps),
+;; so electric-pair auto-inserts a `>' when you type `<' — which leaves a stray
+;; `>' dangling after an org-tempo `<sr'+TAB block expansion.  Inhibit pairing
+;; for `<' in org buffers so the template expands clean.
+(add-hook 'org-mode-hook
+          (lambda ()
+            (setq-local electric-pair-inhibit-predicate
+                        (let ((base electric-pair-inhibit-predicate))
+                          (lambda (c)
+                            (if (char-equal c ?<) t (funcall base c)))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Indent guide lines (vertical bars at each indentation level)
 ;; ---------------------------------------------------------------------------
 (use-package indent-bars
   :straight (indent-bars :host github :repo "jdtsmith/indent-bars")
-  :hook ((python-mode python-ts-mode) . indent-bars-mode)
+  :preface
+  ;; Org fontifies a #+begin_src block by enabling the language's major mode
+  ;; in a throwaway buffer named " *org-src-fontification:LANG*" (leading
+  ;; space).  That runs python-ts-mode-hook, so a bare `indent-bars-mode'
+  ;; on the hook would turn indent-bars on *inside that buffer* and clobber
+  ;; its `font-lock-fontify-region-function' — which silently drops the
+  ;; tree-sitter faces org is trying to copy back, leaving src blocks
+  ;; unhighlighted in the normal buffer (they still highlight under C-c ',
+  ;; a real displayed buffer).  Skip the throwaway buffers by name.
+  (defun aj/indent-bars-maybe-enable ()
+    "Enable `indent-bars-mode' except in internal fontification buffers."
+    (unless (string-prefix-p " " (buffer-name))
+      (indent-bars-mode 1)))
+  :hook ((python-mode python-ts-mode) . aj/indent-bars-maybe-enable)
   :config
   (setq indent-bars-no-descend-string t
         indent-bars-treesit-support t
         indent-bars-prefer-character t)
   (add-hook 'org-src-mode-hook #'indent-bars-mode))
+
+;; ---------------------------------------------------------------------------
+;; Rainbow parentheses — VSCode-style bracket-pair colourisation
+;; ---------------------------------------------------------------------------
+;; Brackets cycle colour by nesting depth.  The depth faces themselves are set
+;; in gruber-themes.el (alongside the other code faces) so the light/dark
+;; toggle carries through.  Hooked on `prog-mode' so it covers BOTH the `C-c ''
+;; src-edit buffer (a real `python-ts-mode' buffer) AND org's throwaway
+;; " *org-src-fontification:LANG*" buffer (also prog-mode-derived), whose face
+;; text-properties org copies back into the inline block view.  Unlike
+;; indent-bars, rainbow-delimiters only *adds font-lock keywords* (it doesn't
+;; touch `font-lock-fontify-region-function'), so it's safe in the throwaway
+;; fontification buffer and needs no by-name skip.
+(use-package rainbow-delimiters
+  :straight t
+  :hook (prog-mode . rainbow-delimiters-mode))
 
 (use-package htmlize
   :straight t
@@ -73,6 +113,26 @@
   :hook ((python-mode python-ts-mode) . (lambda ()
                                           (require 'lsp-pyright)
                                           (lsp-deferred))))
+
+;; Make LSP semantic-token colours track the same palette as the tree-sitter
+;; faces (see gruber-themes.el), so the C-c ' edit buffer (pyright tokens) and
+;; the inline org view (tree-sitter) agree: classes teal, functions yellow,
+;; variables/params/properties blue.  Inherit rather than hard-code hexes so a
+;; theme toggle carries through.
+(with-eval-after-load 'lsp-semantic-tokens
+  (dolist (map '((lsp-face-semhl-class     . font-lock-type-face)
+                 (lsp-face-semhl-type      . font-lock-type-face)
+                 (lsp-face-semhl-enum      . font-lock-type-face)
+                 (lsp-face-semhl-interface . font-lock-type-face)
+                 (lsp-face-semhl-struct    . font-lock-type-face)
+                 (lsp-face-semhl-function  . font-lock-function-call-face)
+                 (lsp-face-semhl-method    . font-lock-function-call-face)
+                 (lsp-face-semhl-variable  . font-lock-variable-use-face)
+                 (lsp-face-semhl-parameter . font-lock-variable-use-face)
+                 (lsp-face-semhl-property  . font-lock-property-use-face)))
+    (when (facep (car map))
+      (set-face-attribute (car map) nil :inherit (cdr map)
+                          :foreground 'unspecified))))
 
 (use-package conda
   :custom
@@ -929,13 +989,64 @@ With prefix ARG, search from current directory instead of project root."
           (format "[%d]" count)
         "")))
 
+  ;; Author accessor for `C-c n f' matching. Book notes carry their authors in
+  ;; the `#+hugo_custom_front_matter' `:author' value (a quoted string or an
+  ;; elisp-style list, e.g. :author '("Daphne Koller" "Nir Friedman")). org-roam
+  ;; matches the completion pattern against the formatted display-template
+  ;; string, so surfacing the author there makes node-find match on author too.
+  (defvar aj/org-roam-author-cache (make-hash-table :test 'equal)
+    "Cache of FILE -> (MTIME . AUTHOR-STRING) for org-roam author lookup.")
+
+  (defun aj/org-roam--extract-author (file)
+    "Return the author name(s) declared in FILE's hugo front matter, or \"\"."
+    (with-temp-buffer
+      (insert-file-contents file nil 0 8192)
+      (goto-char (point-min))
+      (if (re-search-forward "^#\\+hugo_custom_front_matter:" nil t)
+          (let ((line (buffer-substring-no-properties (point) (line-end-position))))
+            (if (string-match ":author[ \t]+" line)
+                (let* ((after (substring line (match-end 0)))
+                       ;; Stop at the next " :key" so a trailing property
+                       ;; (e.g. :composed "2009") isn't slurped into the author.
+                       (val (if (string-match "[ \t]+:[a-z_]+\\(?:[ \t]\\|$\\)" after)
+                                (substring after 0 (match-beginning 0))
+                              after))
+                       (names '())
+                       (start 0))
+                  ;; Prefer quoted names (handles single string and '(...) list);
+                  ;; otherwise fall back to the bare token, stripped of quoting.
+                  (while (string-match "\"\\([^\"]*\\)\"" val start)
+                    (push (match-string 1 val) names)
+                    (setq start (match-end 0)))
+                  (if names
+                      (string-join (nreverse names) " ")
+                    (string-trim (replace-regexp-in-string "[()'\"]" "" val))))
+              ""))
+        "")))
+
+  (cl-defmethod org-roam-node-author ((node org-roam-node))
+    "Return author name(s) for NODE, for `C-c n f' completion matching.
+Only book notes are parsed (others would needlessly stat the whole
+notes tree); results are cached and invalidated by file mtime."
+    (let ((file (org-roam-node-file node)))
+      (if (and file (string-match-p "/books/" file))
+          (let ((mtime (file-attribute-modification-time (file-attributes file)))
+                (cached (gethash file aj/org-roam-author-cache)))
+            (if (and cached (equal (car cached) mtime))
+                (cdr cached)
+              (let ((author (aj/org-roam--extract-author file)))
+                (puthash file (cons mtime author) aj/org-roam-author-cache)
+                author)))
+        "")))
+
   ;; Combined display template
   (setq org-roam-node-display-template
         (concat "${directories:10} "
                 "${type:15} "
                 "${title:*} "
                 (propertize "${tags:10}" 'face 'org-tag)
-                " ${backlinkscount:6}")))
+                " ${backlinkscount:6}"
+                (propertize " ${author}" 'face 'font-lock-comment-face))))
 
 (with-eval-after-load 'org-roam
   (setq org-roam-capture-templates
