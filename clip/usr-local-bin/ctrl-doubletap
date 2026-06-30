@@ -1,0 +1,23 @@
+#!/bin/sh
+# Fired by keyd on each SOLO tap of Left-Ctrl (runs as root). Two taps within
+# WINDOW_MS -> region screenshot to clipboard, as the desktop user. Ctrl held with
+# another key is a normal modifier (keyd [ctrlmod:C]), so this only runs on lone taps.
+STATE=/run/ctrl-doubletap.last
+USER_NAME=adoosh
+UID_N=1000
+WINDOW_MS=350
+
+now=$(date +%s%3N)
+last=$(cat "$STATE" 2>/dev/null)
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+printf '%s' "$now" > "$STATE"
+
+if [ "$last" -ne 0 ] && [ $((now - last)) -lt "$WINDOW_MS" ]; then
+  printf '0' > "$STATE"
+  runuser -u "$USER_NAME" -- env \
+      DISPLAY=:0 \
+      XAUTHORITY="/home/$USER_NAME/.Xauthority" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_N/bus" \
+      "/home/$USER_NAME/.local/bin/screenshot-region" >/dev/null 2>&1 &
+fi
+exit 0

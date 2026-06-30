@@ -1,6 +1,6 @@
 /* rofi config — kali (managed via ~/dotfiles, branch: kali)
  * Raycast has no Linux build; rofi is the i3-native launcher equivalent.
- * Sleek modern theme (Catppuccin Mocha), shared by the launcher and clip-menu.
+ * Theme: Rosé Pine (distinct from Percy's palette), shared by launcher + clip-menu.
  */
 configuration {
     modi:                "drun,run,window,filebrowser";
@@ -16,14 +16,14 @@ configuration {
 }
 
 * {
-    bg0:     #1e1e2e;   /* base    */
-    bg1:     #2a2b3c;   /* surface */
-    bg2:     #313244;   /* surface0*/
-    fg0:     #cdd6f4;   /* text    */
-    fg1:     #a6adc8;   /* subtext */
-    accent:  #89b4fa;   /* blue    */
-    accent2: #cba6f7;   /* mauve   */
-    urgent:  #f38ba8;   /* red     */
+    bg0:     #191724;   /* base    */
+    bg1:     #1f1d2e;   /* surface */
+    bg2:     #26233a;   /* overlay */
+    fg0:     #e0def4;   /* text    */
+    fg1:     #908caa;   /* subtle  */
+    accent:  #9ccfd8;   /* foam    */
+    accent2: #c4a7e7;   /* iris    */
+    urgent:  #eb6f92;   /* love    */
     trans:   rgba(0,0,0,0%);
 }
 

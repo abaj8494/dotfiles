@@ -1,27 +1,18 @@
 #!/usr/bin/env bash
-# sesh picker styled to match the tokyo-night status bar.
-# Bound to `Prefix+T` from tmux.conf.
-#
-# Palette (tokyo-night "night" theme, matched to the tmux status bar):
-#   bg        #1A1B26  (status bar background)
-#   bg+       #2A2F41  (selected row -- darker grey accent)
-#   border    #414868  (lighter grey -- matches status-bar separators)
-#   fg        #a9b1d6  text
-#   accent    #7aa2f7  blue (hl)
+# sesh picker (kali) — Rosé Pine theme. Bound to Prefix+V from tmux.conf.
 #
 # Filter hotkeys inside the picker:
-#   ^a  all sesh sources (default)
-#   ^t  tmux sessions only
-#   ^g  configs only
-#   ^x  zoxide only
-#   ^f  fd -- fuzzy-pick any dir under $HOME
-#   ^e  edit the selected session's entry in sesh.toml in nvim
-#   ^d  kill the selected tmux session (then reload)
+#   ^a all sources   ^t tmux only   ^g configs   ^x zoxide   ^f find dirs
+#   ^e edit entry in $EDITOR   ^d kill selected tmux session
+#
+# tmux popups inherit a minimal PATH; set a full one so sesh/fzf-tmux/fd resolve.
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+EDITOR="${EDITOR:-vim}"
 
-# Intentionally not `set -e`: fzf exits 130 when the user hits ESC/Ctrl-C,
-# which is a normal cancellation, not an error we want to propagate.
+# Intentionally not `set -e`: fzf exits 130 on ESC/Ctrl-C (normal cancel).
 
-THEME='bg:#1A1B26,bg+:#2A2F41,fg:#a9b1d6,fg+:#c0caf5,hl:#7aa2f7,hl+:#bb9af7,info:#787c99,prompt:#7dcfff,pointer:#f7768e,marker:#e0af68,spinner:#73daca,header:#787c99,border:#414868,label:#787c99,query:#a9b1d6,separator:#414868'
+# Rosé Pine
+THEME='bg:#191724,bg+:#26233a,fg:#908caa,fg+:#e0def4,hl:#9ccfd8,hl+:#c4a7e7,info:#6e6a86,prompt:#31748f,pointer:#eb6f92,marker:#f6c177,spinner:#9ccfd8,header:#6e6a86,border:#403d52,label:#6e6a86,query:#e0def4,separator:#403d52'
 
 picked=$(sesh list --icons | fzf-tmux -p 80%,70% \
   --no-sort --ansi \
@@ -40,11 +31,8 @@ picked=$(sesh list --icons | fzf-tmux -p 80%,70% \
   --bind='ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
   --bind='ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
   --bind='ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
-  --bind="ctrl-e:execute(nvim +/'name = \"{2..}\"' ~/.config/sesh/sesh.toml)")
+  --bind="ctrl-e:execute($EDITOR +/'name = \"{2..}\"' ~/.config/sesh/sesh.toml)")
 
 [ -z "$picked" ] && exit 0   # user hit ESC / Ctrl-C
-
-# Strip the leading icon + space that --icons adds so `sesh connect` gets a clean name.
-name=$(printf '%s' "$picked" | sed -E 's/^[^ ]+ //')
-
+name=$(printf '%s' "$picked" | sed -E 's/^[^ ]+ //')   # strip leading icon
 exec sesh connect "$name"

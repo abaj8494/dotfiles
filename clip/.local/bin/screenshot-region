@@ -1,0 +1,10 @@
+#!/bin/sh
+# Region screenshot -> X11 clipboard. greenclip records it (preview in clip-menu) and
+# clip-sync pushes it to clip.abaj.ai (Mac / reMarkable). Triggered by double-tap Ctrl (keyd).
+img="$(mktemp --suffix=.png)"
+# maim -s uses slop for an interactive region select; -u = capture right after selection.
+if maim -s -u "$img" 2>/dev/null && [ -s "$img" ]; then
+    xclip -selection clipboard -t image/png -i < "$img"
+    notify-send "Screenshot" "Region copied to clipboard (syncing to clip)" -i "$img" 2>/dev/null || true
+fi
+rm -f "$img"

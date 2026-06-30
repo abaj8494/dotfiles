@@ -32,7 +32,8 @@ dir_length = 3
 # default
 
 [default_session]
-startup_command = "nvim '+Telescope find_files'"
+# kali has no nvim/Telescope; open a plain shell (override per-session in sesh.toml as needed)
+# startup_command = "nvim '+Telescope find_files'"
 #preview_command = "eza --all --git --icons --color=always {}"
 # startup_command_ignore_dirs = ["~/repos", "~/.config"]
 
