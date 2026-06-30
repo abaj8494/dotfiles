@@ -1,0 +1,42 @@
+#!/bin/sh
+# lattice-sync — guarded 2-way sync of the Duo's lattice with Percy.
+# Mounts Percy:~/lattice over sshfs and runs Unison (interactive, ancestor-based).
+# Safe by default: aborts unless every guard passes; Unison prompts on conflict.
+set -eu
+
+PERCY_USER=aayushbajaj
+PERCY_HOST=192.168.1.100
+DUO=/mnt/lattice-parity
+LOCAL_LAT="$DUO/lattice"
+PERCY_MNT=/mnt/percy-lattice
+
+notify() { notify-send "Lattice sync" "$1" 2>/dev/null || true; printf '%s\n' "$1"; }
+
+# 1. Duo mounted with our lattice?
+mountpoint -q "$DUO"   || { notify "Duo not mounted at $DUO — abort."; exit 1; }
+[ -d "$LOCAL_LAT" ]    || { notify "No lattice on Duo yet — run the initial pull first."; exit 1; }
+
+# 2. Percy reachable on LAN? (reachability-gated, like the reMarkable mirrors)
+ssh -o BatchMode=yes -o ConnectTimeout=5 "$PERCY_USER@$PERCY_HOST" true 2>/dev/null \
+  || { notify "Percy unreachable on LAN — skipping (not an error)."; exit 0; }
+
+# 3. sshfs-mount Percy:~/lattice (idmap=user so remote uid maps to us)
+sudo mkdir -p "$PERCY_MNT"; sudo chown "$(id -u):$(id -g)" "$PERCY_MNT" 2>/dev/null || true
+mountpoint -q "$PERCY_MNT" \
+  || sshfs "$PERCY_USER@$PERCY_HOST:lattice" "$PERCY_MNT" \
+        -o reconnect,ConnectTimeout=5,idmap=user,follow_symlinks
+trap 'fusermount -u "$PERCY_MNT" 2>/dev/null || true' EXIT INT TERM
+
+# 4. SENTINEL GUARD — the critical safety check.
+#    If the sshfs mount is broken/empty, Unison would read it as "Percy deleted
+#    everything" and try to wipe the Duo (or, reversed, wipe Percy). Refuse
+#    unless a known-present subtree (_meta) is there and non-empty.
+if [ ! -d "$PERCY_MNT/_meta" ] || [ -z "$(ls -A "$PERCY_MNT/_meta" 2>/dev/null)" ]; then
+  notify "Percy lattice sentinel (_meta) missing/empty — mount looks broken. ABORTING."
+  exit 1
+fi
+
+# 5. Interactive Unison: shows every proposed change and asks before applying.
+notify "Guards passed — launching Unison (interactive)…"
+unison lattice
+notify "Unison session finished."

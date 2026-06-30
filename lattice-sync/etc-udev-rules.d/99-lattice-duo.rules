@@ -1,0 +1,4 @@
+# Lattice parity Duo — on connect, mount + notify (non-destructive).
+# Matched by the ext4 filesystem UUID created when we reformatted the Duo.
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_UUID}=="70c0e587-2c6e-4a92-8242-b81d079f83d5", \
+  RUN+="/usr/bin/systemd-run --no-block /usr/local/bin/lattice-duo-connect"

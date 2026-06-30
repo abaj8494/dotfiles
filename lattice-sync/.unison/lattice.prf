@@ -1,0 +1,37 @@
+# Unison profile: lattice  (Duo  <->  Percy-via-sshfs)
+# Both roots are LOCAL to kali — root2 is an sshfs mount of Percy:~/lattice,
+# so no version-matched unison is needed on Percy.
+root = /mnt/lattice-parity/lattice
+root = /mnt/percy-lattice
+
+# --- safety posture (this is the "don't ruin Percy" config) --------------
+batch = false          # interactive: list every change, prompt before applying
+confirmbigdel = true   # extra confirm when a whole dir would be deleted
+auto = false           # never auto-pick an action for conflicts
+fastcheck = true       # mtime+size (full checksums are murder over sshfs)
+times = true
+perms = 0              # don't try to reconcile perms across ext4/sshfs
+# keep a rolling backup of anything replaced/deleted, on the Duo side
+backup = Name *
+backuplocation = central
+backupdir = /mnt/lattice-parity/.unison-backups
+maxbackups = 3
+log = true
+logfile = /mnt/lattice-parity/.unison-lattice.log
+
+# --- ignores (mirror of the rsync excludes) ------------------------------
+ignore = Name .DS_Store
+ignore = Name *.swp
+ignore = Name *.pyc
+ignore = Path */node_modules
+ignore = Path */.venv
+ignore = Name __pycache__
+ignore = Path */.next
+ignore = Path */dist
+ignore = Path */build
+ignore = Path */target
+ignore = Name .cache
+ignore = Name .Trash
+ignore = Path */straight/build
+ignore = Path */straight/repos
+ignore = Name eln-cache
