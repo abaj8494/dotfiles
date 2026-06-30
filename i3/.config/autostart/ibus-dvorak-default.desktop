@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Default IBus engine to Dvorak
+Comment=Force ibus to start on US Dvorak at login
+Exec=/home/adoosh/.local/bin/ibus-dvorak-default.sh
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+Terminal=false
