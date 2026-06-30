@@ -1,0 +1,45 @@
+/* rofi config — kali (managed via ~/dotfiles, branch: kali)
+ * Raycast has no Linux build; rofi is the i3-native launcher equivalent.
+ * Self-contained theme (no external @theme dependency).
+ */
+configuration {
+    modi:                "drun,run,window,filebrowser";
+    show-icons:          true;
+    drun-display-format: "{name}";
+    display-drun:        "apps";
+    display-run:         "run";
+    display-window:      "win";
+    display-filebrowser: "files";
+    terminal:            "alacritty";
+    kb-cancel:           "Escape";
+    sidebar-mode:        true;
+}
+
+* {
+    bg:     #1d2021;
+    bg-alt: #282828;
+    fg:     #ebdbb2;
+    accent: #83a598;
+    urgent: #fb4934;
+}
+
+window {
+    width:            45%;
+    border-radius:    10px;
+    background-color: @bg;
+}
+mainbox  { padding: 12px; }
+inputbar {
+    background-color: @bg-alt;
+    text-color:       @fg;
+    padding:          8px;
+    border-radius:    8px;
+    children:         [ prompt, entry ];
+}
+prompt  { text-color: @accent; padding: 0 8px 0 0; }
+listview { lines: 10; scrollbar: false; spacing: 4px; }
+element { padding: 6px; border-radius: 6px; }
+element selected { background-color: @accent; text-color: @bg; }
+element-icon { size: 1.1em; padding: 0 8px 0 0; }
+mode-switcher { spacing: 0; }
+button selected { background-color: @accent; text-color: @bg; }
