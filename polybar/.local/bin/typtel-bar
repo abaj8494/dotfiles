@@ -1,0 +1,6 @@
+#!/bin/sh
+# polybar label for the typtel module: today's keystrokes + words ("<keys> · <words>w").
+j=$("$HOME/.local/bin/typtel" today --json 2>/dev/null)
+k=$(printf '%s\n' "$j" | sed -n 's/.*"keystrokes": *\([0-9]*\).*/\1/p')
+w=$(printf '%s\n' "$j" | sed -n 's/.*"words": *\([0-9]*\).*/\1/p')
+printf '%s · %sw\n' "${k:-0}" "${w:-0}"
