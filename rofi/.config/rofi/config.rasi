@@ -1,45 +1,79 @@
 /* rofi config — kali (managed via ~/dotfiles, branch: kali)
  * Raycast has no Linux build; rofi is the i3-native launcher equivalent.
- * Self-contained theme (no external @theme dependency).
+ * Sleek modern theme (Catppuccin Mocha), shared by the launcher and clip-menu.
  */
 configuration {
     modi:                "drun,run,window,filebrowser";
     show-icons:          true;
     drun-display-format: "{name}";
-    display-drun:        "apps";
-    display-run:         "run";
-    display-window:      "win";
-    display-filebrowser: "files";
+    display-drun:        "Apps";
+    display-run:         "Run";
+    display-window:      "Windows";
+    display-filebrowser: "Files";
     terminal:            "alacritty";
     kb-cancel:           "Escape";
     sidebar-mode:        true;
 }
 
 * {
-    bg:     #1d2021;
-    bg-alt: #282828;
-    fg:     #ebdbb2;
-    accent: #83a598;
-    urgent: #fb4934;
+    bg0:     #1e1e2e;   /* base    */
+    bg1:     #2a2b3c;   /* surface */
+    bg2:     #313244;   /* surface0*/
+    fg0:     #cdd6f4;   /* text    */
+    fg1:     #a6adc8;   /* subtext */
+    accent:  #89b4fa;   /* blue    */
+    accent2: #cba6f7;   /* mauve   */
+    urgent:  #f38ba8;   /* red     */
+    trans:   rgba(0,0,0,0%);
 }
 
 window {
-    width:            45%;
-    border-radius:    10px;
-    background-color: @bg;
+    width:            640px;
+    border:           2px;
+    border-color:     @accent;
+    border-radius:    16px;
+    background-color: @bg0;
+    padding:          0;
 }
-mainbox  { padding: 12px; }
+
+mainbox {
+    padding:          18px;
+    spacing:          14px;
+    background-color: @trans;
+}
+
 inputbar {
-    background-color: @bg-alt;
-    text-color:       @fg;
-    padding:          8px;
-    border-radius:    8px;
+    background-color: @bg2;
+    text-color:       @fg0;
+    padding:          12px 16px;
+    border-radius:    12px;
+    spacing:          10px;
     children:         [ prompt, entry ];
 }
-prompt  { text-color: @accent; padding: 0 8px 0 0; }
-listview { lines: 10; scrollbar: false; spacing: 4px; }
-element { padding: 6px; border-radius: 6px; }
-element selected { background-color: @accent; text-color: @bg; }
-element-icon { size: 1.1em; padding: 0 8px 0 0; }
-mode-switcher { spacing: 0; }
-button selected { background-color: @accent; text-color: @bg; }
+prompt { text-color: @accent2; }
+entry  { text-color: @fg0; placeholder: "Search…"; placeholder-color: @fg1; }
+
+listview {
+    lines:            10;
+    spacing:          6px;
+    scrollbar:        false;
+    background-color: @trans;
+}
+
+element {
+    padding:          10px 12px;
+    border-radius:    10px;
+    spacing:          12px;
+    background-color: @trans;
+    text-color:       @fg0;
+}
+element selected {
+    background-color: @accent;
+    text-color:       @bg0;
+}
+element-icon { size: 1.3em; background-color: @trans; }
+element-text { background-color: @trans; text-color: inherit; }
+
+mode-switcher { spacing: 8px; }
+button          { padding: 8px 14px; border-radius: 10px; background-color: @bg2; text-color: @fg1; }
+button selected { background-color: @accent2; text-color: @bg0; }

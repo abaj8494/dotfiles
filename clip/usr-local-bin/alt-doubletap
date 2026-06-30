@@ -1,0 +1,24 @@
+#!/bin/sh
+# Fired by keyd on each SOLO tap of Left-Alt (keyd runs this as root).
+# Two taps within WINDOW_MS -> open the rofi clipboard menu as the desktop user.
+# Alt held with another key is a normal modifier (handled by keyd's [altmod:A]),
+# so this only ever runs on a lone Alt tap.
+STATE=/run/alt-doubletap.last
+USER_NAME=adoosh
+UID_N=1000
+WINDOW_MS=350
+
+now=$(date +%s%3N)
+last=$(cat "$STATE" 2>/dev/null)
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+printf '%s' "$now" > "$STATE"
+
+if [ "$last" -ne 0 ] && [ $((now - last)) -lt "$WINDOW_MS" ]; then
+  printf '0' > "$STATE"          # reset so a 3rd tap doesn't immediately retrigger
+  runuser -u "$USER_NAME" -- env \
+      DISPLAY=:0 \
+      XAUTHORITY="/home/$USER_NAME/.Xauthority" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_N/bus" \
+      "/home/$USER_NAME/.local/bin/clip-menu" >/dev/null 2>&1 &
+fi
+exit 0

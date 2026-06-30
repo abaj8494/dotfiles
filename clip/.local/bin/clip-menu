@@ -2,5 +2,11 @@
 # Alfred-style clipboard history menu in rofi, backed by greenclip.
 # Bound to Ctrl+Space (see i3 config). Selecting an entry copies it to the clipboard;
 # clip-sync then propagates it to clip.abaj.ai (Mac / reMarkable).
-exec rofi -modi "clipboard:greenclip print" -show clipboard -run-command '{cmd}' \
-     -theme-str 'window { width: 50%; } listview { lines: 12; }'
+#
+# Absolute paths: i3's exec PATH does NOT include ~/.local/bin, so a bare
+# "greenclip" in a rofi modi string fails to resolve.
+GREENCLIP="$HOME/.local/bin/greenclip"
+
+sel="$("$GREENCLIP" print | rofi -dmenu -i -p "clipboard" \
+        -theme-str 'window { width: 50%; } listview { lines: 12; }')" || exit 0
+[ -n "$sel" ] && "$GREENCLIP" print "$sel"   # re-copies the selected entry to the clipboard
