@@ -90,6 +90,8 @@ bindsym $mod+r mode "resize"
 # --- background: drop xfdesktop (it tiles itself & owns one root bg), use feh per workspace ---
 exec_always --no-startup-id pkill -x xfdesktop
 exec --no-startup-id $HOME/.local/bin/i3-wallpaper.py
+# rotate wallpaper on the CURRENT workspace only (persistent override)
+bindsym $mod+Shift+w exec --no-startup-id ~/.local/bin/wallpaper-rotate
 
 # No `bar {}` block on purpose — xfce4-panel is the panel in this hybrid.
 
@@ -112,7 +114,7 @@ client.placeholder      #191724 #191724 #e0def4 #191724   #191724
 client.background       #191724
 
 gaps inner 8
-gaps outer 4
+gaps outer 0
 smart_gaps on
 smart_borders on
 default_border pixel 2

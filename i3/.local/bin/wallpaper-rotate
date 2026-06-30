@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Rotate the wallpaper on the CURRENT i3 workspace only.
+
+Writes a per-workspace override (~/.cache/i3-wallpaper/ws-<num>) and applies it
+immediately. i3-wallpaper.py honours the override on future focus, so other
+workspaces are never affected. Bound to $mod+Shift+w.
+"""
+import glob
+import json
+import os
+import subprocess
+
+BG_DIR = "/usr/share/backgrounds/kali-16x9"
+STATE_DIR = os.path.expanduser("~/.cache/i3-wallpaper")
+os.makedirs(STATE_DIR, exist_ok=True)
+
+imgs = sorted(
+    p for p in glob.glob(os.path.join(BG_DIR, "*"))
+    if os.path.isfile(p) and p.lower().endswith((".jpg", ".jpeg", ".png"))
+)
+if not imgs:
+    raise SystemExit("no wallpapers in " + BG_DIR)
+
+ws = [w for w in json.loads(subprocess.check_output(["i3-msg", "-t", "get_workspaces"])) if w.get("focused")]
+num = ws[0]["num"] if ws else 1
+
+ovf = os.path.join(STATE_DIR, f"ws-{num}")
+cur = None
+try:
+    cur = open(ovf).read().strip()
+except OSError:
+    pass
+if cur not in imgs:                          # no override yet -> current = default mapping
+    cur = imgs[(int(num) - 1) % len(imgs)]
+
+nxt = imgs[(imgs.index(cur) + 1) % len(imgs)]
+open(ovf, "w").write(nxt)
+subprocess.run(["feh", "--no-fehbg", "--bg-fill", nxt], check=False)
+subprocess.run(["notify-send", "Wallpaper", f"WS {num}: {os.path.basename(nxt)}"], check=False)
