@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# powermenu — rofi power menu bound to a click on polybar's power module
+# (the icon to the right of the date). Sleep / Hibernate / Logout / Restart /
+# Shutdown; the disruptive actions confirm first so a stray click is harmless.
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+rmenu()   { rofi -dmenu -i -p "$1" -theme-str 'window { width: 22%; } listview { lines: 5; }'; }
+confirm() {
+    # $1 = action label; returns 0 only if the user explicitly picks "Yes".
+    [ "$(printf 'Cancel\nYes, %s\n' "$1" | rofi -dmenu -i -p "$1?" \
+        -theme-str 'window { width: 22%; } listview { lines: 2; }')" = "Yes, $1" ]
+}
+
+sel=$(printf '%s\n' \
+    "󰤄  Sleep" \
+    "󰋊  Hibernate" \
+    "󰍃  Logout" \
+    "󰜉  Restart" \
+    "󰐥  Shutdown" | rmenu "Power")
+
+case "$sel" in
+    *Sleep*)     systemctl suspend ;;
+    *Hibernate*) systemctl hibernate ;;
+    *Logout*)    confirm "Logout"   && i3-msg exit ;;
+    *Restart*)   confirm "Restart"  && systemctl reboot ;;
+    *Shutdown*)  confirm "Shutdown" && systemctl poweroff ;;
+esac
