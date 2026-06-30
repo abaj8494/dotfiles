@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# clip-sync — bidirectional sync between the kali X11 clipboard and clip.abaj.ai
+# (text + image). Linux/X11 port of Percy's clip-image-sync/mac/clip-sync.sh, with
+# the reMarkable device-delivery glue removed (that's Percy's job; kali is just
+# another clipboard peer). Server is source of truth; newest slot (text|image) wins.
+set -u
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+ENDPOINT="https://clip.abaj.ai/api/clip"
+ENDPOINT_IMG="https://clip.abaj.ai/api/clip-image"
+TOKEN_FILE="$HOME/.config/clipd/token"
+INTERVAL=1
+
+TOKEN="$(cat "$TOKEN_FILE" 2>/dev/null)"
+[ -n "$TOKEN" ] || { echo "clip-sync: no token at $TOKEN_FILE — refusing to run" >&2; exit 1; }
+
+cb_targets()  { xclip -selection clipboard -t TARGETS -o 2>/dev/null; }
+cb_text()     { xclip -selection clipboard -o 2>/dev/null; }
+# text present and NO image / file-uri flavour -> safe to PUSH as text
+is_text_only() {
+  local t; t="$(cb_targets)" || return 1
+  printf '%s' "$t" | grep -qiE 'image/|text/uri-list' && return 1
+  printf '%s' "$t" | grep -qiE 'UTF8_STRING|text/plain|^STRING$|^TEXT$'
+}
+# no image / file-uri flavour (text or empty) -> safe to OVERWRITE on PULL
+safe_to_pull() { ! cb_targets | grep -qiE 'image/|text/uri-list'; }
+clipboard_is_image() { cb_targets | grep -qi 'image/png'; }
+extract_png() { rm -f "$1"; xclip -selection clipboard -t image/png -o > "$1" 2>/dev/null; [ -s "$1" ]; }
+set_png()     { xclip -selection clipboard -t image/png -i < "$1" >/dev/null 2>&1; }
+sha_of()      { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+server_get()        { curl -fsS  -m 10 -H "X-Clip-Token: $TOKEN" "$ENDPOINT" 2>/dev/null; }
+server_get_image()  { curl -fsS  -m 15 -H "X-Clip-Token: $TOKEN" "$ENDPOINT_IMG" -o "$1" 2>/dev/null; }
+server_head_ts() {  # echo X-Clip-Time of slot $1 (0 if none/unreachable)
+  local h ts; h="$(curl -fsSI -m 8 -H "X-Clip-Token: $TOKEN" "$1" 2>/dev/null)" || { echo 0; return; }
+  ts="$(printf '%s' "$h" | awk -F': *' 'tolower($1)=="x-clip-time"{print $2}' | tr -d "\r")"
+  echo "${ts:-0}"
+}
+
+TMP_PUSH="$(mktemp).png"; TMP_PULL="$(mktemp).png"
+trap 'rm -f "$TMP_PUSH" "$TMP_PULL"' EXIT
+
+# seed agreed state so we don't clobber the clipboard on the first tick
+synced="$(server_get)"
+img_synced_sha=""
+server_get_image "$TMP_PULL" && img_synced_sha="$(sha_of "$TMP_PULL")"
+_t="$(server_head_ts "$ENDPOINT")"; _i="$(server_head_ts "$ENDPOINT_IMG")"
+last_ts=$(( _t > _i ? _t : _i ))
+
+while true; do
+  cur="$(cb_text)"
+  pushed=0
+
+  if [ -n "$cur" ] && [ "$cur" != "$synced" ] && is_text_only; then
+    # ---- PUSH text ----
+    if printf %s "$cur" | curl -fsS -m 10 -X POST \
+          -H "X-Clip-Token: $TOKEN" -H "Content-Type: text/plain; charset=utf-8" \
+          --data-binary @- "$ENDPOINT" >/dev/null 2>&1; then
+      synced="$cur"; last_ts="$(server_head_ts "$ENDPOINT")"; pushed=1
+    fi
+  elif clipboard_is_image; then
+    # ---- PUSH image (if changed) ----
+    if extract_png "$TMP_PUSH"; then
+      sha="$(sha_of "$TMP_PUSH")"
+      if [ -n "$sha" ] && [ "$sha" != "$img_synced_sha" ]; then
+        if curl -fsS -m 20 -X PUT -H "X-Clip-Token: $TOKEN" \
+              -H "Content-Type: image/png" --data-binary @"$TMP_PUSH" "$ENDPOINT_IMG" >/dev/null 2>&1; then
+          img_synced_sha="$sha"; last_ts="$(server_head_ts "$ENDPOINT_IMG")"
+        fi
+      fi
+      pushed=1   # holding an image locally -> never clobber it on a PULL this tick
+    fi
+  fi
+
+  if [ "$pushed" -eq 0 ]; then
+    # ---- PULL: newest slot wins, only if newer than what we last applied ----
+    t="$(server_head_ts "$ENDPOINT")"; i="$(server_head_ts "$ENDPOINT_IMG")"
+    if [ "$i" -gt "$t" ] && [ "$i" -gt "$last_ts" ] && ! cb_targets | grep -qi 'text/uri-list'; then
+      if server_get_image "$TMP_PULL"; then
+        sha="$(sha_of "$TMP_PULL")"
+        [ -n "$sha" ] && [ "$sha" != "$img_synced_sha" ] && { set_png "$TMP_PULL" && img_synced_sha="$sha"; }
+        last_ts=$i
+      fi
+    elif [ "$t" -ge "$i" ] && [ "$t" -gt "$last_ts" ]; then
+      if safe_to_pull; then
+        srv="$(server_get)"
+        if [ -n "$srv" ] && [ "$srv" != "$synced" ] && [ "$srv" != "$cur" ]; then
+          printf %s "$srv" | xclip -selection clipboard -i
+          synced="$srv"
+        fi
+        last_ts=$t
+      fi
+    fi
+  fi
+
+  sleep "$INTERVAL"
+done

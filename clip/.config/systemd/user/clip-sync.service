@@ -1,0 +1,14 @@
+[Unit]
+Description=clip.abaj.ai bidirectional clipboard sync (text+image)
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/clip-sync
+Restart=always
+RestartSec=10
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+Environment=PATH=%h/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

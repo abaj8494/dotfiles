@@ -1,0 +1,20 @@
+#!/bin/bash
+# Edit a clip.abaj.ai named page in $EDITOR (kali: vim; Percy uses nvim).
+set -e
+CLIP_BASE="https://clip.abaj.ai"
+page="${1:-shared}"
+tmpfile=$(mktemp "/tmp/clip-${page}.XXXXXX")
+
+curl -s "${CLIP_BASE}/view/${page}" \
+  | sed -n '/<div id="contentBody"/,/<\/div>/p' \
+  | sed 's/.*id="contentBody"[^>]*>//;s/<\/div>//' \
+  | python3 -c "import sys,html; print(html.unescape(sys.stdin.read()),end='')" \
+  > "$tmpfile"
+
+"${EDITOR:-vim}" "$tmpfile"
+
+if [ -s "$tmpfile" ]; then
+  curl -s -X POST --data-urlencode "body@${tmpfile}" "${CLIP_BASE}/save/${page}"
+  echo "Saved to ${page}"
+fi
+rm -f "$tmpfile"
