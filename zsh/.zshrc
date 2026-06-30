@@ -400,3 +400,7 @@ alias lrc='${EDITOR:-vim} ~/.config/lf/lfrc'
 # --- lattice parity mirror (Samsung Duo, ext4) ---
 export LATTICE="/mnt/lattice-parity/lattice"
 alias lat='cd "$LATTICE" 2>/dev/null || echo "lattice not mounted"'
+
+# --- starship prompt: git-aware, lit-up prompt (config: ~/.config/starship.toml).
+# Kept last so it overrides Kali's stock two-line PROMPT/precmd set up above.
+eval "$(starship init zsh)"

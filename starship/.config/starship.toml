@@ -1,0 +1,21 @@
+# starship prompt — kali (managed via ~/dotfiles, branch: kali)
+# Close to upstream defaults (the git-aware, lit-up prompt). Wired in by
+# `eval "$(starship init zsh)"` at the end of zsh/.zshrc.
+
+add_newline = true
+
+# Default symbol is "❯"; red on the previous command failing.
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol   = "[❯](bold red)"
+
+[directory]
+truncation_length = 4
+truncate_to_repo  = true
+
+[git_branch]
+symbol = " "
+
+# Show ahead/behind/dirty/staged/etc. markers next to the branch.
+[git_status]
+disabled = false
