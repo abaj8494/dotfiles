@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Logout
+GenericName=Log Out
+Comment=Exit the i3/XFCE session (confirms first)
+Exec=/home/adoosh/.local/bin/powermenu logout
+Icon=system-log-out
+Terminal=false
+Categories=System;
+Keywords=logout;log out;exit;session;i3;
+StartupNotify=false

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Restart
+GenericName=Reboot
+Comment=Reboot the machine (confirms first)
+Exec=/home/adoosh/.local/bin/powermenu restart
+Icon=system-reboot
+Terminal=false
+Categories=System;
+Keywords=restart;reboot;reset;
+StartupNotify=false

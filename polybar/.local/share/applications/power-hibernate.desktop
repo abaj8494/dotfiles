@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Hibernate
+GenericName=Hibernate
+Comment=Suspend to disk (systemctl hibernate)
+Exec=/home/adoosh/.local/bin/powermenu hibernate
+Icon=system-hibernate
+Terminal=false
+Categories=System;
+Keywords=hibernate;suspend;disk;s4;
+StartupNotify=false

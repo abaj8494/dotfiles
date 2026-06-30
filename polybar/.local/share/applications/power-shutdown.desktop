@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Shutdown
+GenericName=Power Off
+Comment=Power off the machine (confirms first)
+Exec=/home/adoosh/.local/bin/powermenu shutdown
+Icon=system-shutdown
+Terminal=false
+Categories=System;
+Keywords=shutdown;power off;poweroff;halt;turn off;
+StartupNotify=false

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# powermenu — rofi power menu bound to a click on polybar's power module
-# (the icon to the right of the date). Sleep / Hibernate / Logout / Restart /
-# Shutdown; the disruptive actions confirm first so a stray click is harmless.
+# powermenu — power actions: Sleep / Hibernate / Logout / Restart / Shutdown.
+# The disruptive three (logout/restart/shutdown) confirm first so a stray
+# click/launch is harmless.
+#
+# Usage:
+#   powermenu              show the rofi menu (bound to polybar's power icon)
+#   powermenu <action>     run one action directly, where <action> is one of
+#                          sleep|hibernate|logout|restart|shutdown
+#                          (used by the rofi launcher .desktop entries)
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 rmenu()   { rofi -dmenu -i -p "$1" -theme-str 'window { width: 22%; } listview { lines: 5; }'; }
@@ -11,17 +17,31 @@ confirm() {
         -theme-str 'window { width: 22%; } listview { lines: 2; }')" = "Yes, $1" ]
 }
 
-sel=$(printf '%s\n' \
-    "󰤄  Sleep" \
-    "󰋊  Hibernate" \
-    "󰍃  Logout" \
-    "󰜉  Restart" \
-    "󰐥  Shutdown" | rmenu "Power")
+do_action() {
+    case "$1" in
+        sleep)     systemctl suspend ;;
+        hibernate) systemctl hibernate ;;
+        logout)    confirm "Logout"   && i3-msg exit ;;
+        restart)   confirm "Restart"  && systemctl reboot ;;
+        shutdown)  confirm "Shutdown" && systemctl poweroff ;;
+    esac
+}
 
-case "$sel" in
-    *Sleep*)     systemctl suspend ;;
-    *Hibernate*) systemctl hibernate ;;
-    *Logout*)    confirm "Logout"   && i3-msg exit ;;
-    *Restart*)   confirm "Restart"  && systemctl reboot ;;
-    *Shutdown*)  confirm "Shutdown" && systemctl poweroff ;;
-esac
+action="$1"
+if [ -z "$action" ]; then
+    case "$(printf '%s\n' \
+        "󰤄  Sleep" \
+        "󰋊  Hibernate" \
+        "󰍃  Logout" \
+        "󰜉  Restart" \
+        "󰐥  Shutdown" | rmenu "Power")" in
+        *Sleep*)     action=sleep ;;
+        *Hibernate*) action=hibernate ;;
+        *Logout*)    action=logout ;;
+        *Restart*)   action=restart ;;
+        *Shutdown*)  action=shutdown ;;
+        *)           exit 0 ;;
+    esac
+fi
+
+do_action "$action"

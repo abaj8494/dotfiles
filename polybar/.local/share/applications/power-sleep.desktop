@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Sleep
+GenericName=Suspend
+Comment=Suspend to RAM (systemctl suspend)
+Exec=/home/adoosh/.local/bin/powermenu sleep
+Icon=system-suspend
+Terminal=false
+Categories=System;
+Keywords=sleep;suspend;ram;standby;
+StartupNotify=false
