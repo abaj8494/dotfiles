@@ -1,0 +1,17 @@
+#!/bin/sh
+# Remove the xfce4-panel top bar in this i3 + xfce hybrid session.
+#
+# xfce4-session's failsafe session launches xfce4-panel as a core client
+# (Client2, alongside i3/xfsettingsd/Thunar/xfdesktop). We don't want it —
+# polybar `toph` is the bar here. This autostart helper quits the panel once
+# it appears. It retries for a few seconds because the autostart entry can
+# fire before the panel process exists. The session manager does NOT respawn
+# a cleanly-quit panel, so a single successful quit holds for the session.
+for _ in $(seq 1 20); do
+  if pgrep -x xfce4-panel >/dev/null 2>&1; then
+    xfce4-panel --quit 2>/dev/null
+    sleep 1
+    pgrep -x xfce4-panel >/dev/null 2>&1 || exit 0
+  fi
+  sleep 1
+done

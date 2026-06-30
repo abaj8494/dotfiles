@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Disable xfce4-panel (i3 hybrid)
+Comment=Quit the xfce4-panel top bar at login; polybar `toph` is the bar in this session
+Exec=/home/adoosh/.local/bin/disable-xfce-panel
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+Terminal=false
