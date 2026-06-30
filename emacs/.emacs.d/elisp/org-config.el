@@ -2432,11 +2432,32 @@ No-op once credentials are loaded for the session."
   "When bound to a colorId string, `org-gcal--post-event' tags its payload with it.
 Dynamically `let'-bound around `org-gcal-post-at-point' by the chore pusher.")
 
+(defvar aj/gcal--force-unconditional nil
+  "When non-nil, strip the ETag from `org-gcal--post-event' so its PATCH carries
+no `If-Match' header and overwrites the server event unconditionally.
+
+Bound around chore pushes (`aj/gcal-push-chore-at-point',
+`aj/gcal--prepare-and-post'). These events are org-managed — org is the sole
+authority — so a stale ETag must not abort the push with HTTP 412. The ETag goes
+stale routinely: the recurring carry-forward copies the `:PROPERTIES:' drawer
+(incl. ETag) verbatim while the server event has already advanced, and an
+overlapping open-hook sweep can PATCH the shared event id before this pass's
+writeback lands. With `skip-import' set (the sweep passes it), org-gcal's own 412
+branch is a silent no-op — it neither retries nor refreshes the ETag — so the
+MOVE/update is dropped while `:gcal-synced-date:' is still stamped, hiding the
+failure. Mirrors the etag=nil unconditional delete in `aj/gcal-hide-done-chore'.")
+
 (defun aj/gcal--inject-color-advice (orig-fun &rest args)
-  "Around advice on `org-gcal--post-event': add colorId to the event JSON.
-Active only while `aj/gcal--inject-color' holds a colorId string. Scopes a
-temporary `json-encode' redefinition to this call's dynamic extent so only
-the event payload (the alist carrying a \"summary\" key) is augmented."
+  "Around advice on `org-gcal--post-event' for managed chore pushes.
+When `aj/gcal--force-unconditional' is set, drop the ETag argument so the request
+omits `If-Match' (no HTTP 412 on a stale/carried-forward ETag). When
+`aj/gcal--inject-color' holds a colorId string, scope a temporary `json-encode'
+redefinition to this call so only the event payload (the alist carrying a
+\"summary\" key) is augmented with the colorId."
+  (when (and aj/gcal--force-unconditional (> (length args) 9))
+    ;; ETag is the 10th positional arg of `org-gcal--post-event'.
+    (setq args (copy-sequence args))
+    (setf (nth 9 args) nil))
   (if (not aj/gcal--inject-color)
       (apply orig-fun args)
     (let ((color aj/gcal--inject-color)
@@ -2492,7 +2513,8 @@ same event rather than duplicating it."
           (org-schedule nil date-str)))
       (let ((m (point-marker)))
         (deferred:nextc
-          (let ((aj/gcal--inject-color aj/gcal-chore-color))
+          (let ((aj/gcal--inject-color aj/gcal-chore-color)
+                (aj/gcal--force-unconditional t))
             (org-gcal-post-at-point t))
           (lambda (_) (aj/gcal--stamp-synced-date m date-str) nil)))
       (message "Pushing chore to Google Calendar (red, all-day %s)…" date-str))))
@@ -2616,7 +2638,8 @@ entry is already correctly synced for DATE-STR."
             (let ((aj/gcal-auto-push nil))
               (org-schedule nil date-str))))
         (deferred:nextc
-          (let ((aj/gcal--inject-color aj/gcal-chore-color))
+          (let ((aj/gcal--inject-color aj/gcal-chore-color)
+                (aj/gcal--force-unconditional t))
             (org-gcal-post-at-point t))
           (lambda (_)
             ;; Post landed — record the date the event now sits on so the next
