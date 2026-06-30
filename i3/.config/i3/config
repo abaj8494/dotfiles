@@ -1,0 +1,123 @@
+# i3 config — XFCE + i3 hybrid.
+# xfce4-panel provides the bar/tray, so i3's own bar is intentionally NOT started.
+# Mod key = Super (Windows key).  Caps Lock is handled by keyd (tap=Esc, hold=Ctrl).
+
+set $mod Mod4
+font pango:monospace 9
+
+# Drag floating windows with Mod+mouse
+floating_modifier $mod
+
+# --- launchers ---
+bindsym $mod+Return exec alacritty
+bindsym $mod+d exec --no-startup-id xfce4-appfinder
+bindsym $mod+Shift+q kill
+
+# --- focus (vim hjkl + arrows) ---
+bindsym $mod+h focus left
+bindsym $mod+j focus down
+bindsym $mod+k focus up
+bindsym $mod+l focus right
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
+bindsym $mod+Right focus right
+
+# --- move windows ---
+bindsym $mod+Shift+h move left
+bindsym $mod+Shift+j move down
+bindsym $mod+Shift+k move up
+bindsym $mod+Shift+l move right
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Down move down
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Right move right
+
+# --- split / layout / fullscreen / floating ---
+bindsym $mod+b split h
+bindsym $mod+v split v
+bindsym $mod+f fullscreen toggle
+bindsym $mod+s layout stacking
+bindsym $mod+w layout tabbed
+bindsym $mod+e layout toggle split
+bindsym $mod+Shift+space floating toggle
+# $mod+space retired here -> now opens rofi (see managed block at end). mode_toggle moved to $mod+Tab:
+bindsym $mod+Tab focus mode_toggle
+bindsym $mod+a focus parent
+
+# --- workspaces ---
+bindsym $mod+1 workspace number 1
+bindsym $mod+2 workspace number 2
+bindsym $mod+3 workspace number 3
+bindsym $mod+4 workspace number 4
+bindsym $mod+5 workspace number 5
+bindsym $mod+6 workspace number 6
+bindsym $mod+7 workspace number 7
+bindsym $mod+8 workspace number 8
+bindsym $mod+9 workspace number 9
+bindsym $mod+0 workspace number 10
+bindsym $mod+Shift+1 move container to workspace number 1
+bindsym $mod+Shift+2 move container to workspace number 2
+bindsym $mod+Shift+3 move container to workspace number 3
+bindsym $mod+Shift+4 move container to workspace number 4
+bindsym $mod+Shift+5 move container to workspace number 5
+bindsym $mod+Shift+6 move container to workspace number 6
+bindsym $mod+Shift+7 move container to workspace number 7
+bindsym $mod+Shift+8 move container to workspace number 8
+bindsym $mod+Shift+9 move container to workspace number 9
+bindsym $mod+Shift+0 move container to workspace number 10
+
+# --- session ---
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+r restart
+bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'Exit i3 (this logs out of the XFCE+i3 session)?' -B 'Yes, exit' 'i3-msg exit'"
+
+# --- resize mode ---
+mode "resize" {
+    bindsym h resize shrink width 10 px or 10 ppt
+    bindsym j resize grow height 10 px or 10 ppt
+    bindsym k resize shrink height 10 px or 10 ppt
+    bindsym l resize grow width 10 px or 10 ppt
+    bindsym Left resize shrink width 10 px or 10 ppt
+    bindsym Down resize grow height 10 px or 10 ppt
+    bindsym Up resize shrink height 10 px or 10 ppt
+    bindsym Right resize grow width 10 px or 10 ppt
+    bindsym Return mode "default"
+    bindsym Escape mode "default"
+}
+bindsym $mod+r mode "resize"
+
+# --- background: drop xfdesktop (it tiles itself & owns one root bg), use feh per workspace ---
+exec_always --no-startup-id pkill -x xfdesktop
+exec --no-startup-id $HOME/.local/bin/i3-wallpaper.py
+
+# No `bar {}` block on purpose — xfce4-panel is the panel in this hybrid.
+
+# >>> rofi launcher + clipboard menu (managed: clip parity) >>>
+# Cmd(Super)+Space -> rofi app launcher (overrides the earlier focus mode_toggle)
+bindsym $mod+space exec --no-startup-id rofi -show drun
+# Clipboard menu (clip-menu) is triggered by DOUBLE-TAP ALT via keyd (see /etc/keyd/default.conf),
+# not by an i3 binding — Ctrl+Space conflicts with emacs set-mark / ibus.
+# clipboard sync + history daemons (user services; harmless if already running)
+exec --no-startup-id systemctl --user start greenclip.service clip-sync.service
+# <<< rofi launcher + clipboard menu <<<
+
+# >>> Rosé Pine theme + compositor (managed: kali theming) >>>
+# class                   border  bground text    indicator child_border
+client.focused          #9ccfd8 #1f1d2e #e0def4 #c4a7e7   #9ccfd8
+client.focused_inactive #26233a #1f1d2e #908caa #26233a   #26233a
+client.unfocused        #1f1d2e #191724 #6e6a86 #1f1d2e   #1f1d2e
+client.urgent           #eb6f92 #eb6f92 #191724 #eb6f92   #eb6f92
+client.placeholder      #191724 #191724 #e0def4 #191724   #191724
+client.background       #191724
+
+gaps inner 8
+gaps outer 4
+smart_gaps on
+smart_borders on
+default_border pixel 2
+default_floating_border pixel 2
+
+# compositor: slight see-through + rounded corners + shadow (picom)
+exec --no-startup-id picom --config ~/.config/picom/picom.conf
+# <<< Rosé Pine theme + compositor <<<
