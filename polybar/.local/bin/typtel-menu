@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# typtel polybar menu — clickable, nested rofi menu for charts + inertia config.
+# Charts go through the CLI (`typtel v`); inertia/chart settings are written to the
+# typtel SQLite DB (key/value `settings` table) and applied by restarting the tray
+# (it reads settings at startup). Bound to a polybar click on the `typtel` module.
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$HOME/anaconda3/bin"
+
+DB="$HOME/.local/share/typtel/typtel.db"
+TYPTEL="$HOME/.local/bin/typtel"
+TRAY="$HOME/.local/bin/typtel-tray"
+TERM="alacritty"
+
+rmenu() { rofi -dmenu -i -p "$1" -theme-str 'window { width: 34%; } listview { lines: 9; }'; }
+notify() { notify-send "typtel" "$1" 2>/dev/null; }
+getf()  { sqlite3 "$DB" "SELECT value FROM settings WHERE key='$1';" 2>/dev/null; }
+setf()  { sqlite3 "$DB" "INSERT INTO settings(key,value) VALUES('$1','$2') ON CONFLICT(key) DO UPDATE SET value=excluded.value;" 2>/dev/null; }
+restart_tray() { pkill -x typtel-tray 2>/dev/null; sleep 0.3; setsid -f "$TRAY" >/dev/null 2>&1; }
+
+menu_inertia() {
+    local en max thr acc sel
+    [ "$(getf inertia_enabled)" = "true" ] && en="on" || en="off"
+    max=$(getf inertia_max_speed); max=${max:-fast}
+    thr=$(getf inertia_threshold); thr=${thr:-200}
+    acc=$(getf inertia_accel_rate); acc=${acc:-1.0}
+    sel=$(printf '%s\n' \
+        "$([ "$en" = on ] && echo 'Disable inertia (currently ON)' || echo 'Enable inertia (currently OFF)')" \
+        "Max speed   ▸  [$max]" \
+        "Threshold   ▸  [${thr}ms]" \
+        "Acceleration ▸  [${acc}x]" \
+        "‹ back" | rmenu "Inertia")
+    case "$sel" in
+        Enable*)  setf inertia_enabled true;  restart_tray; notify "Inertia enabled" ;;
+        Disable*) setf inertia_enabled false; restart_tray; notify "Inertia disabled" ;;
+        "Max speed"*)
+            v=$(printf 'ultra_fast\nvery_fast\npretty_fast\nfast\nmedium\nslow\n' | rmenu "Max speed")
+            [ -n "$v" ] && { setf inertia_max_speed "$v"; restart_tray; notify "Max speed: $v"; } ;;
+        "Threshold"*)
+            v=$(printf '100\n150\n200\n250\n350\n' | rmenu "Threshold (ms)")
+            [ -n "$v" ] && { setf inertia_threshold "$v"; restart_tray; notify "Threshold: ${v}ms"; } ;;
+        "Acceleration"*)
+            v=$(printf '0.25\n0.5\n1.0\n1.5\n2.0\n' | rmenu "Acceleration rate")
+            [ -n "$v" ] && { setf inertia_accel_rate "$v"; restart_tray; notify "Acceleration: ${v}x"; } ;;
+        "‹ back") main_menu ;;
+    esac
+}
+
+main_menu() {
+    local kt sel
+    [ "$(getf show_key_types)" = "true" ] && kt="on" || kt="off"
+    sel=$(printf '%s\n' \
+        "View charts (browser)" \
+        "Dashboard (TUI)" \
+        "Typing test" \
+        "Inertia ▸" \
+        "Toggle key-type charts  [$kt]" \
+        "Push status" | rmenu "typtel — $(typtel today 2>/dev/null) today")
+    case "$sel" in
+        "View charts"*) setsid -f "$TYPTEL" v >/dev/null 2>&1 ;;
+        "Dashboard"*)   setsid -f "$TERM" -e "$TYPTEL" >/dev/null 2>&1 ;;
+        "Typing test"*) setsid -f "$TERM" -e "$TYPTEL" test >/dev/null 2>&1 ;;
+        "Inertia"*)     menu_inertia ;;
+        "Toggle key-type"*)
+            [ "$kt" = on ] && setf show_key_types false || setf show_key_types true
+            notify "Key-type charts: $([ "$kt" = on ] && echo off || echo on)" ;;
+        "Push status"*) notify "$("$TYPTEL" push status 2>&1 | head -6)" ;;
+    esac
+}
+
+main_menu
