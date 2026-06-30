@@ -1,0 +1,10 @@
+#!/bin/sh
+# Theme the xfce4-panel (top bar) to Rosé Pine base + slight transparency.
+# Re-runnable; picom composites the alpha so the panel is gently see-through.
+C=xfce4-panel
+xfconf-query -c $C -p /panels/dark-mode -s true --create -t bool
+xfconf-query -c $C -p /panels/panel-1/background-style -s 1 --create -t int
+# Rosé Pine base #191724 = rgb(25,23,36)/255, alpha 0.92
+xfconf-query -c $C -p /panels/panel-1/background-rgba --create \
+    -t double -s 0.098 -t double -s 0.090 -t double -s 0.141 -t double -s 0.92
+xfce4-panel -r 2>/dev/null || true
