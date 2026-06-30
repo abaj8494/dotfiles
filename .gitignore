@@ -87,3 +87,6 @@ gh/.config/gh/hosts.yml
 # =============================================================================
 inquiry*.txt
 emacs/.emacs.d/savehist
+
+# untracked secrets (sourced by .zshrc)
+zsh/.config/zsh/secrets.zsh

@@ -209,8 +209,9 @@ export PATH=~/.bun/bin:$PATH
 export PATH=$PATH:/opt/homebrew/share/android-commandlinetools/platform-tools
 
 # JobSync Email Sync Configuration
-export JOBSYNC_API_KEY="***REMOVED***"
+# JOBSYNC_API_KEY is sourced from an untracked secrets.zsh (see secrets.zsh.example) — never inline secrets
 export JOBSYNC_API_URL="http://localhost:3000/api/email-sync"
+[ -f "${ZDOTDIR:-$HOME}/secrets.zsh" ] && source "${ZDOTDIR:-$HOME}/secrets.zsh"
 
 unalias z
 # never record ~/Documents in zoxide — it's deprecated in favour of ~/lattice (the
