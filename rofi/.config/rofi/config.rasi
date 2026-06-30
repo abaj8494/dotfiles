@@ -13,6 +13,12 @@ configuration {
     terminal:            "alacritty";
     kb-cancel:           "Escape";
     sidebar-mode:        true;
+
+    /* cycle tabs (modi) with Alt+f / Alt+b. Freed from move-word (kept on Ctrl+Left/Right). */
+    kb-move-word-forward: "Control+Right";
+    kb-move-word-back:    "Control+Left";
+    kb-mode-next:         "Alt+f,Shift+Right,Control+Tab";
+    kb-mode-previous:     "Alt+b,Shift+Left,Control+ISO_Left_Tab";
 }
 
 * {
