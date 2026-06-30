@@ -1,260 +1,102 @@
-set cleaner ~/.config/lf/clean
-set previewer ~/.config/lf/preview
+# lf config — kali  (managed via ~/dotfiles, branch: kali)
+# Ported from Percy's lfrc, adapted for Linux:
+#   trash:  macOS osascript  -> trash-cli (trash-put/trash-empty/trash-restore)
+#   clip:   pbcopy           -> xclip (X11), with OSC52 fallback
+#   open:   open -a App      -> xdg-open / brave-browser
+#   paths:  ~/Google Drive   -> kali paths + lattice parity mount
 
-
-set ifs "\n"
-
-set hidden true
-
-# from default rc
 set shell sh
-#set shellopts '-eu'
-#set ifs "\n"
-
+set ifs "\n"
+set hidden true
 set icons
-#set dircounts
+set drawbox
+set scrolloff 5
+set previewer ~/.config/lf/preview.sh
+
+# --- navigation helpers ---------------------------------------------------
 map ff $lf -remote "send $id select \"$(fzf)\""
 map ss &tmux split-window -h lf
 map s- &tmux split-window -v lf
 
-cmd zip ${{
-	zip -r "$f".zip "$f"
-}}
+# --- archives -------------------------------------------------------------
+cmd zip ${{ zip -r "$f".zip "$f" }}
 cmd tar %tar cvf "$f.tar" "$f"
-cmd unzip ${{
-	unzip "$f"
-}}
+cmd unzip ${{ unzip "$f" }}
 
-cmd wall ${{
-	wallpaper set "$f"
-}}
+# --- create ---------------------------------------------------------------
+cmd mkdir ${{ printf "Directory name: "; read ans; mkdir -p -- "$ans" }}
+cmd mkfile ${{ printf "File name: "; read ans; : > "$ans" }}
 
-cmd mkdir ${{
-	printf "Directory name: "
-	read ans
-	mkdir "$ans"
-}}
-
-cmd mkfile ${{
-	printf "File name: "
-	read ans
-	touch "$ans"
-}}
-
-
+# --- trash (trash-cli) ----------------------------------------------------
 cmd trash ${{
   printf '%s\n' "$fx" | while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    [ -e "$p" ] || { printf 'trash: missing: %s\n' "$p" >&2; continue; }
-
-    /usr/bin/osascript - "$p" <<'APPLESCRIPT'
-on run argv
-  set p to item 1 of argv
-  set a to (POSIX file p) as alias
-  tell application "Finder"
-    delete a
-  end tell
-end run
-APPLESCRIPT
+    [ -n "$p" ] && trash-put -- "$p"
   done
 }}
-
-
-cmd restore_trash ${{
-  printf '%s\n' "$fx" | while IFS= read -r p; do
-    [ -n "$p" ] && command trash-putback "$p"
-  done
-}}
-
-# --- Empty Trash (with confirmation) ---
 cmd clear_trash ${{
-  printf "Empty macOS Trash? This is permanent. [y/N] "
+  printf "Empty trash? This is permanent. [y/N] "
   read ans
-  case "$ans" in
-    y|Y)
-      /usr/bin/osascript -e 'tell application "Finder" to empty the trash'
-      ;;
-  esac
+  case "$ans" in y|Y) trash-empty -f ;; esac
 }}
+cmd restore_trash ${{ trash-restore }}
 
-
-cmd brave ${{
-	open -a "Google Chrome.app" "$f"
-}}
-
-cmd open_selected ${{
-    echo "$fs" | xargs -I{} open -a "Brave Browser Beta.app" {}
-}}
-
-
+# --- yank path to clipboard (xclip on X11, OSC52 fallback) ----------------
 cmd yank-path ${{
-    if command -v pbcopy >/dev/null 2>&1; then
-        printf '%s' "$fx" | pbcopy
-    else
-        data=$(printf '%s' "$fx" | base64 | tr -d '\n')
-        if [ -n "$TMUX" ]; then
-            printf '\ePtmux;\e\e]52;c;%s\a\e\\' "$data" > /dev/tty
-        else
-            printf '\e]52;c;%s\a' "$data" > /dev/tty
-        fi
-    fi
-    lf -remote "send $id echo \"Copied: $fx\""
-}}
-cmd yank-filepath &{{
-    if command -v pbcopy >/dev/null 2>&1; then
-        printf '%s' "$f" | pbcopy
-    else
-        data=$(printf '%s' "$f" | base64 | tr -d '\n')
-        if [ -n "$TMUX" ]; then
-            printf '\ePtmux;\e\e]52;c;%s\a\e\\' "$data" > /dev/tty
-        else
-            printf '\e]52;c;%s\a' "$data" > /dev/tty
-        fi
-    fi
-    lf -remote "send $id echo \"Copied: $f\""
-}}
-# the below 2 do not work as the head command on osx cannot handle negative
-# values. you will need to use some text manipulation trickery with tail / sed 
-# / awk to get this to work. nffs.
-#cmd yank-dirname $dirname -- "$f" | head -c-1 | pbcopy
-#cmd yank-basename $basename -a -- $fx | head -c-1 | pbcopy
-
-
-# --- colour the current file/dir from inside lf ---------------------------
-# Pick a colour, write a full-path rule into ~/.config/lf/colors for the
-# selection, then relaunch lf in place (via the `lc` wrapper) so it shows at
-# once. lf only reads the colours file at startup, so there is no live reload —
-# launched bare (not via `lc`) this just saves and you restart lf yourself.
-cmd setcolor ${{
-    colors="$HOME/.config/lf/colors"
-    name=$(printf '%s\n' red orange yellow green cyan blue purple magenta white grey remove "custom…" \
-        | gum filter --header "Colour for $(basename -- "$f"):" --placeholder "type to filter…") || exit 0
-    [ -n "$name" ] || exit 0
-    case "$name" in
-        red)     code='01;38;5;196' ;;
-        orange)  code='01;38;5;208' ;;
-        yellow)  code='01;38;5;226' ;;
-        green)   code='01;38;5;46'  ;;
-        cyan)    code='01;38;5;51'  ;;
-        blue)    code='01;38;5;33'  ;;
-        purple)  code='01;38;5;141' ;;
-        magenta) code='01;38;5;201' ;;
-        white)   code='01;38;5;231' ;;
-        grey)    code='01;38;5;244' ;;
-        remove)  code='' ;;
-        *)       code=$(gum input --placeholder 'ANSI e.g. 01;38;2;255;140;0') || exit 0 ;;
-    esac
-
-    [ -f "$colors" ] || : > "$colors"
-    printf '%s\n' "$fx" | while IFS= read -r target; do
-        [ -n "$target" ] || continue
-        case "$target" in
-            "$HOME"/*) pat="~${target#"$HOME"}" ;;
-            *)         pat="$target" ;;
-        esac
-        tmp=$(mktemp)
-        awk -v p="$pat" '$1==p{next}{print}' "$colors" > "$tmp"
-        [ -n "$code" ] && printf '%s\t%s\n' "$pat" "$code" >> "$tmp"
-        mv "$tmp" "$colors"
-    done
-
-    if [ -n "$LF_RELAUNCH" ]; then
-        : > "$LF_RELAUNCH"
-        lf -remote "send $id quit"
-    else
-        lf -remote "send $id echo Colour saved — restart lf to apply."
-    fi
+  if command -v xclip >/dev/null 2>&1; then
+    printf '%s' "$fx" | xclip -selection clipboard
+  else
+    data=$(printf '%s' "$fx" | base64 | tr -d '\n')
+    printf '\033]52;c;%s\a' "$data" > /dev/tty
+  fi
+  lf -remote "send $id echo Copied: $fx"
 }}
 
+# --- openers --------------------------------------------------------------
+cmd open &{{ setsid -f xdg-open "$f" >/dev/null 2>&1 }}
+cmd brave &setsid -f brave-browser "$f" >/dev/null 2>&1
+
+# --- clear defaults we re-map --------------------------------------------
 map m
 map o
 map n
 map "'"
 map '"'
-map c setcolor
+map c
 map e
 map f
 
-# File Openers
+# --- file actions ---------------------------------------------------------
 map e $$EDITOR "$f"
 map E $$EDITOR -R "$f"
-map l $view "$f"
 map u unzip
-
-# Open in sioyek (mirrors V in Emacs dired)
-cmd sioyek &sioyek "$f"
-map V sioyek
-
-# Archive Mappings
 map az zip
 map at tar
-
-# Trash Mappings
 map DD trash
-map Tc clear_trash
-map Tr restore_trash
-
-
-map TT tag-toggle
-map N :set sortby natural; set info; set reverse!
-map R :set sortby time; set info time; set reverse!
-map sS :set sortby size; set info size
+map tr restore_trash
+map tc clear_trash
+map T tag-toggle
 map t open
+map o brave
 map . set hidden!
-map DdD delete
 map p paste
 map x cut
 map y copy
-map <enter> shell
-map mf mkfile
-map mr sudomkfile
 map md mkdir
-map ms $mkscript
-map o brave
-map O open_selected
+map mf mkfile
 map r rename
-map R reload
-map C clear
 map { half-up
 map } half-down
-map w wall
-
-# --- Lattice (PARA) navigation ---
-map gl cd "~/lattice"
-map g0 cd "~/lattice/0-inbox"
-map g1 cd "~/lattice/1-projects"
-map g2 cd "~/lattice/2-areas"
-map g3 cd "~/lattice/3-resources"
-map g4 cd "~/lattice/4-archive"
-map gp cd "~/lattice/3-resources/past-papers"
-map gt cd "~/lattice/2-areas/teaching"
-map gn cd "~/lattice/notes"
-map gC cd "~/lattice/code"
-
-# Custom Directories (re-pointed at the lattice overlay)
-map gH cd "~"
-map gW cd "~/Downloads"
-map gD cd "~/Documents"
-map gdf cd "~/lattice/2-areas/finance/beancount/ledger/"
-map gdu cd "~/lattice/4-archive/uni"
-map gds cd "~/lattice/code/sites/new-site"
-map gdc cd "~/lattice/code/shared"
-map gsc cd "~/lattice/notes"
-map gcf cd "~/lattice/notes/flashcards"
-map gdd cd "~/lattice/3-resources/doc"
-map gm cd "~/Music"
-map gua cd "~"
-map g.c cd "~/.config"
-map g.T cd "~/.Trash/"
-map g.s cd "~/.scripts"
-map g.l cd "~/.local"
-map gre cd "/etc"
-map gru cd "/usr"
-map grv cd "/Volumes/"
-map grb cd "/bin"
-map grr cd "/"
-
-
-# Path
 map Y yank-path
-map Yf yank-filepath
+
+# --- kali cd shortcuts ----------------------------------------------------
+map gh   cd ~
+map g.c  cd ~/.config
+map g.d  cd ~/dotfiles
+map g.l  cd ~/.local
+map gla  cd /mnt/lattice-parity/lattice
+map gdn  cd ~/Downloads
+map gdo  cd ~/Documents
+map gre  cd /etc
+map gru  cd /usr
+map grb  cd /bin
+map grr  cd /
