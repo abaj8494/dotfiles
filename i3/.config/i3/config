@@ -122,22 +122,6 @@ default_floating_border pixel 2
 exec --no-startup-id picom --config ~/.config/picom/picom.conf
 # <<< Rosé Pine theme + compositor <<<
 
-# >>> our own bottom bar (i3bar + i3status, Rosé Pine) >>>
-bar {
-    position bottom
-    status_command i3status -c ~/.config/i3status/config
-    font pango:MesloLGS NF 10
-    tray_output none
-    separator_symbol "|"
-    colors {
-        background #191724
-        statusline #e0def4
-        separator  #403d52
-        focused_workspace  #9ccfd8 #9ccfd8 #191724
-        active_workspace   #26233a #26233a #e0def4
-        inactive_workspace #1f1d2e #1f1d2e #6e6a86
-        urgent_workspace   #eb6f92 #eb6f92 #191724
-        binding_mode       #c4a7e7 #c4a7e7 #191724
-    }
-}
+# >>> our own bottom bar (polybar `toph`, Rosé Pine — ported from rpi) >>>
+exec_always --no-startup-id ~/.config/polybar/launch_polybar.sh
 # <<< our own bottom bar <<<
