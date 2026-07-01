@@ -12,8 +12,8 @@
 (defun my/yank-file-path ()
   "Copy the full path of the current file to the clipboard.
 In dired, copies the path of the file at point.  On the `.' entry it
-copies the basename of the current directory; on `..' it copies the
-basename of the parent directory."
+copies the full path of the current directory; on `..' it copies the
+full path of the parent directory."
   (interactive)
   (cond
    (buffer-file-name
@@ -26,13 +26,11 @@ basename of the parent directory."
        ((null name)
         (message "No file on this line"))
        ((string= name ".")
-        (setq copied (file-name-nondirectory
-                      (directory-file-name (dired-current-directory)))))
+        (setq copied (directory-file-name (dired-current-directory))))
        ((string= name "..")
-        (setq copied (file-name-nondirectory
-                      (directory-file-name
-                       (file-name-directory
-                        (directory-file-name (dired-current-directory)))))))
+        (setq copied (directory-file-name
+                      (file-name-directory
+                       (directory-file-name (dired-current-directory))))))
        (t
         (setq copied (dired-get-filename nil t))))
       (when copied
