@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# eject-status — polybar custom/script source for the eject module.
+# Prints the eject glyph (nf-fa-eject, wrapped in the T2 font tag) ONLY when a
+# removable drive is mounted; prints nothing otherwise, so polybar hides the
+# module when there's nothing to eject. Polled by polybar on an interval.
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+for d in $(lsblk -dno NAME 2>/dev/null); do
+  dev="/dev/$d"
+  [ "$(lsblk -dno RM "$dev" 2>/dev/null)" = 1 ] || continue          # removable only
+  mnt=$(lsblk -rno MOUNTPOINT "$dev" 2>/dev/null | grep -vE '^$' | head -1)
+  [ -n "$mnt" ] && { printf '%%{T2}%%{T-}\n'; exit 0; }        # something mounted -> show
+done
+# nothing to eject -> no output -> polybar hides the module
