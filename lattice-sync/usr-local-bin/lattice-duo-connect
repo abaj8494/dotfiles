@@ -1,18 +1,32 @@
 #!/bin/sh
 # Triggered by udev (via systemd-run) when the lattice-parity Duo is plugged in.
-# NON-DESTRUCTIVE: mounts the Duo and notifies the desktop. Does NOT sync;
-# the user runs `lattice-sync` explicitly to do the guarded 2-way Unison.
+# Mounts the Duo, then offers (zenity, in the user session) to PULL Percy's
+# lattice onto it — one-way mirror, LAN-first / Tailscale-fallback, with the
+# estimated data impact shown before anything transfers (see lattice-pull).
+# The offer is opt-in; declining does nothing. The guarded 2-way Unison
+# workflow (`lattice-sync`) still exists for manual bidirectional syncs.
 DUO_UUID=70c0e587-2c6e-4a92-8242-b81d079f83d5
 MNT=/mnt/lattice-parity
 USER_NAME=adoosh
 UID_N=$(id -u "$USER_NAME" 2>/dev/null || echo 1000)
+PULL="/home/$USER_NAME/.local/bin/lattice-pull"
 
 mkdir -p "$MNT"
 mountpoint -q "$MNT" || mount "/dev/disk/by-uuid/$DUO_UUID" "$MNT" 2>/dev/null
 chown "$USER_NAME":"$USER_NAME" "$MNT" 2>/dev/null || true
 
-runuser -u "$USER_NAME" -- env \
-    DISPLAY=:0 \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_N/bus" \
-    notify-send -u normal "Lattice Duo connected" \
-        "Mounted at $MNT. Run  lattice-sync  to 2-way sync with Percy." 2>/dev/null || true
+if [ -x "$PULL" ]; then
+    # Foreground (not backgrounded): keep the systemd-run scope alive for the
+    # whole prompt+transfer. udev isn't blocked (the rule uses --no-block).
+    runuser -u "$USER_NAME" -- env \
+        DISPLAY=:0 \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_N/bus" \
+        XDG_RUNTIME_DIR="/run/user/$UID_N" \
+        "$PULL" >/dev/null 2>&1 || true
+else
+    runuser -u "$USER_NAME" -- env \
+        DISPLAY=:0 \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_N/bus" \
+        notify-send -u normal "Lattice Duo connected" \
+            "Mounted at $MNT. (lattice-pull not installed — run lattice-sync manually.)" 2>/dev/null || true
+fi

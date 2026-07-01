@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# lattice-pull — pull Percy's ~/lattice onto the Duo so the USB holds a working
+# copy of Percy. One-way MIRROR (Percy -> Duo). LAN-first (192.168.1.100),
+# Tailscale fallback (percival). Shows a zenity confirm with the estimated data
+# impact before transferring anything. Invoked from lattice-duo-connect when the
+# Duo is plugged in; also runnable by hand.
+#
+# Safe posture (matches the 2-way lattice-sync): refuses unless Percy's lattice
+# sentinel (_meta) is present, and keeps anything replaced/deleted in a dated
+# backup dir on the Duo. This is a pull only — it never writes to Percy.
+set -u
+
+PERCY_USER=aayushbajaj
+PERCY_LAN=192.168.1.100
+PERCY_TS=percival                       # tailscale MagicDNS name (fallback)
+REMOTE=lattice                          # Percy:~/lattice
+DUO=/mnt/lattice-parity
+DEST="$DUO/lattice"
+EXCLUDES="$HOME/.config/lattice-sync/excludes.txt"
+SSH="ssh -o BatchMode=yes -o ConnectTimeout=6 -o StrictHostKeyChecking=accept-new"
+RSYNC_OPTS=(-rlptD --no-owner --no-group --delete --exclude-from="$EXCLUDES")
+
+notify() { notify-send "Lattice pull" "$1" 2>/dev/null || true; printf '%s\n' "$1"; }
+die()    { notify "$1"; zenity --error --title="Lattice pull" --text="$1" 2>/dev/null || true; exit 1; }
+
+# 0. Duo mounted?
+mountpoint -q "$DUO" || die "Duo not mounted at $DUO — plug it in first."
+[ -f "$EXCLUDES" ] || die "Excludes file missing: $EXCLUDES"
+
+# 1. Pick transport: LAN first, then Tailscale.
+HOST=""; LABEL=""
+for cand in "$PERCY_LAN:LAN" "$PERCY_TS:Tailscale"; do
+  h=${cand%%:*}; l=${cand##*:}
+  if $SSH "$PERCY_USER@$h" true 2>/dev/null; then HOST=$h; LABEL=$l; break; fi
+done
+[ -n "$HOST" ] || die "Percy unreachable over LAN or Tailscale — is percival awake?"
+
+# 2. Sentinel guard: Percy's lattice must be non-empty (has _meta), so a broken
+#    source can't drive the --delete mirror and wipe the Duo.
+$SSH "$PERCY_USER@$HOST" 'test -n "$(ls -A ~/lattice/_meta 2>/dev/null)"' \
+  || die "Percy's lattice sentinel (_meta) missing/empty over $LABEL — aborting."
+
+# 3. Estimate data impact via an rsync dry-run (capped; a first full pull can be
+#    slow to enumerate). "Total transferred file size" == what would move.
+notify "Checking data impact over $LABEL…"
+mkdir -p "$DEST"
+bytes=$(timeout 150 rsync -n --stats "${RSYNC_OPTS[@]}" -e "$SSH" \
+          "$PERCY_USER@$HOST:$REMOTE/" "$DEST/" 2>/dev/null \
+        | awk -F': *' '/Total transferred file size/{gsub(/[^0-9]/,"",$2); print $2}')
+if [ -z "${bytes:-}" ]; then
+  human="unknown (large — estimate timed out)"
+elif [ "$bytes" -eq 0 ] 2>/dev/null; then
+  notify "Duo is already up to date with Percy."
+  zenity --info --title="Lattice pull" --text="The Duo is already up to date with Percy's lattice." 2>/dev/null || true
+  exit 0
+else
+  human="$(numfmt --to=iec "$bytes" 2>/dev/null || echo "$bytes")B"
+fi
+
+# 4. Confirm, showing the estimate.
+zenity --question --title="Pull Percy's lattice" \
+  --ok-label="Pull now" --cancel-label="Not now" \
+  --text="Pull Percy's lattice onto the Duo?
+
+Source:  percival  (${LABEL})
+Estimated data impact:  <b>${human}</b>" 2>/dev/null \
+  || { notify "Pull declined."; exit 0; }
+
+# 5. Pull for real, with a progress bar; replaced/deleted files kept as backup.
+BACKUP="$DUO/.lattice-pull-backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP"
+notify "Pulling Percy's lattice over $LABEL…"
+tmpst=$(mktemp)
+(
+  rsync "${RSYNC_OPTS[@]}" --backup --backup-dir="$BACKUP" --info=progress2 \
+        -e "$SSH" "$PERCY_USER@$HOST:$REMOTE/" "$DEST/"
+  echo $? > "$tmpst"
+  echo " 100%"                          # ensure the zenity bar reaches 100 & closes
+) 2>&1 | tr '\r' '\n' | sed -u -n 's/.* \([0-9]\{1,3\}\)%.*/\1/p' \
+  | zenity --progress --title="Pulling Percy's lattice ($LABEL)" \
+           --text="Transferring from percival over $LABEL…" \
+           --percentage=0 --auto-close --no-cancel 2>/dev/null
+
+rc=$(cat "$tmpst" 2>/dev/null || echo 1); rm -f "$tmpst"
+rmdir "$BACKUP" 2>/dev/null              # drop the backup dir if nothing was replaced
+if [ "$rc" = 0 ]; then
+  notify "Lattice pull complete (${human} over ${LABEL})."
+  zenity --info --title="Lattice pull" --text="Done — Percy's lattice pulled onto the Duo (${human}, ${LABEL})." 2>/dev/null || true
+else
+  die "Lattice pull failed (rsync exit ${rc}). Partial data may be on the Duo; nothing on Percy was touched."
+fi
