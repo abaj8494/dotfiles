@@ -66,26 +66,39 @@ Source:  percival  (${LABEL})
 Estimated data impact:  <b>${human}</b>" 2>/dev/null \
   || { notify "Pull declined."; exit 0; }
 
-# 5. Pull for real, with a progress bar; replaced/deleted files kept as backup.
+# 5. Pull for real. Progress is shown as ONE notification that updates in place
+#    (top-right, via xfce4-notifyd) rather than a floating zenity window — so it
+#    stays out of the way and sits behind whatever you're working in. Throttled
+#    to ~1/s so it doesn't spam. Replaced/deleted files are kept as backup.
 BACKUP="$DUO/.lattice-pull-backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP"
-notify "Pulling Percy's lattice over $LABEL…"
+SYNC=x-canonical-private-synchronous:lattice-pull   # collapse updates into one bubble
+NID=$(notify-send -p -t 0 -a Lattice -h "string:$SYNC" \
+        "Pulling Percy's lattice ($LABEL)" "Starting…" 2>/dev/null)
+note() { notify-send ${NID:+-r "$NID"} -a Lattice -h "string:$SYNC" "$@" 2>/dev/null || true; }
+
 tmpst=$(mktemp)
 (
   rsync "${RSYNC_OPTS[@]}" --backup --backup-dir="$BACKUP" --info=progress2 \
         -e "$SSH" "$PERCY_USER@$HOST:$REMOTE/" "$DEST/"
   echo $? > "$tmpst"
-  echo " 100%"                          # ensure the zenity bar reaches 100 & closes
-) 2>&1 | tr '\r' '\n' | sed -u -n 's/.* \([0-9]\{1,3\}\)%.*/\1/p' \
-  | zenity --progress --title="Pulling Percy's lattice ($LABEL)" \
-           --text="Transferring from percival over $LABEL…" \
-           --percentage=0 --auto-close --no-cancel 2>/dev/null
+) 2>&1 | tr '\r' '\n' | { last=0; while IFS= read -r line; do
+    case "$line" in *%*)
+      now=$(date +%s); [ $((now - last)) -ge 1 ] || continue; last=$now
+      pct=$(printf '%s' "$line" | grep -oE '[0-9]+%' | tr -d '%' | tail -1)
+      body=$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]{2,}/  ·  /g')
+      [ -n "$pct" ] && note -t 0 ${pct:+-h "int:value:$pct"} \
+        "Pulling Percy's lattice ($LABEL)" "$body" ;;
+    esac
+  done; }
 
 rc=$(cat "$tmpst" 2>/dev/null || echo 1); rm -f "$tmpst"
 rmdir "$BACKUP" 2>/dev/null              # drop the backup dir if nothing was replaced
 if [ "$rc" = 0 ]; then
-  notify "Lattice pull complete (${human} over ${LABEL})."
-  zenity --info --title="Lattice pull" --text="Done — Percy's lattice pulled onto the Duo (${human}, ${LABEL})." 2>/dev/null || true
+  note -t 6000 "Lattice pull complete" "${human} over ${LABEL}  ✓"
+  printf '%s\n' "Lattice pull complete (${human} over ${LABEL})."
 else
-  die "Lattice pull failed (rsync exit ${rc}). Partial data may be on the Duo; nothing on Percy was touched."
+  note -u critical -t 0 "Lattice pull FAILED" "rsync exit ${rc}. Nothing on Percy was touched."
+  printf '%s\n' "Lattice pull failed (rsync exit ${rc})."
+  exit 1
 fi
