@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # keyboard-switch.sh — Swap aerospace preset, karabiner profile, and macOS keyboard layout
-# in lockstep with the ZSA Moonlander plug state. Driven by ~/.hammerspoon/init.lua.
+# in lockstep with the active input source. Driven by ~/.hammerspoon/init.lua, which
+# resolves the mode from the ZSA Moonlander plug state and the RustDesk session state
+# (a live RustDesk session forces "laptop"/Dvorak even while the Moonlander is docked).
+#
+#   moonlander → qwerty / debug / Australian   (Moonlander firmware speaks Dvorak itself)
+#   laptop     → dvorak / bajaj / dvorak-nude  (bare laptop, or a remote RustDesk keyboard)
 #
 # Usage: keyboard-switch.sh {moonlander|laptop}
 

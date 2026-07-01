@@ -2,12 +2,19 @@
 -- so future config reloads can be triggered from the terminal.
 hs.allowAppleScript(true)
 
--- ZSA Moonlander auto-switch
--- When the Moonlander connects/disconnects (typically via the dock), flip:
---   aerospace preset (dvorak <-> qwerty)
---   karabiner profile (bajaj <-> debug)
---   macOS keyboard layout (dvorak-nude <-> Australian)
--- All three swaps live in ~/dotfiles/scripts/keyboard-switch.sh.
+-- Keyboard layout auto-switch
+-- Two independent signals decide the active keyboard "mode":
+--   * ZSA Moonlander plug state (USB) — its firmware emits Dvorak itself, so
+--     while it's docked the OS must sit in QWERTY/Australian/debug passthrough.
+--   * RustDesk incoming session — keystrokes then arrive from a *remote*
+--     keyboard, so this Mac must be in Dvorak/bajaj/dvorak-nude no matter what
+--     is physically plugged in locally.
+-- RustDesk wins: an active remote session forces Dvorak even while the
+-- Moonlander is docked. Precedence, highest first:
+--   1. RustDesk session active        → "laptop"     (dvorak / bajaj / dvorak-nude)
+--   2. Moonlander attached, no remote  → "moonlander" (qwerty / debug / Australian)
+--   3. Neither (bare laptop)           → "laptop"
+-- The three concrete swaps live in ~/dotfiles/scripts/keyboard-switch.sh.
 
 local MOONLANDER_VENDOR  = 12951  -- 0x3297, ZSA Technology Labs
 local MOONLANDER_PRODUCT = 6505   -- 0x1969, Moonlander Mark I
@@ -34,18 +41,138 @@ local function moonlanderAttached()
   return false
 end
 
+-- RustDesk spawns a `RustDesk --cm` (connection-manager) helper for the
+-- duration of an active *incoming* session; it exits when the remote peer
+-- disconnects. pgrep'ing it gives us the connect/disconnect edge that RustDesk
+-- otherwise offers no hook for.
+--
+-- The `[R]` is the classic grep self-exclusion trick: hs.execute runs this via
+-- `sh -c`, whose own command line literally contains the pattern string — a
+-- plain `RustDesk --cm` pattern would match that shell and report a phantom
+-- session forever. The regex `[R]ustDesk` matches a real `RustDesk` process but
+-- not the literal `[R]ustDesk` text in the matcher's own argv.
+local function rustdeskConnected()
+  local _, ok = hs.execute("/usr/bin/pgrep -f '[R]ustDesk --cm' >/dev/null 2>&1")
+  return ok == true
+end
+
+-- ── Keyboard mode ──────────────────────────────────────────────────────────
+-- Only fires the (relatively heavy) switch script when the resolved mode
+-- actually changes, so repeated polls are cheap no-ops.
+local lastKeyboardMode = nil
+local function reconcileKeyboard(rd)
+  local mode
+  if rd then mode = "laptop"                       -- remote keyboard → Dvorak/bajaj
+  elseif moonlanderAttached() then mode = "moonlander"
+  else mode = "laptop" end
+  if mode ~= lastKeyboardMode then
+    lastKeyboardMode = mode
+    runSwitch(mode)
+  end
+end
+
+-- ── Audio routing ──────────────────────────────────────────────────────────
+-- RustDesk switches the Mac's default audio to BlackHole the instant a session
+-- connects (so it can capture system sound), which means "capture the previous
+-- device" is unreliable — by the time we poll, the original is already gone.
+-- So the revert target is explicit: drive Output+Input to BlackHole on connect,
+-- back to the Scarlett on disconnect.
+local BLACKHOLE        = "BlackHole 2ch"
+local AUDIO_NORMAL_OUT = "Scarlett Solo USB"
+local AUDIO_NORMAL_IN  = "Scarlett Solo USB"
+
+local function setDefaultAudio(name, isOutput)
+  local d = hs.audiodevice.findDeviceByName(name)
+  if not d then
+    hs.notify.new({ title = "RustDesk audio", informativeText = "device not found: " .. name }):send()
+    return false
+  end
+  return isOutput and d:setDefaultOutputDevice() or d:setDefaultInputDevice()
+end
+
+local function rustdeskAudioConnect()
+  setDefaultAudio(BLACKHOLE, true)
+  setDefaultAudio(BLACKHOLE, false)
+end
+
+local function rustdeskAudioDisconnect()
+  setDefaultAudio(AUDIO_NORMAL_OUT, true)
+  setDefaultAudio(AUDIO_NORMAL_IN, false)
+end
+
+-- ── Edge dispatch ──────────────────────────────────────────────────────────
+local rustdeskWasActive = nil
+local function reconcileAudio(rd)
+  if rustdeskWasActive == nil then
+    -- First reconcile after load/reload.
+    local out = hs.audiodevice.defaultOutputDevice()
+    if rd then
+      rustdeskAudioConnect()                 -- session already up: ensure BlackHole
+    elseif out and out:name() == BLACKHOLE then
+      rustdeskAudioDisconnect()              -- stranded on BlackHole with no session: recover
+    end
+    -- else: no session, not on BlackHole → leave the user's manual choice alone.
+  elseif rd and not rustdeskWasActive then
+    rustdeskAudioConnect()
+  elseif (not rd) and rustdeskWasActive then
+    rustdeskAudioDisconnect()
+  end
+  rustdeskWasActive = rd
+end
+
+-- RustDesk exposes no event hook, but it writes to ~/Library/Logs/RustDesk on
+-- every connect/disconnect (the cm/ subdir is touched only for incoming
+-- sessions), so an FSEvents path-watch is an event-driven trigger with no idle
+-- cost — the logs are silent between sessions. A 20s safety poll runs *only
+-- while a session is live*, to catch a disconnect that didn't flush a final log
+-- line; it disarms the instant the session ends, so there's never polling at rest.
+local RUSTDESK_LOG_DIR = os.getenv("HOME") .. "/Library/Logs/RustDesk"
+local SAFETY_INTERVAL  = 20
+
+local reconcileSession            -- forward decl: referenced by the safety timer below
+local rdSafetyTimer = nil
+local function setSafetyPoll(active)
+  if active and not rdSafetyTimer then
+    rdSafetyTimer = hs.timer.doEvery(SAFETY_INTERVAL, function() reconcileSession() end)
+  elseif (not active) and rdSafetyTimer then
+    rdSafetyTimer:stop(); rdSafetyTimer = nil
+  end
+end
+
+reconcileSession = function()
+  local rd = rustdeskConnected()
+  reconcileKeyboard(rd)
+  reconcileAudio(rd)
+  setSafetyPoll(rd)               -- poll only while connected; nothing at rest
+end
+
+-- Instant response to Moonlander plug/unplug (keyboard only; audio is RustDesk-driven).
 usbWatcher = hs.usb.watcher.new(function(event)
   if event.vendorID == MOONLANDER_VENDOR and event.productID == MOONLANDER_PRODUCT then
-    runSwitch(event.eventType == "added" and "moonlander" or "laptop")
+    reconcileKeyboard(rustdeskConnected())
   end
 end)
 usbWatcher:start()
 
--- Sync state on Hammerspoon load (and on every config reload). Idempotent — running
--- `keyboardSwitcher select <current>` and `aerospace reload-config` are no-ops in steady state.
-runSwitch(moonlanderAttached() and "moonlander" or "laptop")
+-- Event-driven RustDesk trigger. FSEvents fires on log writes; a short debounce
+-- coalesces the burst of writes a connect/disconnect produces into one reconcile.
+-- The watch is recursive, so it covers the cm/ subdir where session logs land.
+local rdDebounce = nil
+if hs.fs.attributes(RUSTDESK_LOG_DIR) then
+  rustdeskLogWatcher = hs.pathwatcher.new(RUSTDESK_LOG_DIR, function()
+    if rdDebounce then rdDebounce:stop() end
+    rdDebounce = hs.timer.doAfter(0.5, reconcileSession)
+  end)
+  rustdeskLogWatcher:start()
+else
+  hs.notify.new({ title = "RustDesk auto-switch",
+    informativeText = "log dir missing; session detection disabled" }):send()
+end
 
-hs.notify.new({ title = "Hammerspoon", informativeText = "Moonlander watcher armed" }):send()
+-- Reconcile once on load (and every config reload).
+reconcileSession()
+
+hs.notify.new({ title = "Hammerspoon", informativeText = "RustDesk auto-switch armed (event-driven)" }):send()
 
 -- ──────────────────────────────────────────────────────────────────────────
 -- RPI4 screen sync
