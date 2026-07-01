@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# eject-menu — safely eject removable USB drives. Bound to a polybar eject icon.
+#   • no removable drive mounted   -> notify, nothing to do
+#   • exactly one                  -> eject it straight away
+#   • several                      -> rofi sub-menu to pick which
+# Unmounts every mounted partition on the chosen disk, then powers it off.
+# Prefers udisksctl (polkit, no password); falls back to sudo for root-mounted
+# drives (the lattice Duo is mounted by a udev helper, so it needs the fallback).
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+notify() { notify-send -a "Eject" "$1" "${2:-}" 2>/dev/null || true; }
+rmenu()  { rofi -dmenu -i -p "Eject" -theme-str 'window { width: 34%; } listview { lines: 6; }'; }
+
+# --- collect ejectable disks (removable whole-disks that have something mounted)
+entries=(); declare -A DEV_OF
+for d in $(lsblk -dno NAME); do
+  dev="/dev/$d"
+  [ "$(lsblk -dno RM "$dev" 2>/dev/null)" = 1 ] || continue          # removable only
+  mnts=$(lsblk -rno MOUNTPOINT "$dev" 2>/dev/null | grep -vE '^$' | paste -sd', ' -)
+  [ -n "$mnts" ] || continue                                          # skip if nothing mounted
+  case " $mnts " in *" / "*|*/boot*) continue ;; esac                 # never the system disk
+  label=$(lsblk -rno LABEL "$dev" 2>/dev/null | grep -vE '^$' | head -1)
+  size=$(lsblk -dno SIZE "$dev" 2>/dev/null)
+  disp="⏏  ${label:-$d}  ($size)  →  $mnts"
+  entries+=("$disp"); DEV_OF["$disp"]="$dev"
+done
+
+if [ ${#entries[@]} -eq 0 ]; then
+  notify "Nothing to eject" "No removable drives are mounted."
+  exit 0
+elif [ ${#entries[@]} -eq 1 ]; then
+  choice="${entries[0]}"
+else
+  choice=$(printf '%s\n' "${entries[@]}" | rmenu)
+  [ -n "$choice" ] || exit 0
+fi
+
+dev="${DEV_OF[$choice]}"
+name="${choice#⏏  }"; name="${name%%  →*}"
+
+# --- unmount every mounted partition on the disk
+busy=0
+while read -r part mp; do
+  [ -n "$mp" ] || continue
+  udisksctl unmount -b "/dev/$part" >/dev/null 2>&1 \
+    || sudo -n umount "$mp" >/dev/null 2>&1 \
+    || busy=1
+done < <(lsblk -rno NAME,MOUNTPOINT "$dev" 2>/dev/null | awk 'NF==2')
+
+if [ "$busy" = 1 ]; then
+  notify "Eject failed" "A partition on ${name} is still busy."
+  exit 1
+fi
+
+# --- power the drive off (safe to physically remove afterwards)
+udisksctl power-off -b "$dev" >/dev/null 2>&1 \
+  || sudo -n udisksctl power-off -b "$dev" >/dev/null 2>&1 \
+  || sudo -n eject "$dev" >/dev/null 2>&1 || true
+
+notify "Safe to remove" "$name"
