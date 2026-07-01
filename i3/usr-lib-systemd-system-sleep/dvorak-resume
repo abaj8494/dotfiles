@@ -1,0 +1,24 @@
+#!/bin/sh
+# systemd system-sleep hook — re-assert ibus Dvorak after resume.
+#
+# Installed as /usr/lib/systemd/system-sleep/dvorak-resume (symlink into the
+# dotfiles repo, like displaylink.sh). systemd runs these on every sleep
+# transition with: $1 = pre|post, $2 = suspend|hibernate|hybrid-sleep|
+# suspend-then-hibernate.
+#
+# On resume ("post"), ibus/X can come back on the qwerty engine (xkb:au::eng),
+# so the login-time autostart isn't enough — force Dvorak again in the
+# graphical user's session. Runs as the user with the session env (same
+# runuser+env pattern as lattice-duo-connect), retrying a few times because
+# ibus may take a moment to settle after resume.
+[ "$1" = post ] || exit 0
+
+USER_NAME=adoosh
+UID_N=$(id -u "$USER_NAME" 2>/dev/null || echo 1000)
+
+runuser -u "$USER_NAME" -- env \
+    DISPLAY=:0 \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_N/bus" \
+    XDG_RUNTIME_DIR="/run/user/$UID_N" \
+    sh -c 'for i in 1 2 3 4 5; do ibus engine xkb:us:dvorak:eng 2>/dev/null && exit 0; sleep 1; done' \
+    2>/dev/null || true
