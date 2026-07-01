@@ -2843,5 +2843,115 @@ event + gcal identity."
 ;; chain via `run-hooks').
 (add-hook 'org-after-todo-state-change-hook #'aj/gcal-hide-done-chore -50)
 
+;; ---------------------------------------------------------------------------
+;; Per-section local tables of contents (opt-in, course-agnostic)
+;; ---------------------------------------------------------------------------
+;; A level-1 section whose body starts on a fresh page shows just a heading and
+;; whitespace — not helpful.  When enabled, LaTeX export drops a small
+;; `\localtableofcontents' (via the etoc package) directly under each level-1
+;; section that has subsections, then a page break — so the section's opening
+;; page previews what follows.  Ideal for aggregated course docs (_index.org),
+;; where each `* Week N' / `* Assignment N' gets its own mini contents.
+;;
+;; General by design: the filter is registered once but gated on
+;; `aj/latex-local-toc-enabled', which a course opts into from its
+;; `.export/styling.el' by calling `aj/latex-enable-local-toc' (see the styled
+;; export advice below — it shadows the flag, so the effect is per-export).
+(defvar aj/latex-local-toc-enabled nil
+  "When non-nil, LaTeX export inserts a small local TOC (+ page break) under
+every level-1 section that has subsections.  Opt in per course via
+`aj/latex-enable-local-toc', typically from a `.export/styling.el'.")
+
+(defconst aj/latex-local-toc-preamble
+  "\\usepackage{etoc}
+\\newcommand{\\ajlocaltoc}{\\etocsetnexttocdepth{subsubsection}{\\small\\localtableofcontents}}"
+  "Raw preamble providing the `\\ajlocaltoc' per-section local-TOC macro.
+Appended to `org-latex-packages-alist' as a verbatim string (needs etoc).")
+
+(defun aj/latex-local-toc-filter (contents backend _info)
+  "Insert `\\ajlocaltoc' (+ a page break) after each level-1 section.
+Only fires for sections that actually have subsections, and is a no-op unless
+`aj/latex-local-toc-enabled' is set.  If the section body already opens with a
+`\\newpage' (e.g. a weekly file's own `#+latex: \\newpage'), no extra page
+break is added, so no blank page results."
+  (if (and aj/latex-local-toc-enabled
+           (org-export-derived-backend-p backend 'latex)
+           (stringp contents)
+           (string-match
+            "\\`\\([ \t\n]*\\\\section\\*?{.*}[ \t]*\n\\(?:\\\\label{[^}]*}[ \t]*\n\\)?\\)"
+            contents)
+           (string-match-p "\\\\subsection" contents))
+      (let* ((head (match-string 1 contents))
+             (rest (substring contents (match-end 1)))
+             (page (if (string-match-p "\\`[ \t\n]*\\\\newpage" rest) "" "\\newpage\n")))
+        (concat head "\\ajlocaltoc\n" page rest))
+    contents))
+
+(add-to-list 'org-export-filter-headline-functions #'aj/latex-local-toc-filter)
+
+(defun aj/latex-enable-local-toc ()
+  "Turn on per-section local TOCs for the current export and load etoc.
+Call from a course's `.export/styling.el'."
+  (setq aj/latex-local-toc-enabled t)
+  (add-to-list 'org-latex-packages-alist aj/latex-local-toc-preamble t))
+
+;; ---------------------------------------------------------------------------
+;; Course notes: styled interactive PDF export
+;; ---------------------------------------------------------------------------
+;; Course note trees under ~/lattice/notes/uni/<course>/ get their look (minted
+;; syntax highlighting, per-course accent, cached #+RESULTS with no re-run or
+;; confirm prompts, local TOCs) from a per-course `.export/styling.el', which
+;; the batch script make-pdfs.sh layers on top of init.el.  This advice reuses
+;; that SAME styling.el for interactive `C-c C-e l o' (org-latex-export-to-pdf):
+;; for any file under a course tree it finds the nearest `.export/styling.el'
+;; and applies it; everything else (daily notes, etc.) exports normally.
+;;
+;; styling.el is loaded *inside* a `let' that shadows every variable it touches
+;; (and the before-processing hook it removes), so all of its effects are
+;; dynamically scoped to this one export and auto-restored afterwards.  Keeping
+;; styling.el as the single source of truth means the batch script and the
+;; interactive key stay in sync — and adding a new course is just dropping in a
+;; `.export/styling.el' (no Emacs-config change needed).
+(defvar aj/course-notes-root
+  (expand-file-name "~/lattice/notes/uni/")
+  "Root under which course note trees live.  Each course dir may carry a
+`.export/styling.el' used for styled PDF export.")
+
+(defun aj/course-styling-file-for (file)
+  "Return the nearest `.export/styling.el' at or above FILE, or nil.
+Search is confined to `aj/course-notes-root'."
+  (when (and file (string-prefix-p aj/course-notes-root (expand-file-name file)))
+    (let ((dir (file-name-directory (expand-file-name file)))
+          found)
+      (while (and dir (not found) (string-prefix-p aj/course-notes-root dir))
+        (let ((cand (expand-file-name ".export/styling.el" dir)))
+          (when (file-exists-p cand) (setq found cand)))
+        (let ((parent (file-name-directory (directory-file-name dir))))
+          (setq dir (unless (equal parent dir) parent))))
+      found)))
+
+(defun aj/course-export-with-styling (orig-fn &rest args)
+  "Around advice: apply the nearest course `.export/styling.el' during export."
+  (let ((styling (and buffer-file-name
+                      (aj/course-styling-file-for buffer-file-name))))
+    (if styling
+        (let ((org-export-babel-evaluate org-export-babel-evaluate)
+              (org-confirm-babel-evaluate org-confirm-babel-evaluate)
+              (org-export-with-broken-links org-export-with-broken-links)
+              (org-babel-default-header-args:jupyter-python
+               org-babel-default-header-args:jupyter-python)
+              (org-latex-src-block-backend org-latex-src-block-backend)
+              (org-latex-minted-langs org-latex-minted-langs)
+              (org-latex-minted-options org-latex-minted-options)
+              (org-latex-packages-alist org-latex-packages-alist)
+              (org-latex-hyperref-template org-latex-hyperref-template)
+              (org-export-before-processing-hook org-export-before-processing-hook)
+              (aj/latex-local-toc-enabled aj/latex-local-toc-enabled))
+          (load styling nil t)
+          (apply orig-fn args))
+      (apply orig-fn args))))
+
+(advice-add 'org-latex-export-to-pdf :around #'aj/course-export-with-styling)
+
 (provide 'org-config)
 ;;; org-config.el ends here
