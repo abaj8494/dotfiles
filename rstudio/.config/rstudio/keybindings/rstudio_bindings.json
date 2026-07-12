@@ -1,5 +1,6 @@
 {
     "executeCode": "Ctrl+C Ctrl+C",
     "consoleClear": "",
-    "jumpToMatching": ""
+    "jumpToMatching": "",
+    "focusNextPane": "Ctrl+C Ctrl+O"
 }
