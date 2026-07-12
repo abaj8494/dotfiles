@@ -18,7 +18,7 @@ a chord means unbinding the app command **and** adding the editor binding.
 
 | Chord      | Action                     | How                                             |
 |------------|----------------------------|-------------------------------------------------|
-| `C-c C-c`  | Run Current Line/Selection | `executeCode`                                   |
+| `C-c C-c`  | Run Current Line/Selection, keeping cursor in place | `executeCodeWithoutMovingCursor` (was `Alt+Enter`; plain `Cmd+Enter`/`executeCode` still runs + advances) |
 | `C-c C-o`  | Move Focus to Next Pane     | `focusNextPane`                                 |
 | `C-l`      | Center Selection (recenter)| unbind `consoleClear`, bind `centerselection`   |
 | `C-p`      | Move Upwards One Line       | unbind `jumpToMatching`, bind `golineup`        |
