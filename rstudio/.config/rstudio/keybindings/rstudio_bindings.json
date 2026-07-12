@@ -1,4 +1,5 @@
 {
     "executeCode": "Ctrl+C Ctrl+C",
-    "consoleClear": ""
+    "consoleClear": "",
+    "jumpToMatching": ""
 }
