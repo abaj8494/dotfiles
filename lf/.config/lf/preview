@@ -6,6 +6,13 @@ HEIGHT="${3}"    # Height of the preview pane (number of fitting characters)
 X="${4}"         # X coordinate of the preview pane
 Y="${5}"         # Y coordinate of the preview pane
 
+# Ensure the tools we shell out to are on PATH even when lf launches us under a
+# stripped environment (tmux display-popup, launchd): md5 lives in /sbin and
+# gstat in a package prefix. Without this, hash() below silently returns an
+# empty string, IMAGE_CACHE_PATH collapses to ~/.cache/lf/.jpg, and that one
+# file gets served as the preview for every other file (a "stuck" preview).
+export PATH="/opt/homebrew/bin:/opt/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 if ! [ -f "$FILE_PATH" ] && ! [ -h "$FILE_PATH" ]; then
   exit
 fi
@@ -22,8 +29,15 @@ MIME_TYPE="$(file --dereference --brief --mime-type -- "${FILE_PATH}")"
 [ $# -gt 1 ] || PAGE_MODE=$?
 
 hash() {
-  printf '%s/.cache/lf/%s.jpg' "$HOME" \
-    "$(gstat --printf '%n\0%i\0%F\0%s\0%W\0%Y' -- "$(readlink -f "$1")" | md5 -q | awk '{print $1}')"
+  local target key
+  target="$(readlink -f "$1" 2>/dev/null)"
+  [ -n "$target" ] || target="$1"
+  key="$(gstat --printf '%n\0%i\0%F\0%s\0%W\0%Y' -- "$target" 2>/dev/null | md5 -q 2>/dev/null | awk '{print $1}')"
+  # Never fall back to an empty key: that yields ~/.cache/lf/.jpg, a single
+  # cache entry that then gets displayed for every other file. If the stat/md5
+  # pipeline comes up empty, key off the path instead (cksum is always present).
+  [ -n "$key" ] || key="path-$(printf '%s' "$target" | cksum | tr -d ' ')"
+  printf '%s/.cache/lf/%s.jpg' "$HOME" "$key"
 }
 
 mkdir -p "$HOME/.cache/lf"
