@@ -336,6 +336,125 @@ SCOPE is as in `anki-editor-push-notes'."
   (define-key org-mode-map (kbd "C-c a c") #'anki-editor-cloze-region)
   (define-key org-mode-map (kbd "C-c a C") #'anki-editor-set-note-type))
 
+;; ---------------------------------------------------------------------------
+;; Field-by-field "waterfall" note inserter  (C-c C-t in flashcard files)
+;; ---------------------------------------------------------------------------
+;; Pressing C-c C-t in a file under ~/lattice/notes/flashcards/ launches a
+;; prompt for the note type, then tags, then EVERY field of that model in turn
+;; — so no field is ever silently forgotten. Mirrors the "Add Anki" flow but
+;; walks the model's real field list (fetched live from AnkiConnect).
+
+(defvar aj/anki-model-fields-cache (make-hash-table :test 'equal)
+  "Cache mapping an Anki model name to its list of field names.")
+
+(defun aj/anki-model-field-names (model)
+  "Return the list of Anki field names for MODEL (cached via AnkiConnect)."
+  (or (gethash model aj/anki-model-fields-cache)
+      (puthash model
+               (anki-editor-api-call-result 'modelFieldNames :modelName model)
+               aj/anki-model-fields-cache)))
+
+(defun aj/anki--read-field (field required)
+  "Read content for Anki FIELD in a temporary Org buffer.
+C-c C-c accepts, C-c C-k aborts the whole note. When REQUIRED is
+non-nil, an empty entry re-prompts instead of being accepted."
+  (let ((buf (get-buffer-create (format "*anki field: %s*" field)))
+        result)
+    (with-current-buffer buf
+      (erase-buffer)
+      (org-mode)
+      (setq-local header-line-format
+                  (format " Field ‘%s’%s — C-c C-c accept · C-c C-k abort note"
+                          field (if required "  (required)" "")))
+      (use-local-map (copy-keymap org-mode-map))
+      (local-set-key (kbd "C-c C-c")
+                     (lambda () (interactive) (throw 'aj-anki-field 'done)))
+      (local-set-key (kbd "C-c C-k")
+                     (lambda () (interactive) (throw 'aj-anki-field 'abort))))
+    (save-window-excursion
+      (pop-to-buffer buf)
+      (let ((outcome (catch 'aj-anki-field (recursive-edit))))
+        (setq result (string-trim (with-current-buffer buf (buffer-string))))
+        (kill-buffer buf)
+        (when (eq outcome 'abort)
+          (user-error "Note insertion aborted"))))
+    (if (and required (string-empty-p result))
+        (progn (message "Field ‘%s’ is required." field) (sit-for 1)
+               (aj/anki--read-field field required))
+      result)))
+
+(defun aj/anki--insert-note (model fields values tags)
+  "Insert an anki-editor note at end of buffer.
+MODEL is the note-type name, FIELDS its ordered field list, VALUES an
+alist (FIELD . CONTENT), TAGS a list of tag strings. The first field
+becomes the heading; the rest become =*** Field= subtrees, except a
+plain Basic note whose Back is written as the heading body (matching the
+deck's existing style). Returns the position of the new heading."
+  (goto-char (point-max))
+  (unless (bolp) (insert "\n"))
+  (skip-chars-backward "\n")
+  (delete-region (point) (point-max))
+  (insert "\n\n")
+  (let* ((pos    (point))
+         (f0     (car fields))
+         (rest   (cdr fields))
+         (tagstr (if tags (concat "  :" (mapconcat #'identity tags ":") ":") ""))
+         (basic  (equal fields '("Front" "Back"))))
+    (insert (format "** %s%s\n" (cdr (assoc f0 values)) tagstr)
+            ":PROPERTIES:\n"
+            (format ":ANKI_NOTE_TYPE: %s\n" model)
+            ":END:\n\n")
+    (if (and basic rest)
+        (insert (cdr (assoc (car rest) values)) "\n")
+      (dolist (f rest)
+        (insert (format "*** %s\n\n" f)
+                (cdr (assoc f values)) "\n\n")))
+    pos))
+
+(defun aj/anki-insert-note-waterfall ()
+  "Insert a new anki-editor note, prompting for EVERY field of the model.
+Bound to C-c C-t in flashcard buffers so no field is silently forgotten."
+  (interactive)
+  (unless (derived-mode-p 'org-mode) (user-error "Not an Org buffer"))
+  (let* ((models (anki-editor-note-types))
+         (model  (completing-read "Note type: " models nil t nil nil "Basic"))
+         (fields (aj/anki-model-field-names model))
+         (all-tags (ignore-errors (anki-editor-api-call-result 'getTags)))
+         (tags   (completing-read-multiple
+                  "Tags (comma-separated, TAB completes; empty for none): "
+                  all-tags nil nil))
+         (values (let ((first t) acc)
+                   (dolist (f fields)
+                     (push (cons f (aj/anki--read-field f first)) acc)
+                     (setq first nil))
+                   (nreverse acc)))
+         (pos (aj/anki--insert-note model fields values tags)))
+    (goto-char pos)
+    (when (fboundp 'org-fold-show-entry) (ignore-errors (org-fold-show-entry)))
+    (message "Inserted %s note — review, then push with C-c a p." model)))
+
+(defvar aj/anki-card-mode-map
+  (let ((m (make-sparse-keymap)))
+    (define-key m (kbd "C-c C-t") #'aj/anki-insert-note-waterfall)
+    m)
+  "Keymap for `aj/anki-card-mode'.")
+
+(define-minor-mode aj/anki-card-mode
+  "Minor mode for anki-editor card files.
+Rebinds C-c C-t to `aj/anki-insert-note-waterfall', a field-by-field
+note inserter, since flashcard files have no TODO workflow to trigger."
+  :lighter " AnkiCard"
+  :keymap aj/anki-card-mode-map)
+
+(defun aj/maybe-enable-anki-card-mode ()
+  "Enable `aj/anki-card-mode' for Org files under the flashcards tree."
+  (when (and buffer-file-name
+             (string-match-p "/lattice/notes/flashcards/"
+                             (expand-file-name buffer-file-name)))
+    (aj/anki-card-mode 1)))
+
+(add-hook 'org-mode-hook #'aj/maybe-enable-anki-card-mode)
+
 (provide 'anki-config)
 ;;; anki-config.el ends here
 
