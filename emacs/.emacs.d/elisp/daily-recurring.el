@@ -67,6 +67,13 @@ Handles +Nd, +Nw, +Nm, +Ny repeaters (and ++ / .+ variants)."
        ;; Unknown unit: include to be safe
        (t t)))))
 
+(defun aj/heading-noexport-p (pos)
+  "Non-nil if the heading at POS carries the noexport tag (incl. inherited).
+Such tasks.org entries are kept out of dailies entirely."
+  (save-excursion
+    (goto-char pos)
+    (member "noexport" (org-get-tags))))
+
 (defun aj/get-due-positions-for-date (date-time)
   "Return set of heading positions in tasks.org that are due on DATE-TIME.
 Uses `org-agenda-get-day-entries' with :scheduled :sexp :deadline selectors.
@@ -95,15 +102,17 @@ Resolves markers to their parent heading positions."
                        (line-beginning-position))))))
             ;; For past-scheduled entries, verify the target date is an
             ;; actual occurrence of the repeat cycle (handles +, ++, .+).
-            (when (or (not (equal entry-type "past-scheduled"))
-                      (with-current-buffer (marker-buffer marker)
-                        (save-excursion
-                          (goto-char heading-pos)
-                          (forward-line 1)
-                          (when (looking-at "^SCHEDULED: \\(<[^>]+>\\)")
-                            (aj/date-is-repeat-occurrence-p
-                             (match-string 1)
-                             date-time)))))
+            (when (and (not (with-current-buffer (marker-buffer marker)
+                              (aj/heading-noexport-p heading-pos)))
+                       (or (not (equal entry-type "past-scheduled"))
+                           (with-current-buffer (marker-buffer marker)
+                             (save-excursion
+                               (goto-char heading-pos)
+                               (forward-line 1)
+                               (when (looking-at "^SCHEDULED: \\(<[^>]+>\\)")
+                                 (aj/date-is-repeat-occurrence-p
+                                  (match-string 1)
+                                  date-time))))))
               (puthash heading-pos t positions))))))
     positions))
 
@@ -321,8 +330,9 @@ is older than the previous scheduled occurrence."
         (while (re-search-forward "^\\*+ \\(?:TODO\\|WAIT\\) .*\\[#[A-C]\\]" nil t)
           (let* ((pos (line-beginning-position))
                  (heading-line (buffer-substring-no-properties pos (line-end-position))))
-            ;; Skip if already due today
-            (unless (gethash pos due-set)
+            ;; Skip if already due today, or opted out of dailies via :noexport:
+            (unless (or (gethash pos due-set)
+                        (aj/heading-noexport-p pos))
               (save-excursion
                 (goto-char pos)
                 (forward-line 1)
@@ -774,9 +784,14 @@ Then insert a single ----- separator."
         (setq curr-heading-bol (- curr-heading-bol (- (cdr pos) (car pos)))))
       ;; Insert single separator before curr heading
       (goto-char curr-heading-bol)
-      ;; Walk backwards past blank lines
+      ;; Walk backwards past blank lines and any `#+latex: \newpage' that the
+      ;; problems block placed before `** Problems', so the separator lands on
+      ;; the previous page (canonical order: content -> ----- -> newpage ->
+      ;; heading) rather than floating above the heading on the new page.
       (forward-line -1)
-      (while (and (> (point) zone-start) (looking-at-p "^[ \t]*$"))
+      (while (and (> (point) zone-start)
+                  (or (looking-at-p "^[ \t]*$")
+                      (looking-at-p "^#\\+latex:[ \t]+\\\\newpage[ \t]*$")))
         (forward-line -1))
       (forward-line 1)
       ;; Remove excess blank lines
@@ -921,6 +936,122 @@ Maintains template order even when some headings already exist."
                   (message "Added %d recurring task(s) for %s" added-count date-str)
                 (message "All recurring tasks already present for %s" date-str)))))
       (message "Not a daily note (no date in title)"))))
+
+;; ---------------------------------------------------------------------------
+;; Problems-due transclusions from problems.org
+;; ---------------------------------------------------------------------------
+;; Mirror of the recurring-task flow, but sourced from the spaced-repetition
+;; problem log: for the daily's date, drop a `** Problems' block under
+;; * Recurring holding one `#+transclude:' per problems.org entry SCHEDULED on
+;; that day. Each question is preceded by a \newpage and each answer block
+;; starts a fresh page, so question and answer never share a page in the PDF.
+
+(defvar aj/problems-file
+  (expand-file-name "uni/problems.org" org-roam-directory)
+  "Problem-log file whose SCHEDULED entries transclude into daily notes.")
+
+(defun aj/problems-due-on (date-time)
+  "Return CUSTOM_IDs of problems.org headings SCHEDULED on DATE-TIME, in file order."
+  (let ((target (format-time-string "%Y-%m-%d" date-time))
+        (ids '()))
+    (when (file-exists-p aj/problems-file)
+      (with-current-buffer (find-file-noselect aj/problems-file)
+        (save-excursion
+          (save-restriction
+            (widen)
+            (goto-char (point-min))
+            (while (re-search-forward
+                    "^SCHEDULED: <\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" nil t)
+              (when (string= (match-string 1) target)
+                (save-excursion
+                  (org-back-to-heading t)
+                  (let ((cid (org-entry-get nil "CUSTOM_ID")))
+                    (when cid (push cid ids))))))))))
+    (nreverse ids)))
+
+(defun aj/delete-recurring-child (name)
+  "Delete the level-2 heading NAME (and its subtree) under * Recurring, if present."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* Recurring\\b" nil t)
+      (let ((sec-end (save-excursion
+                       (forward-line 1)
+                       (if (re-search-forward "^\\* " nil t)
+                           (line-beginning-position) (point-max)))))
+        (goto-char (line-end-position))
+        (when (re-search-forward (format "^\\*\\* %s[ \t]*$" (regexp-quote name)) sec-end t)
+          (let ((start (line-beginning-position))
+                (end (save-excursion (org-end-of-subtree t t) (point))))
+            ;; Also swallow a `#+latex: \newpage' (and blank lines) sitting
+            ;; directly above the heading to page-break the section — stopping
+            ;; at the `-----' separator or any real content — so repeated
+            ;; rebuilds don't accumulate orphaned newpages.
+            (save-excursion
+              (goto-char start)
+              (forward-line -1)
+              (while (and (> (point) (point-min))
+                          (or (looking-at-p "^[ \t]*$")
+                              (looking-at-p "^#\\+latex:[ \t]+\\\\newpage[ \t]*$")))
+                (setq start (line-beginning-position))
+                (forward-line -1)))
+            (delete-region start end)))))))
+
+(defun aj/insert-problems-due ()
+  "Rebuild the `** Problems' transclusion block under * Recurring for this daily.
+One `#+transclude:' per problems.org entry SCHEDULED on the daily's title date.
+Idempotent: collapse live transcludes, delete the old block, rewrite, re-add."
+  (interactive)
+  (when (and (aj/daily-date-file-p) (buffer-file-name))
+    (save-excursion
+      (goto-char (point-min))
+      (when (re-search-forward
+             "^#\\+title: \\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)" nil t)
+        (let* ((date-time (encode-time 0 0 0
+                                       (string-to-number (match-string 3))
+                                       (string-to-number (match-string 2))
+                                       (string-to-number (match-string 1))))
+               (ids (aj/problems-due-on date-time)))
+          ;; Collapse any live transclusions back to directives before editing.
+          (when (bound-and-true-p org-transclusion-mode)
+            (ignore-errors (org-transclusion-remove-all)))
+          (aj/delete-recurring-child "Problems")
+          (when ids
+            (aj/ensure-heading-exists "Recurring")
+            (let ((rel (file-relative-name
+                        aj/problems-file (file-name-directory (buffer-file-name)))))
+              (goto-char (point-min))
+              (re-search-forward "^\\* Recurring\\b")
+              (let ((sec-end (save-excursion
+                               (forward-line 1)
+                               (if (re-search-forward "^\\* " nil t)
+                                   (line-beginning-position) (point-max)))))
+                (goto-char sec-end)
+                (skip-chars-backward " \t\n")
+                ;; Lowercase `#+latex:' so the section-break survives
+                ;; `aj/ensure-heading-newpages' (which manages only UPPERCASE
+                ;; `#+LATEX:' before level-1 headings). Starts `** Problems' on a
+                ;; fresh page; the FIRST problem shares that page (right under the
+                ;; heading), and each subsequent problem gets its own page.
+                (insert "\n\n#+latex: \\newpage\n** Problems\n")
+                (let ((firstp t))
+                  (dolist (id ids)
+                    (unless firstp (insert "#+latex: \\newpage\n"))
+                    (setq firstp nil)
+                    (insert (format "#+transclude: [[file:%s::#%s]] :level 3\n" rel id))))))
+            ;; Re-normalise separators and \newpage directives while the block
+            ;; is still plain text. Inserting ** Problems at the end of
+            ;; * Recurring lands it after the separators / #+LATEX: \newpage that
+            ;; belong to the following * Calendar heading, so those must be
+            ;; re-placed or Calendar loses its own-page break.
+            (dolist (fn '(aj/ensure-heading-separators
+                          aj/ensure-heading-newpages
+                          aj/ensure-recurring-separators))
+              (when (fboundp fn) (ignore-errors (funcall fn)))))
+          ;; Re-expand so transclusions render live and are exported to PDF.
+          (unless (bound-and-true-p org-transclusion-mode)
+            (when (fboundp 'org-transclusion-mode) (org-transclusion-mode 1)))
+          (when (fboundp 'org-transclusion-add-all)
+            (ignore-errors (org-transclusion-add-all))))))))
 
 (provide 'daily-recurring)
 

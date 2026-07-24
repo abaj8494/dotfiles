@@ -218,9 +218,14 @@ subtree instead of above the heading it was meant for."
   (save-excursion
     (save-restriction
       (widen)
-      ;; Phase 1: delete orphaned directives.
+      ;; Phase 1: delete orphaned directives. `case-fold-search' is bound nil
+      ;; so only UPPERCASE `#+LATEX:' heading directives are swept — the
+      ;; lowercase `#+latex:' newpages that `aj/insert-problems-due' places
+      ;; before `** Problems' and each `#+transclude:' survive (their next line
+      ;; is a transclude, not a `* ' heading, so they would otherwise be
+      ;; mis-detected as orphans and deleted).
       (goto-char (point-min))
-      (let ((to-delete nil))
+      (let ((to-delete nil) (case-fold-search nil))
         (while (re-search-forward "^#\\+LATEX:[ \t]+\\\\newpage[ \t]*$" nil t)
           (let ((line-start (line-beginning-position))
                 (orphan-p
