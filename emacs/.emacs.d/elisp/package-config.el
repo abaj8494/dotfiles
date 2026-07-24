@@ -98,6 +98,19 @@
   :straight t
   :hook (prog-mode . rainbow-delimiters-mode))
 
+(use-package hl-todo
+  :straight t
+  :hook (prog-mode . hl-todo-mode)
+  :config
+  ;; Bright red TODO/FIXME/etc., like VS Code. Default is a muted rose.
+  (setq hl-todo-keyword-faces
+        '(("TODO"  . "#ff2d2d")
+          ("FIXME" . "#ff2d2d")
+          ("XXX"   . "#ff2d2d")
+          ("HACK"  . "#ff2d2d")
+          ("BUG"   . "#ff2d2d")
+          ("NOTE"  . "#cc9393"))))
+
 (use-package htmlize
   :straight t
   :defer nil)      ;; load eagerly so exporters find it
@@ -232,29 +245,16 @@
 ;; ---------------------------------------------------------------------------
 
 (defun aj/org-html-inline-src-block (inline-src-block _contents _info)
-  "Export INLINE-SRC-BLOCK with proper syntax highlighting.
-Fontifies directly with htmlize, bypassing org-babel entirely."
-  (require 'htmlize)
+  "Export INLINE-SRC-BLOCK with the same syntax highlighting as full src blocks.
+Delegates to `org-html-fontify-code', which reliably applies the language's
+font-lock.  The previous hand-rolled htmlize temp-buffer path silently failed
+to fontify some languages (e.g. R: `font-lock-ensure' in a bare temp buffer
+produced no faces), falling back to plain, uncoloured text."
   (let* ((lang (org-element-property :language inline-src-block))
          (code (org-element-property :value inline-src-block))
-         (mode (and lang (org-src-get-lang-mode lang)))
-         (fontified
-          (if (and mode (fboundp mode))
-              (with-temp-buffer
-                ;; Insert code and fontify with the language's major mode
-                (insert code)
-                ;; delay-mode-hooks prevents any hooks (including babel) from running
-                (delay-mode-hooks (funcall mode))
-                (font-lock-ensure)
-                ;; Convert fontified buffer to HTML via htmlize
-                (let* ((htmlize-output-type 'inline-css)
-                       (html (htmlize-region-for-paste (point-min) (point-max))))
-                  ;; htmlize wraps in <pre>, strip it for inline use
-                  (if (string-match "<pre[^>]*>\\(\\(?:.\\|\n\\)*?\\)</pre>" html)
-                      (match-string 1 html)
-                    html)))
-            ;; Fallback: no highlighting
-            (org-html-encode-plain-text code))))
+         (fontified (if lang
+                        (org-html-fontify-code code lang)
+                      (org-html-encode-plain-text code))))
     (format "<code class=\"src src-%s\">%s</code>"
             (or lang "")
             (string-trim fontified))))
