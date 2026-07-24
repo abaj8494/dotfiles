@@ -264,7 +264,13 @@
 ;; owns the region function and swallows the override; there `lsp-pyright'
 ;; semantic tokens are the real answer.
 (defun aj/python-ts-semantic-types ()
-  "Colour CapWords constructor calls as types in `python-ts-mode'."
+  "Nudge `python-ts-mode' fontification toward VS Code \"2026 Dark\":
+- CapWords constructor calls (`Graph(...)'/`mod.Digraph(...)') get the type
+  face (green), matching VS Code's semantic highlighting of class constructors;
+- `self'/`cls' get the constant face (blue) instead of `python-ts-mode's
+  keyword face (which would make them red like def/class).
+Ordinary keywords stay `font-lock-keyword-face' — 2026 Dark colours
+def/class/return/if/… all the same red, so no per-keyword split is needed."
   (unless (memq 'aj-constructor (apply #'append treesit-font-lock-feature-list))
     (setq-local treesit-font-lock-settings
                 (append treesit-font-lock-settings
@@ -276,13 +282,65 @@
                                  (:match "\\`[A-Z]" @font-lock-type-face))
                            (call function:
                                  (attribute attribute: (identifier) @font-lock-type-face)
-                                 (:match "\\`[A-Z]" @font-lock-type-face))))))
+                                 (:match "\\`[A-Z]" @font-lock-type-face))
+                           ((identifier) @font-lock-constant-face
+                            (:match "\\`\\(?:self\\|cls\\)\\'" @font-lock-constant-face))))))
     (setq-local treesit-font-lock-feature-list
                 (let ((fl (copy-tree treesit-font-lock-feature-list)))
                   (setf (car (last fl)) (append (car (last fl)) '(aj-constructor)))
                   fl))
     (treesit-font-lock-recompute-features)))
 (add-hook 'python-ts-mode-hook #'aj/python-ts-semantic-types)
+
+;; ---------------------------------------------------------------------------
+;; VS Code "2026 Dark" palette — Python only (buffer-local, no global bleed)
+;; ---------------------------------------------------------------------------
+;; The fuller 2026 Dark syntax palette (red keywords, mauve functions, green
+;; types, blue variables/self, aqua strings, gray comments) — foregrounds
+;; sourced from VS Code's theme JSON (theme-defaults/themes/2026-dark.json).
+;; Applied as a BUFFER-LOCAL face remap (`face-remap-add-relative') so it
+;; colours only Python: real `python[-ts]-mode' buffers (.py files + the C-c '
+;; src edit buffer) and org buffers (for the inline #+begin_src python view —
+;; org renders src blocks with these same face symbols).  Kept OUT of the
+;; global faces (see gruber-themes.el) so Elisp/shell/markdown/notmuch/etc.
+;; stay gruber.  Caveat: the org remap is per-buffer, so a non-Python src block
+;; in the same org file also picks up the palette; org prose is unaffected.
+(defconst aj/vscode-2026-dark-code-colors
+  '((font-lock-keyword-face           . "#ff7b72")   ; def/class/return/if/import — red
+    (font-lock-escape-face            . "#ff7b72")
+    (font-lock-function-name-face     . "#d2a8ff")   ; functions — mauve
+    (font-lock-function-call-face     . "#d2a8ff")
+    (font-lock-type-face              . "#7ee787")   ; classes / types — green
+    (font-lock-constant-face          . "#79c0ff")   ; True/False/None — blue
+    (font-lock-builtin-face           . "#79c0ff")
+    (font-lock-number-face            . "#79c0ff")   ; numbers — blue
+    (font-lock-variable-name-face     . "#79c0ff")   ; variables / params — blue
+    (font-lock-variable-use-face      . "#79c0ff")
+    (font-lock-property-name-face     . "#79c0ff")   ; attributes — blue
+    (font-lock-property-use-face      . "#79c0ff")
+    (font-lock-string-face            . "#a5d6ff")   ; strings — aqua
+    (font-lock-doc-face               . "#a5d6ff")   ; docstrings — aqua
+    (font-lock-doc-markup-face        . "#a5d6ff")
+    (font-lock-comment-face           . "#8b949e")   ; comments — gray
+    (font-lock-comment-delimiter-face . "#8b949e"))
+  "VS Code \"2026 Dark\" foreground colours, keyed by font-lock face.")
+
+(defvar-local aj/vscode-2026--cookies nil
+  "Face-remap cookies added by `aj/vscode-2026-apply-local' in this buffer.")
+
+(defun aj/vscode-2026-apply-local ()
+  "Buffer-locally remap code faces to the VS Code \"2026 Dark\" palette.
+Idempotent — drops any remaps a prior run added before re-adding, so a mode
+re-init doesn't stack duplicates."
+  (mapc #'face-remap-remove-relative aj/vscode-2026--cookies)
+  (setq aj/vscode-2026--cookies
+        (mapcar (lambda (e)
+                  (face-remap-add-relative (car e) (list :foreground (cdr e))))
+                aj/vscode-2026-dark-code-colors)))
+
+(add-hook 'python-mode-hook    #'aj/vscode-2026-apply-local)
+(add-hook 'python-ts-mode-hook #'aj/vscode-2026-apply-local)
+(add-hook 'org-mode-hook       #'aj/vscode-2026-apply-local)
 
 ;;; Kernel-backed completion in jupyter src edit buffers (C-c ') -------------
 ;; emacs-jupyter's `org-babel-edit-prep:jupyter' enables
@@ -330,6 +388,21 @@
     (if (eq mode 'python-mode) 'python-ts-mode mode))
   (advice-add 'jupyter-kernel-language-mode :filter-return
               #'aj/jupyter-prefer-ts-mode))
+
+;;; Prefer plain-text over HTML for org results ------------------------------
+;; A bare `df.head()' emits both `text/html' and `text/plain'.  emacs-jupyter
+;; picks the first mime type present in `jupyter-org-mime-types', whose default
+;; order ranks `:text/html' above `:text/plain' — so DataFrames land in the org
+;; buffer as a raw HTML table.  Reorder so `:text/plain' wins, giving pandas'
+;; ASCII repr instead, while keeping images (plots) and LaTeX (sympy) ahead so
+;; neither regresses.  Lets the source cell stay unmodified for ipynb paste-back.
+(with-eval-after-load 'jupyter-org-client
+  (setq jupyter-org-mime-types
+        '(:text/org
+          :image/svg+xml :image/jpeg :image/png
+          :text/latex
+          :text/plain
+          :text/html :text/markdown)))
 
 ;; ---------------------------------------------------------------------------
 ;; Chess babel blocks - render LaTeX chess diagrams to images
@@ -429,7 +502,19 @@
   (setq org-log-done 'time)
   (setq org-log-into-drawer t)
   (setq org-directory "/Users/aayushbajaj/lattice/notes/daily/")
-  (setq org-agenda-files nil)
+  ;; problems.org is the uni spaced re-attempt queue (gcal.org is appended
+  ;; further down by the org-gcal section). Everything else stays out of the
+  ;; agenda deliberately — the dailies machinery has its own scanner.
+  (setq org-agenda-files '("/Users/aayushbajaj/lattice/notes/uni/problems.org"))
+  ;; C-c a u — the morning re-attempt queue, restricted to problems.org so
+  ;; calendar entries don't drown it.
+  (setq org-agenda-custom-commands
+        '(("u" "Uni — re-attempt queue"
+           ((agenda "" ((org-agenda-span 'day)
+                        (org-agenda-overriding-header "Due today (blank page, zero AI)")))
+            (todo "RETRY" ((org-agenda-overriding-header "In rotation (RETRY)")))
+            (todo "NEW" ((org-agenda-overriding-header "Never attempted (NEW)"))))
+           ((org-agenda-files '("/Users/aayushbajaj/lattice/notes/uni/problems.org"))))))
   (setq org-todo-keywords
         '((sequence "TODO(t)" "WAIT(w!)" "|" "CANCEL(c!)" "DONE(d!)")))
 
@@ -2177,7 +2262,7 @@ just a plstore read."
   (when aj/gcal-credentials-loaded
     (require 'oauth2-auto)
     (condition-case err
-        (dolist (id (list aj/gcal-id-J aj/gcal-id-personal))
+        (dolist (id (list aj/gcal-id-tasks aj/gcal-id-J aj/gcal-id-personal))
           (ignore-errors (oauth2-auto--plstore-read id 'org-gcal)))
       (error (message "gcal token prewarm failed: %s"
                       (error-message-string err))))))
@@ -2309,13 +2394,30 @@ just a plstore read."
                                  stop))))
               (setq body-text (string-trim
                                (buffer-substring-no-properties body-start body-end)))))
-          ;; Append body to existing description
+          ;; Merge body into the description. The existing :desc comes from the
+          ;; :org-gcal: drawer, which org-gcal REWRITES with the pushed
+          ;; description after every successful post — so blindly appending
+          ;; body to drawer-desc snowballs one duplicate copy per re-push
+          ;; (the daily chore carry-forward re-pushes every day).
           (when (and body-text (not (string-empty-p body-text)))
             (let ((existing-desc (plist-get result :desc)))
               (plist-put result :desc
-                         (if existing-desc
-                             (concat existing-desc "\n\n" body-text)
-                           body-text))))))
+                         (cond
+                          ;; org-managed entries: the body IS the description;
+                          ;; the drawer is only an echo of the last push.
+                          ;; Replacing (not appending) also self-heals drawers
+                          ;; that already accumulated duplicates.
+                          ((string= (or (org-entry-get nil "org-gcal-managed") "")
+                                    "org")
+                           body-text)
+                          ;; gcal-managed: keep gcal's own desc, but don't
+                          ;; re-append a body that's already at its tail.
+                          ((and existing-desc
+                                (string-suffix-p body-text
+                                                 (string-trim existing-desc)))
+                           existing-desc)
+                          (existing-desc (concat existing-desc "\n\n" body-text))
+                          (t body-text)))))))
       result))
   (advice-add 'org-gcal--get-time-and-desc :around #'aj/gcal-include-body-in-desc))
 
@@ -2474,6 +2576,26 @@ redefinition to this call so only the event payload (the alist carrying a
 (with-eval-after-load 'org-gcal
   (advice-add 'org-gcal--post-event :around #'aj/gcal--inject-color-advice))
 
+(defun aj/gcal--suppress-drawer-desc (args)
+  "Filter-args advice on `org-gcal--update-entry' for Tasks-calendar chores.
+Chore events live in dailies with their text as the entry BODY (below the
+:org-gcal: drawer) — org is the sole authority, and
+`aj/gcal-include-body-in-desc' feeds that body to every push. org-gcal's
+default writeback would copy the posted description back into the drawer,
+echoing the body immediately below it, so the daily shows the same text
+twice. Strip :description from the event before the writeback runs so the
+drawer stays empty. Scoped to `aj/gcal-id-tasks'; the J calendar's
+gcal-managed entries keep their drawer description (their only copy)."
+  (pcase-let ((`(,calendar-id ,event . ,rest) args))
+    (if (and (equal calendar-id aj/gcal-id-tasks)
+             (plist-get event :description))
+        (cons calendar-id
+              (cons (plist-put (copy-sequence event) :description nil) rest))
+      args)))
+
+(with-eval-after-load 'org-gcal
+  (advice-add 'org-gcal--update-entry :filter-args #'aj/gcal--suppress-drawer-desc))
+
 (defun aj/gcal--daily-title-date ()
   "Return the YYYY-MM-DD string from the current buffer's #+title:, or nil."
   (save-excursion
@@ -2495,6 +2617,10 @@ same event rather than duplicating it."
   (let ((date-str (aj/gcal--daily-title-date)))
     (unless date-str
       (user-error "Not in a daily note (no #+title date)"))
+    (when (aj/gcal--sweep-active-p)
+      ;; Same plstore-interleaving hazard as two concurrent sweeps — see the
+      ;; concurrency-guard comment above `aj/gcal--sweep-active-since'.
+      (user-error "gcal: a push chain is already in flight; retry shortly"))
     (aj/gcal-load-credentials)
     (unless aj/gcal-credentials-loaded
       (user-error "Google Calendar credentials unavailable"))
@@ -2512,11 +2638,20 @@ same event rather than duplicating it."
         (let ((aj/gcal-auto-push nil))
           (org-schedule nil date-str)))
       (let ((m (point-marker)))
+        (setq aj/gcal--sweep-active-since (float-time))
         (deferred:nextc
-          (let ((aj/gcal--inject-color aj/gcal-chore-color)
-                (aj/gcal--force-unconditional t))
-            (org-gcal-post-at-point t))
-          (lambda (_) (aj/gcal--stamp-synced-date m date-str) nil)))
+          (deferred:try
+            (let ((aj/gcal--inject-color aj/gcal-chore-color)
+                  (aj/gcal--force-unconditional t))
+              (org-gcal-post-at-point t))
+            :catch (lambda (err)
+                     (message "gcal chore push failed: %S" err)
+                     'aj/gcal--post-failed))
+          (lambda (res)
+            (setq aj/gcal--sweep-active-since nil)
+            (unless (eq res 'aj/gcal--post-failed)
+              (aj/gcal--stamp-synced-date m date-str))
+            nil)))
       (message "Pushing chore to Google Calendar (red, all-day %s)…" date-str))))
 
 ;; ---------------------------------------------------------------------------
@@ -2532,6 +2667,36 @@ same event rather than duplicating it."
 (defvar aj/gcal-auto-sweep-on-open t
   "When non-nil, opening today's (or a future) daily auto-sweeps its priority
 items to Google Calendar. Past dailies are never auto-swept.")
+
+;; Concurrency guard. One sweep chain is internally sequential, but TWO chains
+;; (the daily-open hook can fire twice for the same daily — e.g. the midnight
+;; daily-init capture and an interactive C-c d d landing together) interleave
+;; freely: epg decrypts block in `accept-process-output', a reentrancy window
+;; where the other chain's deferred callbacks run. Both chains touch
+;; oauth2-auto.plist through plstore, and plstore shares ONE buffer per file
+;; (`find-buffer-visiting') — so chain B's token-refresh plstore-save/close
+;; lands mid-decrypt of chain A and the next decrypt hands gpg clobbered
+;; ciphertext: `epg-error "Can't decrypt" "Exit"'. Two defenses:
+;;   1. `aj/gcal-maybe-sweep-on-open' coalesces its idle timer per buffer, so
+;;      a double hook fire schedules ONE sweep;
+;;   2. `aj/gcal--sweep-active-since' is a mutex — a sweep (or single-chore
+;;      push) that starts while another chain is in flight backs off. The
+;;      timestamp auto-expires after 5 min so a chain that dies without
+;;      reaching its cleanup can't wedge sweeps for the daemon's life.
+
+(defvar aj/gcal--sweep-active-since nil
+  "`float-time' when the in-flight gcal post chain started, nil when idle.")
+
+(defvar aj/gcal--sweep-timer nil
+  "Pending idle timer scheduled by `aj/gcal-maybe-sweep-on-open', if any.")
+
+(defvar aj/gcal--sweep-timer-buffer nil
+  "Buffer `aj/gcal--sweep-timer' was scheduled for.")
+
+(defun aj/gcal--sweep-active-p ()
+  "Non-nil if a gcal post chain is in flight (started within the last 5 min)."
+  (and aj/gcal--sweep-active-since
+       (< (- (float-time) aj/gcal--sweep-active-since) 300)))
 
 (defun aj/gcal--stamp-synced-date (marker date-str)
   "Record DATE-STR as `gcal-synced-date' for the entry at MARKER, then save.
@@ -2651,7 +2816,9 @@ entry is already correctly synced for DATE-STR."
 (defun aj/gcal--sweep-chain (markers date-str)
   "Post MARKERS to gcal sequentially (one finishes before the next starts)."
   (if (null markers)
-      (message "gcal sweep: done")
+      (progn
+        (setq aj/gcal--sweep-active-since nil)
+        (message "gcal sweep: done"))
     (let ((m (car markers)))
       (deferred:nextc
         (deferred:try
@@ -2681,18 +2848,24 @@ whose date changed are moved. Posts run sequentially to avoid writeback races."
   (let ((date-str (aj/gcal--daily-title-date)))
     (unless date-str
       (user-error "Not in a daily note (no #+title date)"))
-    (aj/gcal-load-credentials)
-    (unless aj/gcal-credentials-loaded
-      (user-error "Google Calendar credentials unavailable"))
-    ;; Decrypt the token store now (interactive context) so the deferred posts
-    ;; below don't hit a loopback-pinentry prompt they can't satisfy.
-    (aj/gcal-prewarm-token-cache)
-    (let ((markers (aj/gcal--daily-priority-markers)))
-      (if (null markers)
-          (message "gcal sweep: no priority items found")
-        (message "gcal sweep: pushing up to %d priority item(s)…"
-                 (length markers))
-        (aj/gcal--sweep-chain markers date-str)))))
+    (if (aj/gcal--sweep-active-p)
+        ;; Never run two chains at once — their plstore open/save/close
+        ;; interleave via epg reentrancy and kill the token decrypt (see the
+        ;; concurrency-guard comment above `aj/gcal--sweep-active-since').
+        (message "gcal sweep: another push chain is in flight; skipped")
+      (aj/gcal-load-credentials)
+      (unless aj/gcal-credentials-loaded
+        (user-error "Google Calendar credentials unavailable"))
+      ;; Decrypt the token store now (interactive context) so the deferred posts
+      ;; below don't hit a loopback-pinentry prompt they can't satisfy.
+      (aj/gcal-prewarm-token-cache)
+      (let ((markers (aj/gcal--daily-priority-markers)))
+        (if (null markers)
+            (message "gcal sweep: no priority items found")
+          (setq aj/gcal--sweep-active-since (float-time))
+          (message "gcal sweep: pushing up to %d priority item(s)…"
+                   (length markers))
+          (aj/gcal--sweep-chain markers date-str))))))
 
 (defun aj/gcal-maybe-sweep-on-open ()
   "From a daily's open hook: schedule a gcal sweep of today/future priority items.
@@ -2715,12 +2888,23 @@ with \"Can't decrypt\"; warming the agent up front (cached 24h) avoids that."
         (when aj/gcal-credentials-loaded
           (aj/gcal-prewarm-token-cache)
           (let ((buf (current-buffer)))
-            (run-with-idle-timer
-             1 nil
-             (lambda ()
-               (when (buffer-live-p buf)
-                 (with-current-buffer buf
-                   (aj/gcal-sweep-daily-chores)))))))))))
+            ;; Coalesce: the open hook can fire twice for the same daily (the
+            ;; midnight daily-init capture + an interactive visit). Two pending
+            ;; timers would launch two concurrent sweep chains — the plstore
+            ;; race behind the "Can't decrypt" failures. Replace, don't stack.
+            (when (and (timerp aj/gcal--sweep-timer)
+                       (eq aj/gcal--sweep-timer-buffer buf))
+              (cancel-timer aj/gcal--sweep-timer))
+            (setq aj/gcal--sweep-timer-buffer buf
+                  aj/gcal--sweep-timer
+                  (run-with-idle-timer
+                   1 nil
+                   (lambda ()
+                     (setq aj/gcal--sweep-timer nil
+                           aj/gcal--sweep-timer-buffer nil)
+                     (when (buffer-live-p buf)
+                       (with-current-buffer buf
+                         (aj/gcal-sweep-daily-chores))))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Hide completed chores: delete their calendar event on DONE/CANCEL
@@ -2952,6 +3136,22 @@ Search is confined to `aj/course-notes-root'."
       (apply orig-fn args))))
 
 (advice-add 'org-latex-export-to-pdf :around #'aj/course-export-with-styling)
+
+;; ---------------------------------------------------------------------------
+;; Answer blocks:  #+begin_answer … #+end_answer  (no-op LaTeX environment)
+;; ---------------------------------------------------------------------------
+;; Page separation is done with explicit `#+latex: \newpage' keywords, NOT here:
+;;   - problems.org puts a \newpage before every reveal heading (Key move and
+;;     Answer), so a problem's question statement sits ALONE on its page and the
+;;     key move / why-missed / answer land on subsequent pages;
+;;   - the daily's ** Problems block puts a \newpage before each transcluded
+;;     question, isolating problems from one another.
+;; The `answer' environment stays defined (so `#+begin_answer' blocks export)
+;; but does nothing on its own.
+(with-eval-after-load 'ox-latex
+  (add-to-list 'org-latex-packages-alist
+               "\\newenvironment{answer}{}{}"
+               t))
 
 (provide 'org-config)
 ;;; org-config.el ends here
