@@ -33,9 +33,30 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') — $*"; }
 
 log "daily-init starting for $TODAY"
 
-# ── Gotcha guard: only generate when absent ──────────────────────────────
+# ── Gotcha guard: only GENERATE when absent (regenerating an existing daily
+#    would org-touch and risk a wake-watch fire loop). But still REFRESH the
+#    Problems block from problems.org so a re-schedule made after the file was
+#    first created lands by morning — idempotently, waking the deploy watch
+#    only when the file content actually changed (else restore the mtime).
 if [ -f "$ORG_FILE" ]; then
-    log "today's daily already exists ($ORG_FILE) — nothing to generate (no org-touch)"
+    log "today's daily already exists — refreshing Problems block (no re-generation)"
+    USER_TMP="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
+    SOCK="${USER_TMP%/}/emacs$(id -u)/server"
+    SOCK_ARG=(); [ -S "$SOCK" ] && SOCK_ARG=(--socket-name="$SOCK")
+    BEFORE="$(cksum < "$ORG_FILE" 2>/dev/null || echo a)"
+    STAMP="$(mktemp)"; touch -r "$ORG_FILE" "$STAMP"
+    "$EMACSCLIENT" "${SOCK_ARG[@]}" --eval "(ignore-errors
+        (with-current-buffer (find-file-noselect \"$ORG_FILE\")
+          (aj/insert-problems-due)
+          (when (buffer-modified-p) (save-buffer))))" >/dev/null 2>&1 || true
+    AFTER="$(cksum < "$ORG_FILE" 2>/dev/null || echo b)"
+    if [ "$BEFORE" = "$AFTER" ]; then
+        touch -r "$STAMP" "$ORG_FILE"   # no real change — don't wake the watch
+        log "Problems block unchanged — mtime restored"
+    else
+        log "Problems block updated — wake-watch/poll will redeploy"
+    fi
+    rm -f "$STAMP"
     exit 0
 fi
 
