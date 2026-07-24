@@ -42,6 +42,57 @@ full path of the parent directory."
 (define-key my/yank-map (kbd "f") #'my/yank-file-path)
 
 ;; ---------------------------------------------------------------------------
+;; System clipboard for terminal (TTY) frames  (`emacsclient -t' / the `et' alias)
+;; ---------------------------------------------------------------------------
+;; GUI frames sync the kill-ring with the macOS pasteboard natively via
+;; `gui-select-text' / `gui-selection-value'.  On the shared daemon those are
+;; the global `interprogram-cut-function' / `-paste-function', but they can't
+;; reach the NS pasteboard from a *terminal* frame — so a kill in `et' never
+;; lands on the system clipboard.  Route TTY cut/paste through pbcopy/pbpaste
+;; while leaving GUI frames on their native path.  The branch is on
+;; `display-graphic-p' of the *selected frame at call time*, so one daemon
+;; serves both frame types correctly.  (Referencing `gui-select-text' /
+;; `gui-selection-value' by name, not the current variable values, keeps a
+;; `C-c R' reload from wrapping our own wrappers into infinite recursion.)
+(defvar aj/interprogram--last-cut nil
+  "Last text this process copied, so pbpaste-yank doesn't re-add our own kill.")
+
+(defun aj/pbcopy (text)
+  "Send TEXT to the macOS clipboard via pbcopy."
+  (let ((process-connection-type nil))
+    (let ((proc (start-process "pbcopy" nil "pbcopy")))
+      (process-send-string proc text)
+      (process-send-eof proc))))
+
+(defun aj/pbpaste ()
+  "Return the macOS clipboard contents via pbpaste."
+  (shell-command-to-string "pbpaste"))
+
+(defun aj/interprogram-cut (text)
+  "Copy TEXT to the system clipboard, routed by frame type.
+GUI frames use the native NS path; TTY frames shell out to pbcopy."
+  (if (display-graphic-p)
+      (gui-select-text text)
+    (aj/pbcopy text)
+    (setq aj/interprogram--last-cut text)))
+
+(defun aj/interprogram-paste ()
+  "Return the system clipboard, routed by frame type.
+GUI frames use the native NS path; TTY frames shell out to pbpaste.  Returns
+nil when the clipboard still holds our own last kill, so yank doesn't push a
+duplicate onto the kill-ring."
+  (if (display-graphic-p)
+      (gui-selection-value)
+    (let ((clip (aj/pbpaste)))
+      (cond
+       ((string= clip "") nil)
+       ((string= clip aj/interprogram--last-cut) nil)
+       (t clip)))))
+
+(setq interprogram-cut-function #'aj/interprogram-cut
+      interprogram-paste-function #'aj/interprogram-paste)
+
+;; ---------------------------------------------------------------------------
 ;; Dired: open PDF in sioyek
 ;; ---------------------------------------------------------------------------
 
