@@ -67,18 +67,19 @@
 ;; The stock gruber faces render variable names / property accesses near-white
 ;; (#f4f4ff), which washes out against the default text.  Recolour the
 ;; identifier faces along VSCode semantic lines so call sites, variables and
-;; types read distinctly (previously they were all one blue, so e.g. in
-;; `G = Graph(graph)' the call `Graph' looked the same as the variables).
-;; Covers both classic font-lock and tree-sitter face names:
+;; types read distinctly.  These are GLOBAL (every prog mode); the fuller VS
+;; Code "2026 Dark" palette (red keywords, mauve functions, …) is applied
+;; buffer-locally to Python only — see `aj/vscode-2026' in org-config.el — so
+;; it doesn't bleed into Elisp/shell/etc.
 ;;   - variable *bindings* (assignment targets / params) → deeper blue
 ;;   - variable *uses* / properties                      → light blue
 ;;   - functions / methods (defs and calls)              → yellow
 ;;   - classes / types                                   → teal
-;; Splitting the binding face from the use face mirrors VSCode's
-;; write-vs-read distinction: in `G = Graph(graph)' the bound `G' reads a
-;; shade darker than the referenced `graph'.
 
-(defvar gruber-themes-dark-code-colors
+;; `defconst' (not `defvar') so editing these + `C-c R' actually re-applies —
+;; `defvar' is a no-op once the symbol is bound, which would silently keep the
+;; old palette on reload.
+(defconst gruber-themes-dark-code-colors
   '((font-lock-variable-name-face  . (:foreground "#569cd6"))  ; bindings — deeper blue
     (font-lock-variable-use-face   . (:foreground "#9cdcfe"))  ; uses — VSCode light blue
     (font-lock-property-name-face  . (:foreground "#9cdcfe"))
@@ -108,7 +109,7 @@
     (rainbow-delimiters-mismatched-face . (:foreground "#ff5555")))
   "Variable/method face colors for gruber-darker theme.")
 
-(defvar gruber-themes-light-code-colors
+(defconst gruber-themes-light-code-colors
   '((font-lock-variable-name-face  . (:foreground "#001080"))  ; bindings — deep navy
     (font-lock-variable-use-face   . (:foreground "#005cc5"))  ; uses — readable blue
     (font-lock-property-name-face  . (:foreground "#005cc5"))

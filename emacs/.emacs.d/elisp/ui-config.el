@@ -46,7 +46,9 @@ ns/mac frames use Apple Color Emoji; X frames keep the Noto fallback."
 ;; Load gruber-themes for toggle and ergonomic headings
 (require 'gruber-themes)
 
-;; Load default theme
+;; Load default theme.  (Code-face syntax colours — VS Code "2026 Dark" — live
+;; in gruber-themes.el's *-code-colors alists, applied via the
+;; `enable-theme-functions' hook, so they survive the light/dark toggle.)
 (load-theme 'gruber-darker t)
 
 ;; ---------------------------------------------------------------------------
