@@ -62,13 +62,15 @@
           ;; Inboxes
           (:name "Gmail" :query "path:gmail-lieer/** and tag:inbox" :key "g" :sort-order newest-first)
           (:name "Abaj" :query "folder:abaj/Inbox" :key "b" :sort-order newest-first)
+          (:name "TF-Aayush" :query "folder:tutorsfirst-aayush/Inbox" :key "T" :sort-order newest-first)
+          (:name "TF-Manager" :query "folder:tutorsfirst-manager/Inbox" :key "M" :sort-order newest-first)
           (:name "UNSW" :query "folder:unsw/Inbox" :key "n" :sort-order newest-first)
           (:name "School" :query "folder:unsw-school/Inbox" :key "S" :sort-order newest-first)
           ;; Gmail labels
           (:name "Starred" :query "path:gmail-lieer/** and (tag:flagged or tag:YELLOW_STAR)" :key "f" :sort-order newest-first)
           (:name "Finance" :query "path:gmail-lieer/** and tag:Finance" :key "$" :sort-order newest-first)
           (:name "Orders" :query "path:gmail-lieer/** and tag:Orders" :key "o" :sort-order newest-first)
-          (:name "Sent" :query "tag:sent or folder:abaj/Sent or folder:\"unsw/Sent Items\" or folder:\"unsw-school/Sent Items\"" :key "s" :sort-order newest-first)
+          (:name "Sent" :query "tag:sent or folder:abaj/Sent or folder:tutorsfirst-aayush/Sent or folder:tutorsfirst-manager/Sent or folder:\"unsw/Sent Items\" or folder:\"unsw-school/Sent Items\"" :key "s" :sort-order newest-first)
           (:name "Trash" :query "tag:trash" :key "x" :sort-order newest-first)))
 
   ;; Show counts in hello screen
@@ -87,6 +89,8 @@
   (setq notmuch-identities
         '("Aayush Bajaj <aayushbajaj7@gmail.com>"
           "Aayush Bajaj <j@abaj.ai>"
+          "Aayush Bajaj | TutorsFirst <aayush@tutorsfirst.com.au>"
+          "TutorsFirst <manager@tutorsfirst.com.au>"
           "Aayush Bajaj <z5362216@zmail.unsw.edu.au>"
           "Aayush Bajaj <aayush.bajaj@student.unsw.edu.au>"))
 
@@ -99,6 +103,8 @@
   (setq notmuch-fcc-dirs
         `(("aayushbajaj7@gmail.com" . nil)  ; Gmail saves sent automatically
           ("j@abaj.ai" . ,(expand-file-name "~/Maildir/abaj/Sent"))
+          ("aayush@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst-aayush/Sent"))
+          ("manager@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst-manager/Sent"))
           ("z5362216@zmail.unsw.edu.au" . ,(expand-file-name "~/Maildir/unsw/Sent Items"))
           ("aayush.bajaj@student.unsw.edu.au" . ,(expand-file-name "~/Maildir/unsw-school/Sent Items"))))
 
@@ -234,14 +240,23 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
 
   (define-key notmuch-search-mode-map (kbd "d")
     (lambda ()
-      "Move to trash (marked or current)"
+      "Move to trash (marked or current) — propagates server-side."
       (interactive)
       (when (my/email-sync-in-progress-p)
         (user-error "Sync in progress, please wait"))
       (setq my/notmuch-last-tag-time (current-time))
       (if my/notmuch-marked-threads
-          (my/notmuch-search-mark-action '("+trash" "-inbox" "-unread" "-marked"))
+          (let ((query (mapconcat #'identity my/notmuch-marked-threads " or ")))
+            (shell-command-to-string
+             (format "notmuch tag +trash -inbox -unread -marked -- %s"
+                     (shell-quote-argument query)))
+            (my/notmuch-trash-move-files query)
+            (setq my/notmuch-marked-threads nil
+                  my/notmuch-pending-changes t)
+            (notmuch-refresh-this-buffer)
+            (message "Trashed marked threads"))
         (notmuch-search-tag '("+trash" "-inbox" "-unread"))
+        (my/notmuch-trash-move-files (notmuch-search-find-thread-id))
         (setq my/notmuch-pending-changes t)
         (notmuch-search-next-thread))))
 
@@ -270,6 +285,8 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
       (if (member "trash" (notmuch-search-get-tags))
           (progn
             (notmuch-search-tag '("-trash" "+inbox"))
+            (my/notmuch-untrash-move-files (notmuch-search-find-thread-id))
+            (setq my/notmuch-pending-changes t)
             (message "Restored from trash"))
         (notmuch-search-tag
          (if (member "unread" (notmuch-search-get-tags))
@@ -306,6 +323,8 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
       (cond
        ((string-match "gmail-lieer" files) 'gmail)
        ((string-match "/abaj/" files) 'abaj)
+       ((string-match "/tutorsfirst-aayush/" files) 'tf-aayush)
+       ((string-match "/tutorsfirst-manager/" files) 'tf-manager)
        ((string-match "/unsw-school/" files) 'school)
        ((string-match "/unsw/" files) 'unsw)
        (t nil))))
@@ -320,6 +339,8 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
           (cond
            ((string-match "gmail-lieer" files) 'gmail)
            ((string-match "/abaj/" files) 'abaj)
+           ((string-match "/tutorsfirst-aayush/" files) 'tf-aayush)
+           ((string-match "/tutorsfirst-manager/" files) 'tf-manager)
            ((string-match "/unsw-school/" files) 'school)
            ((string-match "/unsw/" files) 'unsw)
            (t nil))))))
@@ -330,6 +351,8 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
            (account (my/notmuch-get-message-account))
            (maildir (cond
                      ((eq account 'abaj) "~/Maildir/abaj")
+                     ((eq account 'tf-aayush) "~/Maildir/tutorsfirst-aayush")
+                     ((eq account 'tf-manager) "~/Maildir/tutorsfirst-manager")
                      ((eq account 'unsw) "~/Maildir/unsw")
                      ((eq account 'school) "~/Maildir/unsw-school")
                      (t nil))))
@@ -343,6 +366,89 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
           (rename-file file dest-file)
           (notmuch-refresh-this-buffer)
           (message "Moved to %s" folder)))))
+
+  ;; ---------------------------------------------------------------------------
+  ;; Server-side delete for IMAP accounts
+  ;; ---------------------------------------------------------------------------
+  ;; notmuch's `trash' tag is LOCAL ONLY. For an IMAP account (abaj, fatfort,
+  ;; fattails, tutorsfirst, unsw, unsw-school) tagging a message never touches
+  ;; the server, so a "deleted" message sits in the server Inbox forever and
+  ;; still shows up in K9 / webmail. To actually delete it we physically move
+  ;; the maildir file into the account's trash folder; mbsync (`Expunge Both')
+  ;; then expunges it from the server Inbox and uploads it to the server Trash,
+  ;; i.e. a real "move to Trash" that propagates to every device. Gmail is
+  ;; exempt — lieer syncs the `trash' tag as a label via the Gmail API.
+  ;;
+  ;; Mailcow accounts use a folder literally named "Trash"; UNSW (Microsoft
+  ;; 365) uses "Deleted Items".
+  (defun my/notmuch-account-subdir (file subfolder)
+    "Return absolute \".../<SUBFOLDER>/cur\" for FILE's account, or nil.
+Nil for Gmail (lieer-managed) and unrecognised paths."
+    (when (string-match "\\(.*/Maildir/\\([^/]+\\)\\)/" file)
+      (let ((root (match-string 1 file))
+            (account (match-string 2 file)))
+        (unless (string= account "gmail-lieer")
+          (expand-file-name (concat subfolder "/cur") root)))))
+
+  (defun my/notmuch-account-trash-subdir (file)
+    "Return the trash \".../cur\" dir for FILE's account, or nil.
+\"Deleted Items\" for UNSW (Microsoft 365), \"Trash\" for mailcow accounts."
+    (when (string-match "/Maildir/\\([^/]+\\)/" file)
+      (my/notmuch-account-subdir
+       file
+       (if (member (match-string 1 file) '("unsw" "unsw-school"))
+           "Deleted Items" "Trash"))))
+
+  (defun my/notmuch--relocate-files (query dest-fn skip-regexp)
+    "Move every file matching notmuch QUERY into the dir DEST-FN returns for it.
+DEST-FN is called with each file path and returns a target \".../cur\" dir or
+nil (skip). Files whose path matches SKIP-REGEXP are skipped. `--exclude=false'
+so already-trashed messages are still found. Returns the number of files moved."
+    (let ((files (split-string
+                  (shell-command-to-string
+                   (format "notmuch search --output=files --exclude=false -- %s"
+                           (shell-quote-argument query)))
+                  "\n" t))
+          (moved 0))
+      (dolist (file files)
+        (let ((dest-dir (funcall dest-fn file)))
+          (when (and dest-dir
+                     (file-exists-p file)
+                     (not (and skip-regexp (string-match-p skip-regexp file))))
+            (unless (file-directory-p dest-dir) (make-directory dest-dir t))
+            ;; Strip mbsync's per-folder UID infix (,U=NNN) from the name.
+            ;; It is only valid in the source folder; carrying it into the
+            ;; destination makes mbsync choke ("UID N beyond highest assigned
+            ;; UID") and refuse to upload. Without it the file is a fresh
+            ;; message that mbsync uploads and assigns a new UID to.
+            (let ((base (replace-regexp-in-string
+                         ",U=[0-9]+" "" (file-name-nondirectory file))))
+              (rename-file file (expand-file-name base dest-dir) t))
+            (setq moved (1+ moved)))))
+      moved))
+
+  (defun my/notmuch-trash-move-files (query)
+    "Move IMAP files matching QUERY into their account's trash folder.
+Gmail files and files already in a Trash/Deleted Items folder are skipped."
+    (my/notmuch--relocate-files query #'my/notmuch-account-trash-subdir
+                                "/\\(Trash\\|Deleted Items\\)/"))
+
+  (defun my/notmuch-untrash-move-files (query)
+    "Move IMAP files matching QUERY back into their account's Inbox folder."
+    (my/notmuch--relocate-files
+     query
+     (lambda (f) (my/notmuch-account-subdir f "Inbox"))
+     "/Inbox/"))
+
+  (defun my/notmuch-trash-reconcile ()
+    "One-time backlog fix: move every trash-tagged IMAP message that is still
+outside a trash folder into its account trash folder, so the next mbsync
+purges it from the server. Gmail is left to lieer. Reindex + sync must
+follow. Returns the number of files moved."
+    (interactive)
+    (let ((n (my/notmuch-trash-move-files "tag:trash")))
+      (message "notmuch trash reconcile: moved %d file(s)" n)
+      n))
 
   (defun my/notmuch-add-label (label)
     "Add LABEL tag to current message. For Gmail, syncs as label."
@@ -407,9 +513,12 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
   ;; ---------------------------------------------------------------------------
   (define-key notmuch-show-mode-map (kbd "d")
     (lambda ()
-      "Move to trash"
+      "Move to trash — propagates server-side."
       (interactive)
+      (setq my/notmuch-last-tag-time (current-time))
       (notmuch-show-tag '("+trash" "-inbox" "-unread"))
+      (my/notmuch-trash-move-files (notmuch-show-get-message-id))
+      (setq my/notmuch-pending-changes t)
       (notmuch-show-next-thread-show)))
 
   (define-key notmuch-show-mode-map (kbd "a")
@@ -425,6 +534,8 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
       (if (member "trash" (notmuch-show-get-tags))
           (progn
             (notmuch-show-tag '("-trash" "+inbox"))
+            (my/notmuch-untrash-move-files (notmuch-show-get-message-id))
+            (setq my/notmuch-pending-changes t)
             (message "Restored from trash"))
         (notmuch-show-tag
          (if (member "unread" (notmuch-show-get-tags))
@@ -732,9 +843,12 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
   ;; ---------------------------------------------------------------------------
   (define-key notmuch-tree-mode-map (kbd "d")
     (lambda ()
-      "Move to trash"
+      "Move to trash — propagates server-side."
       (interactive)
+      (setq my/notmuch-last-tag-time (current-time))
       (notmuch-tree-tag '("+trash" "-inbox" "-unread"))
+      (my/notmuch-trash-move-files (notmuch-tree-get-message-id))
+      (setq my/notmuch-pending-changes t)
       (notmuch-tree-next-message)))
 
   (define-key notmuch-tree-mode-map (kbd "a")
@@ -824,6 +938,18 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
        :smtp-port 465
        :smtp-stream ssl
        :fcc ,(expand-file-name "~/Maildir/abaj/Sent"))
+      ("aayush@tutorsfirst.com.au"
+       :name "Aayush Bajaj | TutorsFirst"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/tutorsfirst-aayush/Sent"))
+      ("manager@tutorsfirst.com.au"
+       :name "TutorsFirst"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/tutorsfirst-manager/Sent"))
       ("z5362216@zmail.unsw.edu.au"
        :name "Aayush Bajaj"
        :smtp-server "smtp.office365.com"
@@ -1137,7 +1263,24 @@ If QUIET is non-nil, don't show messages."
                     "wait $gmi_pid && wait $mbsync_pid && "
                     "notmuch new"))
            ;; Add jobsync corrections scanner (source config for API key)
-           (cmd (concat parallel-sync " && source ~/.jobsync/config && node ~/lattice/code/private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5")))
+           (raw-cmd (concat parallel-sync " && source ~/.jobsync/config && node ~/lattice/code/private/jobsync/scripts/jobsync-scan-corrections.js 2>&1 | tail -5"))
+           ;; Redirect the whole pipeline's stdout+stderr to a log file rather
+           ;; than letting it flow back through Emacs's process pipe. WHY: this
+           ;; sync runs `notmuch new', which holds the single Xapian *writer*
+           ;; lock while indexing. A foreground `notmuch tag' (pressing `d' etc.
+           ;; in notmuch-show) blocks the Emacs main thread synchronously
+           ;; waiting for that same lock. If `notmuch new's chatty progress
+           ;; output goes through the Emacs pipe, a blocked main thread stops
+           ;; draining it, the 64K pipe buffer fills, `notmuch new's write()
+           ;; blocks, it never finishes, never releases the lock -> the tag
+           ;; waits forever -> whole daemon deadlocks. Writing to a regular file
+           ;; can never block, so `notmuch new' always completes and releases
+           ;; the lock; a concurrent tag just waits a beat instead of hanging.
+           ;; The `{ ...; }' group makes the redirect cover the backgrounded
+           ;; gmi/mbsync children too (they inherit the group's fds). The
+           ;; sentinel keys off the process exit status + "finished" event, not
+           ;; buffer contents, so nothing downstream needs the piped output.
+           (cmd (concat "{ " raw-cmd " ; } >>~/.jobsync/sync.log 2>&1")))
       (unless quiet (message (if needs-push "Syncing (pushing changes)..." "Syncing...")))
       ;; `make-process' with :sentinel attaches the handler atomically.
       ;; `start-process' + `set-process-sentinel' has a window where the
