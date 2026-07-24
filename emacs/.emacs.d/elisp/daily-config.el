@@ -139,6 +139,11 @@ Per-step timings are logged to *Messages* when the total exceeds
           (aj/ensure-recurring-separators))
         (aj/daily-time-step aj--timings "refresh-daily-calendar"
           (aj/refresh-daily-calendar)))
+      ;; Transclude problems.org entries SCHEDULED for this day (each carries a
+      ;; rotated answer) into a ** Problems block under * Recurring. Runs for
+      ;; both new and existing dailies; also enables + adds transclusions.
+      (aj/daily-time-step aj--timings "insert-problems-due"
+        (aj/insert-problems-due))
       ;; Enable org-transclusion-mode to render transcludes
       (when (and (fboundp 'org-transclusion-mode)
                  (not (bound-and-true-p org-transclusion-mode)))
