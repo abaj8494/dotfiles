@@ -1011,6 +1011,11 @@ Idempotent: collapse live transcludes, delete the old block, rewrite, re-add."
                                        (string-to-number (match-string 2))
                                        (string-to-number (match-string 1))))
                (ids (aj/problems-due-on date-time)))
+          ;; NEVER touch a PAST daily: its `** Problems' block is a historical
+          ;; record that may carry device (reMarkable) annotations — stripping or
+          ;; repaginating it re-flows the PDF and orphans those pen strokes. Only
+          ;; (re)build for today or a future daily; past dailies stay frozen.
+          (when (>= (time-to-days date-time) (time-to-days (current-time)))
           ;; Collapse any live transclusions back to directives before editing.
           (when (bound-and-true-p org-transclusion-mode)
             (ignore-errors (org-transclusion-remove-all)))
@@ -1051,7 +1056,7 @@ Idempotent: collapse live transcludes, delete the old block, rewrite, re-add."
           (unless (bound-and-true-p org-transclusion-mode)
             (when (fboundp 'org-transclusion-mode) (org-transclusion-mode 1)))
           (when (fboundp 'org-transclusion-add-all)
-            (ignore-errors (org-transclusion-add-all))))))))
+            (ignore-errors (org-transclusion-add-all)))))))))
 
 (provide 'daily-recurring)
 
