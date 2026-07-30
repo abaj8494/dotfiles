@@ -11,7 +11,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/aayushbajaj/lattice/2-areas/devices/remarkable/ferrari/clip-image-sync/mac/clip-sync.sh</string>
+        <string>/Users/aayushbajaj/lattice/2-areas/devices/remarkable/clip-image-sync/mac/clip-sync.sh</string>
     </array>
 
     <!-- Long-running poller: start at login, restart if it ever dies. -->
