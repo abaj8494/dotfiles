@@ -339,7 +339,7 @@ SCOPE is as in `anki-editor-push-notes'."
 ;; ---------------------------------------------------------------------------
 ;; Field-by-field "waterfall" note inserter  (C-c C-t in flashcard files)
 ;; ---------------------------------------------------------------------------
-;; Pressing C-c C-t in a file under ~/lattice/notes/flashcards/ launches a
+;; Pressing C-c C-t in a file under ~/lattice/org-notes/flashcards/ launches a
 ;; prompt for the note type, then tags, then EVERY field of that model in turn
 ;; — so no field is ever silently forgotten. Mirrors the "Add Anki" flow but
 ;; walks the model's real field list (fetched live from AnkiConnect).
@@ -449,7 +449,7 @@ note inserter, since flashcard files have no TODO workflow to trigger."
 (defun aj/maybe-enable-anki-card-mode ()
   "Enable `aj/anki-card-mode' for Org files under the flashcards tree."
   (when (and buffer-file-name
-             (string-match-p "/lattice/notes/flashcards/"
+             (string-match-p "/lattice/org-notes/flashcards/"
                              (expand-file-name buffer-file-name)))
     (aj/anki-card-mode 1)))
 

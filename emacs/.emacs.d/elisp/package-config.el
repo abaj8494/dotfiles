@@ -501,7 +501,7 @@ DECK and SCOPE are as in `ankiorg-pull-notes'."
 ;; AnkiConnect: Pull Flagged Notes with Quickfix Navigation
 ;; ---------------------------------------------------------------------------
 
-(defvar ankiorg-search-directories '("~/lattice/notes/flashcards")
+(defvar ankiorg-search-directories '("~/lattice/org-notes/flashcards")
   "Directories to search for org files containing Anki note IDs.")
 
 (defun ankiorg--anki-connect (action params)
@@ -921,7 +921,7 @@ With prefix ARG, search from current directory instead of project root."
 (use-package org-roam
   :ensure t
   :custom
-  (org-roam-directory (file-truename "~/lattice/notes/"))
+  (org-roam-directory (file-truename "~/lattice/org-notes/"))
   :bind (("C-c a" . org-agenda)
          ("C-c n l" . org-roam-buffer-toggle)
          ("C-c n f" . org-roam-node-find)
@@ -1289,9 +1289,9 @@ notes tree); results are cached and invalidated by file mtime."
   :after org
   :init
   (setq org-shop-keymap-prefix "C-c S")
-  (setq org-shop-seasons-file "~/lattice/notes/private/shops/seasons.org")
+  (setq org-shop-seasons-file "~/lattice/org-notes/private/shops/seasons.org")
   :config
-  (setq org-shop-directory "~/lattice/notes/private/shops/")
+  (setq org-shop-directory "~/lattice/org-notes/private/shops/")
   (org-shop-setup)
   ;; Personal receipt-ocr workflow glue (adds C-c S A → make org-shop in a
   ;; vsplit vterm). Lives in the receipt-ocr repo rather than upstream

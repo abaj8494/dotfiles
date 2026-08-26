@@ -501,11 +501,11 @@ re-init doesn't stack duplicates."
   (setq org-insert-heading-respect-content t)
   (setq org-log-done 'time)
   (setq org-log-into-drawer t)
-  (setq org-directory "/Users/aayushbajaj/lattice/notes/daily/")
+  (setq org-directory "/Users/aayushbajaj/lattice/org-notes/daily/")
   ;; problems.org is the uni spaced re-attempt queue (gcal.org is appended
   ;; further down by the org-gcal section). Everything else stays out of the
   ;; agenda deliberately — the dailies machinery has its own scanner.
-  (setq org-agenda-files '("/Users/aayushbajaj/lattice/notes/uni/problems.org"))
+  (setq org-agenda-files '("/Users/aayushbajaj/lattice/org-notes/uni/problems.org"))
   ;; C-c a u — the morning re-attempt queue, restricted to problems.org so
   ;; calendar entries don't drown it.
   (setq org-agenda-custom-commands
@@ -514,7 +514,7 @@ re-init doesn't stack duplicates."
                         (org-agenda-overriding-header "Due today (blank page, zero AI)")))
             (todo "RETRY" ((org-agenda-overriding-header "In rotation (RETRY)")))
             (todo "NEW" ((org-agenda-overriding-header "Never attempted (NEW)"))))
-           ((org-agenda-files '("/Users/aayushbajaj/lattice/notes/uni/problems.org"))))))
+           ((org-agenda-files '("/Users/aayushbajaj/lattice/org-notes/uni/problems.org"))))))
   (setq org-todo-keywords
         '((sequence "TODO(t)" "WAIT(w!)" "|" "CANCEL(c!)" "DONE(d!)")))
 
@@ -2245,20 +2245,73 @@ Settings for the Tasks calendar → Integrate calendar → Calendar ID).")
           (message "org-gcal ready"))))))
 
 (declare-function oauth2-auto--plstore-read "oauth2-auto")
+(declare-function oauth2-auto--compute-id "oauth2-auto")
+(defvar oauth2-auto--plstore-cache)
+(defvar oauth2-auto-plstore)
+
+;; ---------------------------------------------------------------------------
+;; oauth2-auto: answer token reads from memory instead of decrypting every time
+;; ---------------------------------------------------------------------------
+;; `oauth2-auto--plstore-read' maintains a cache (`oauth2-auto--plstore-cache')
+;; but upstream disabled the lookup — the body reads `(or nil ;(gethash id …)'
+;; — behind a FIXME about invalidating it when another program writes the file.
+;; So every token fetch forks gpg to decrypt oauth2-auto.plist: three decrypts
+;; per prewarm, one more per post. That is slow (most of the ~0.9s
+;; `gcal-maybe-sweep' step of the daily-open hook) and, more to the point, it
+;; is the only remaining reason an async code path depends on a secret-key
+;; operation succeeding at all.
+;;
+;; This daemon is the sole writer of that file, so restoring the lookup is
+;; safe, and the FIXME's hazard is covered by keying the cache to the file's
+;; mtime: an out-of-band write (git checkout, restore from backup) still
+;; invalidates it. `oauth2-auto--plstore-write' refreshes the cache entry
+;; itself, and a plist that goes stale anyway self-heals — it carries
+;; `:expiration', so `oauth2-auto-plist' simply refreshes it.
+
+(defvar aj/oauth2--plstore-mtime nil
+  "Mtime of `oauth2-auto-plstore' as of the last read/write we performed.
+Any other value on disk means someone else rewrote the store and the
+in-memory cache must be dropped.")
+
+(defun aj/oauth2--plstore-file-mtime ()
+  "Modification time of the oauth2-auto plstore, or nil if it is absent."
+  (let ((attrs (file-attributes (expand-file-name oauth2-auto-plstore))))
+    (and attrs (file-attribute-modification-time attrs))))
+
+(defun aj/oauth2--plstore-read-cached (orig-fn username provider)
+  "Around advice for `oauth2-auto--plstore-read': serve from memory when valid."
+  (let ((mtime (aj/oauth2--plstore-file-mtime)))
+    (unless (equal mtime aj/oauth2--plstore-mtime)
+      (clrhash oauth2-auto--plstore-cache)
+      (setq aj/oauth2--plstore-mtime mtime)))
+  (let ((id (oauth2-auto--compute-id username provider)))
+    (or (gethash id oauth2-auto--plstore-cache)
+        ;; Miss: ORIG-FN decrypts and repopulates the hash table itself.
+        (prog1 (funcall orig-fn username provider)
+          (setq aj/oauth2--plstore-mtime (aj/oauth2--plstore-file-mtime))))))
+
+(defun aj/oauth2--plstore-note-write (&rest _)
+  "After advice for `oauth2-auto--plstore-write': our own write is not stale."
+  (setq aj/oauth2--plstore-mtime (aj/oauth2--plstore-file-mtime)))
+
+(with-eval-after-load 'oauth2-auto
+  (advice-add 'oauth2-auto--plstore-read :around #'aj/oauth2--plstore-read-cached)
+  (advice-add 'oauth2-auto--plstore-write :after #'aj/oauth2--plstore-note-write))
 
 (defun aj/gcal-prewarm-token-cache ()
-  "Synchronously decrypt the org-gcal OAuth token store to warm gpg-agent.
-Call this from an INTERACTIVE context (a command body or a find-file hook)
-before launching any deferred org-gcal post — never from a deferred/timer.
+  "Synchronously decrypt the org-gcal OAuth token store, up front.
+Populates `oauth2-auto--plstore-cache' (see `aj/oauth2--plstore-read-cached')
+so the deferred posts that follow can read their tokens without forking gpg at
+all, and warms gpg-agent's passphrase cache for the one decrypt a token refresh
+still performs. No network, no re-auth — just a plstore read.
 
-Why: org-gcal reads the refresh token by decrypting `oauth2-auto.plist'
-(plstore) on every token fetch (its plstore cache is disabled upstream). Emacs
-runs under loopback pinentry (`epa-pinentry-mode' = loopback), so that decrypt's
-passphrase prompt must land in the minibuffer — which is unusable from a
-deferred/process-filter callback, where gpg then fails with \"Can't decrypt\".
-One synchronous decrypt here unlocks the key; gpg-agent (max-cache-ttl 86400)
-serves it to the later async decrypts with no prompt. No network, no re-auth —
-just a plstore read."
+This used to be load-bearing: under loopback pinentry a decrypt from a
+deferred/timer had no minibuffer to prompt in and died with \"Can't decrypt\",
+so the key HAD to be unlocked from interactive context first. Passphrase
+prompts now go to pinentry-mac instead (see the epg block in email-config.el),
+which works from any context, so this is an optimisation rather than a
+prerequisite — it is still called early because doing the work off the async
+path is simply better."
   (when aj/gcal-credentials-loaded
     (require 'oauth2-auto)
     (condition-case err
@@ -2456,14 +2509,17 @@ just a plstore read."
 ;; Push to gcal after capture finalization only if C-c C-s was used during capture
 (defun aj/gcal-after-capture-finalize ()
   "Push newly captured item to Google Calendar if scheduled via `org-schedule'.
-Credentials are loaded SYNCHRONOUSLY first (while the parent frame's
-minibuffer is still alive) so the gpg-agent cache gets warmed by
-pinentry/loopback. The actual push is deferred via a 0-delay timer so
-it runs after the capture's dynamic context (windows, minibuffer state)
-has fully unwound. Without the eager pre-load the deferred timer fires
-in an async context with no live minibuffer, so loopback pinentry sends
-an empty passphrase and the decrypt of ~/.authinfo.gpg or
-oauth2-auto.plist aborts with \"Bad passphrase\" / \"Can't decrypt\"."
+Credentials are loaded SYNCHRONOUSLY first, then the push is deferred via a
+0-delay timer so it runs after the capture's dynamic context (windows,
+minibuffer state) has fully unwound.
+
+The eager load was originally there because passphrase prompts went to the
+minibuffer (loopback pinentry): from the deferred timer there was no live
+minibuffer, so the decrypt of ~/.authinfo.gpg or oauth2-auto.plist aborted
+with \"Bad passphrase\" / \"Can't decrypt\". Prompts now go to pinentry-mac,
+which works from any context (see the epg block in email-config.el), so this
+is about doing the work off the async path rather than about being able to
+do it at all."
   (when aj/--gcal-scheduled-during-capture
     (setq aj/--gcal-scheduled-during-capture nil)
     (when (and aj/gcal-auto-push
@@ -2494,13 +2550,12 @@ oauth2-auto.plist aborts with \"Bad passphrase\" / \"Can't decrypt\"."
 (add-hook 'org-capture-after-finalize-hook #'aj/gcal-after-capture-finalize t)
 
 ;; Pre-warm gpg-agent + load gcal credentials when the capture buffer first
-;; opens. At this point the user's frame minibuffer is fully free, so the
-;; loopback pinentry prompt lands cleanly. By the time the capture is
-;; finalized and we try to push, the agent's cache is warm and the post
-;; runs without any prompt. Without this, the prompt fires from inside the
-;; capture-finalize hook (or its run-at-time timer) where the minibuffer
-;; state is unreliable, the callback returns empty, and gpg fails with
-;; "No passphrase given" → "Can't decrypt".
+;; opens, so that by the time the capture is finalized and we try to push, the
+;; agent's cache is warm and the post runs without any prompt. This mattered
+;; more under loopback pinentry, where a prompt fired from the capture-finalize
+;; hook (or its run-at-time timer) had no reliable minibuffer to land in and
+;; gpg failed with "No passphrase given" → "Can't decrypt"; pinentry-mac has no
+;; such constraint, so this is now just moving work off the async path.
 (defun aj/gcal-prewarm-on-capture ()
   "Pre-load gcal credentials when entering a capture buffer.
 No-op once credentials are loaded for the session."
@@ -2856,8 +2911,8 @@ whose date changed are moved. Posts run sequentially to avoid writeback races."
       (aj/gcal-load-credentials)
       (unless aj/gcal-credentials-loaded
         (user-error "Google Calendar credentials unavailable"))
-      ;; Decrypt the token store now (interactive context) so the deferred posts
-      ;; below don't hit a loopback-pinentry prompt they can't satisfy.
+      ;; Load the token store now, so the deferred posts below read their
+      ;; tokens straight from memory instead of forking gpg per post.
       (aj/gcal-prewarm-token-cache)
       (let ((markers (aj/gcal--daily-priority-markers)))
         (if (null markers)
@@ -2874,11 +2929,11 @@ when nothing is pending. The actual posting is deferred to an idle timer so it
 never blocks file open; credentials load (and may prompt once) only when there
 is something to push.
 
-Credential load AND the token-store decrypt (`aj/gcal-prewarm-token-cache')
-happen HERE, synchronously, while the open hook still runs in interactive
-context — not inside the idle timer. Under loopback pinentry a passphrase prompt
-fired from the timer's deferred posts can't reach the minibuffer and gpg fails
-with \"Can't decrypt\"; warming the agent up front (cached 24h) avoids that."
+Credential load AND the token-store read (`aj/gcal-prewarm-token-cache') happen
+HERE, synchronously, rather than inside the idle timer, so the deferred posts
+never wait on gpg. This was once a hard requirement: under loopback pinentry a
+passphrase prompt fired from the timer's deferred posts could not reach the
+minibuffer and gpg failed with \"Can't decrypt\"."
   (when aj/gcal-auto-sweep-on-open
     (let ((date-str (aj/gcal--daily-title-date)))
       (when (and date-str
@@ -2998,8 +3053,8 @@ event + gcal identity."
                 (require 'deferred)
                 ;; This hook fires synchronously from the user's DONE/CANCEL
                 ;; command, but the delete's token decrypt happens in the
-                ;; deferred below — warm the agent here so loopback pinentry
-                ;; isn't summoned from that callback.
+                ;; deferred below — load the token here so that callback reads
+                ;; it from memory instead of forking gpg.
                 (aj/gcal-prewarm-token-cache)
                 (let ((buf (current-buffer)))
                   (deferred:$
@@ -3082,7 +3137,7 @@ Call from a course's `.export/styling.el'."
 ;; ---------------------------------------------------------------------------
 ;; Course notes: styled interactive PDF export
 ;; ---------------------------------------------------------------------------
-;; Course note trees under ~/lattice/notes/uni/<course>/ get their look (minted
+;; Course note trees under ~/lattice/org-notes/uni/<course>/ get their look (minted
 ;; syntax highlighting, per-course accent, cached #+RESULTS with no re-run or
 ;; confirm prompts, local TOCs) from a per-course `.export/styling.el', which
 ;; the batch script make-pdfs.sh layers on top of init.el.  This advice reuses
@@ -3097,7 +3152,7 @@ Call from a course's `.export/styling.el'."
 ;; interactive key stay in sync — and adding a new course is just dropping in a
 ;; `.export/styling.el' (no Emacs-config change needed).
 (defvar aj/course-notes-root
-  (expand-file-name "~/lattice/notes/uni/")
+  (expand-file-name "~/lattice/org-notes/uni/")
   "Root under which course note trees live.  Each course dir may carry a
 `.export/styling.el' used for styled PDF export.")
 
@@ -3152,6 +3207,18 @@ Search is confined to `aj/course-notes-root'."
   (add-to-list 'org-latex-packages-alist
                "\\newenvironment{answer}{}{}"
                t))
+
+;; ---------------------------------------------------------------------------
+;; tikz for problems.org diagrams (added 2026-07-30)
+;; ---------------------------------------------------------------------------
+;; problems.org embeds bare `\begin{tikzpicture}' blocks (e.g. the DAG shared by
+;; the COMP9418 Quiz 2 MCQs — an edge list is unreadable under exam pressure).
+;; Those blocks are transcluded into the dailies, and `#+LATEX_HEADER:' keywords
+;; do NOT survive transclusion, so the package has to be global: without it the
+;; daily PDF export dies with "Environment tikzpicture undefined" and produces no
+;; PDF at all. Additive — it changes no existing output.
+(with-eval-after-load 'ox-latex
+  (add-to-list 'org-latex-packages-alist '("" "tikz" t) t))
 
 (provide 'org-config)
 ;;; org-config.el ends here

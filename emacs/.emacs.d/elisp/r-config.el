@@ -52,8 +52,8 @@
         ;; NOT the VC project root.  `inferior-ess--get-startup-directory' (ess-inf.el)
         ;; falls back to `(project-current)'s root before `default-directory' when
         ;; both `ess-startup-directory' and this function are nil — so inside the
-        ;; ~/lattice/notes git repo every R session was spawned at the repo root and
-        ;; ESS sent `setwd("~/lattice/notes")' at startup, clobbering ob-R's `:dir'
+        ;; ~/lattice/org-notes git repo every R session was spawned at the repo root and
+        ;; ESS sent `setwd("~/lattice/org-notes")' at startup, clobbering ob-R's `:dir'
         ;; (relative `read.table' paths then failed).  Returning `default-directory'
         ;; here is consulted *before* the project fallback and restores sane cwd.
         ess-startup-directory-function (lambda () default-directory)

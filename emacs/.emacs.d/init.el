@@ -9,6 +9,18 @@
 ;; Redirect Emacs customizations to separate file (must be early)
 (setq custom-file (expand-file-name "elisp/custom-vars.el" user-emacs-directory))
 
+;; Never let a stale .elc shadow an edited .el. The elisp/ modules here are
+;; hand-edited config, and git/stow checkouts can restore a .el with an mtime
+;; *older* than a previously byte-compiled .elc — so Emacs silently loads the
+;; outdated compiled version with no staleness warning. That cost a real,
+;; hard-to-see bug (2026-07-29): a stale org-config.elc meant the whole
+;; `use-package org' :config block never applied, leaving `org-todo-keywords'
+;; at the bare TODO/DONE default (so C-c C-t skipped the d/w/c fast-select
+;; prompt and CANCEL was "not valid in this file"), and a stale
+;; daily-recurring.elc likewise shadowed its source. Prefer source whenever
+;; it's newer; the elisp/*.elc artifacts are gitignored and safe to delete.
+(setq load-prefer-newer t)
+
 ;; Add elisp directory to load path
 (add-to-list 'load-path (expand-file-name "elisp" user-emacs-directory))
 
@@ -33,8 +45,60 @@
 ;; bare calls back in.
 (with-suppressed-warnings ((obsolete cl))
   (require 'cl))
+;; `deferred' is here for exactly the same reason (added 2026-07-29). The gcal
+;; push chain in org-config.el uses `deferred:try', which is a `cl-defmacro' —
+;; but org-config.el only pulls `deferred' in at RUNTIME (inside the function
+;; bodies), so the async native-comp subprocess, which never loads init.el and
+;; had no `deferred' loaded, baked `deferred:try' in as a runtime *function*
+;; call. Result: org-config-*.eln raised `invalid-function deferred:try' from
+;; every deferred/timer callback — i.e. "Error running timer: (invalid-function
+;; deferred:try)" — which silently broke the Google Calendar sweep chain.
+;; Same failure shape as the jinx `decf' case above; same cure. If a future
+;; module leans on another macro-only library, add it here too, and remember to
+;; delete its stale .eln (eln-cache/*/NAME-*.eln) so it actually gets rebuilt.
 (setq native-comp-async-env-modifier-form
-      '(with-suppressed-warnings ((obsolete cl)) (require 'cl)))
+      '(progn
+         (with-suppressed-warnings ((obsolete cl)) (require 'cl))
+         (require 'deferred nil t)))
+
+;; Never async-native-compile our OWN elisp/ modules (added 2026-07-29).
+;;
+;; The async native-comp worker is a bare `emacs --batch' that does NOT load
+;; init.el, so it has none of this session's macro providers — no straight/
+;; use-package integration, no `deferred'. Macros therefore expand *differently*
+;; there, and whatever it gets wrong is baked into the .eln that a later session
+;; loads in preference to the source. The modifier form above can only patch
+;; this one library at a time; the modules here lean on use-package + straight +
+;; deferred + org, so the honest fix is to keep them out of that pipeline
+;; entirely and let them load as source. They're config, not hot loops — the
+;; lost native speedup is irrelevant next to silently-wrong code.
+;;
+;; Three separate bugs traced to this, all invisible at startup:
+;;   * `(use-package go-mode)' expanded with no `:straight' handling (straight
+;;     integration absent in the worker), so the build dir never landed on
+;;     `load-path' → "Cannot load go-mode" every boot, and go babel silently off.
+;;   * `deferred:try' baked in as a runtime *function* call instead of the macro
+;;     it is → "Error running timer: (invalid-function deferred:try)" from every
+;;     deferred callback, which killed the gcal push chain mid-flight and left
+;;     its mutex set.
+;;   * generally: any macro from a package the worker can't see.
+;;
+;; Regexp matches both the stowed path and the ~/.emacs.d symlink view.
+;; NB: this only stops *compiling*; an already-built .eln is still preferred
+;; over source, so when adding this you must also delete the stale ones
+;; (eln-cache/*/{org,daily,package,anki}-config-*.eln etc).
+;;
+;; The variable lives in the lazily-loaded `comp-run', so it is void under
+;; `emacs --batch' (where nothing gets jit-compiled anyway) — hence both the
+;; eager set for a live session and the after-load hook for the general case.
+(defconst aj/native-comp-deny-own-elisp "/\\.emacs\\.d/elisp/"
+  "Regexp of files to keep out of async native-compilation.")
+(when (boundp 'native-comp-jit-compilation-deny-list)
+  (add-to-list 'native-comp-jit-compilation-deny-list
+               aj/native-comp-deny-own-elisp))
+(with-eval-after-load 'comp-run
+  (add-to-list 'native-comp-jit-compilation-deny-list
+               aj/native-comp-deny-own-elisp))
 
 ;; Bootstrap straight.el package manager
 (require 'bootstrap)
@@ -122,7 +186,7 @@ Inspect *Warnings* for the cause, then M-x aj/reload-config." aj/failed-modules)
 ;; Load custom keybindings (C-c Y prefix)
 (aj/safe-require 'aj-bindings)
 
-;; Ferrari (rMPP) dired push: `C-c F' in a dired buffer under ~/lattice/notes
+;; Ferrari (rMPP) dired push: `C-c F' in a dired buffer under ~/lattice/org-notes
 ;; rsyncs the marked files/dirs onto the device. The module lives off-repo in
 ;; the ferrari project; put its scripts dir on `load-path' so `aj/safe-require'
 ;; can pick it up (and degrade gracefully if that checkout is absent).
