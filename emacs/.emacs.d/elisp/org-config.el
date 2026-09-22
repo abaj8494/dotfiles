@@ -14,6 +14,40 @@
 (add-to-list 'org-latex-packages-alist '("" "amsfonts" t))
 
 ;; ---------------------------------------------------------------------------
+;; Source blocks → listings (syntax-coloured code in the PDF)
+;; ---------------------------------------------------------------------------
+;; The default backend ships every #+begin_src as plain verbatim, so the R
+;; problems transcluded into the daily rendered uncoloured on the rMPP
+;; (2026-09-22). listings needs no shell escape or external tool; the
+;; class already loads xcolor (dvipsnames). Mirrored in
+;; scripts/batch-pdf-init.el (the headless daily export) — keep both.
+(setq org-latex-src-block-backend 'listings)
+(add-to-list 'org-latex-packages-alist '("" "listings" t) t)
+(setq org-latex-listings-options
+      '(("basicstyle" "\\ttfamily\\small")
+        ("keywordstyle" "\\color{NavyBlue}\\bfseries")
+        ("commentstyle" "\\color{Gray}\\itshape")
+        ("stringstyle" "\\color{BrickRed}")
+        ("numberstyle" "\\color{Gray}\\tiny")
+        ("showstringspaces" "false")
+        ("breaklines" "true")
+        ("breakatwhitespace" "true")
+        ("columns" "fullflexible")
+        ("keepspaces" "true")
+        ("frame" "leftline")
+        ("framerule" "0.6pt")
+        ("rulecolor" "\\color{Gray}")
+        ("xleftmargin" "0.8em")
+        ("aboveskip" "0.6em")
+        ("belowskip" "0.6em")))
+;; org's language → listings map lacks a few names sessions use
+(dolist (pair '(("R" "R") ("r" "R") ("python" "Python") ("julia" "Julia")
+                ("bash" "bash") ("sh" "bash") ("zsh" "bash") ("sql" "SQL")
+                ("latex" "[LaTeX]TeX") ("elisp" "Lisp") ("emacs-lisp" "Lisp")))
+  (unless (assoc (car pair) org-latex-listings-langs)
+    (add-to-list 'org-latex-listings-langs pair t)))
+
+;; ---------------------------------------------------------------------------
 ;; Auto-populate schedule time from heading
 ;; ---------------------------------------------------------------------------
 
@@ -3082,6 +3116,9 @@ event + gcal identity."
 ;; chain via `run-hooks').
 (add-hook 'org-after-todo-state-change-hook #'aj/gcal-hide-done-chore -50)
 
+;; Lambda Life phone DONE importer: "U+2713 " (tick + space) titles on the Tasks calendar -> org DONE. See elisp/lambda-life-gcal.el.
+(require 'lambda-life-gcal nil t)
+
 ;; ---------------------------------------------------------------------------
 ;; Per-section local tables of contents (opt-in, course-agnostic)
 ;; ---------------------------------------------------------------------------
@@ -3222,3 +3259,6 @@ Search is confined to `aj/course-notes-root'."
 
 (provide 'org-config)
 ;;; org-config.el ends here
+
+;; Lambda Life phone capture -> org-shop files ("buy X from aldi"). See elisp/lambda-life-shop.el.
+(require (quote lambda-life-shop) nil t)
