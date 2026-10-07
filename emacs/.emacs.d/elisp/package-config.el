@@ -1203,7 +1203,20 @@ notes tree); results are cached and invalidated by file mtime."
   (setq org-download-method 'directory
         org-download-image-dir "images"
         org-download-heading-lvl nil
-        org-download-timestamp "%Y%m%d-%H%M%S_"))
+        org-download-timestamp "%Y%m%d-%H%M%S_")
+  ;; `org-download-clipboard' calls `org-id-get-create' before inserting.
+  ;; In a mail-compose buffer (org-msg-edit-mode is org-derived, so the
+  ;; C-c D bindings are live there) the :PROPERTIES:/:ID: drawer lands in
+  ;; the RFC822 header block → Gmail hard-bounces the mail as spam
+  ;; (550 5.7.1, observed 2026-09-04). IDs only make sense in file-backed
+  ;; org buffers anyway, so suppress the call everywhere else.
+  (define-advice org-download-clipboard
+      (:around (orig &rest args) my/no-org-id-in-mail)
+    (if (or (derived-mode-p 'message-mode 'org-msg-edit-mode)
+            (not buffer-file-name))
+        (cl-letf (((symbol-function 'org-id-get-create) #'ignore))
+          (apply orig args))
+      (apply orig args))))
 
 ;; ---------------------------------------------------------------------------
 ;; Org-super-agenda - group and filter agenda items

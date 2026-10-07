@@ -1190,6 +1190,24 @@ see the `notmuch-fcc-dirs' comment above for why.")
            (email (my/email-extract-address from))
            (identity (my/email-get-identity email))
            (fcc (message-fetch-field "fcc")))
+      ;; Reject malformed header lines. Every line in the header block must
+      ;; be a "Name:" header or a whitespace continuation — anything else
+      ;; (e.g. an org :PROPERTIES: drawer leaked in by org-download's
+      ;; org-id-get-create, 2026-09-04) makes Gmail hard-bounce the mail
+      ;; as spam (550 5.7.1).
+      (save-excursion
+        (goto-char (point-min))
+        (let ((eoh (save-excursion
+                     (if (re-search-forward
+                          (concat "^" (regexp-quote mail-header-separator) "$")
+                          nil t)
+                         (line-beginning-position)
+                       (point-max)))))
+          (while (< (point) eoh)
+            (unless (looking-at "\\(?:[!-9;-~]+:\\|[ \t]\\|$\\)")
+              (user-error "Malformed header line (send aborted): %s"
+                          (buffer-substring (point) (line-end-position))))
+            (forward-line 1))))
       ;; Check for empty To
       (unless (and to (not (string-empty-p (string-trim to))))
         (user-error "No recipient (To) specified"))
