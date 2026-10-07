@@ -1266,14 +1266,36 @@ see the `notmuch-fcc-dirs' comment above for why.")
   :config
   (setq auth-sources '("~/.authinfo.gpg")))
 
-;; Use GPG key for all encryption (single passphrase cached by gpg-agent for 24h)
-;; Loopback pinentry: Emacs prompts via its own minibuffer instead of pinentry-mac.
-;; Why: pinentry-mac fails to land when EPG runs from async contexts (capture
-;; finalize timers, oauth2 token refresh inside org-gcal post), producing
-;; "Decrypting ~/.authinfo.gpg...0%" → "Can't decrypt". gpg-agent.conf already
-;; has `allow-loopback-pinentry`. gpg-agent still caches the unlocked key for 24h.
+;; Use GPG key for all encryption. Passphrase prompts go to gpg-agent's OWN
+;; pinentry (pinentry-mac, per gpg-agent.conf) — NOT to Emacs's minibuffer via
+;; loopback.
+;;
+;; This was `loopback' for a long time, to dodge "Decrypting …0%" →
+;; (epg-error "Can't decrypt" "Exit"). Loopback turned out to be the cause of
+;; that, not the cure. Loopback makes gpg ask *Emacs* for the passphrase over
+;; --command-fd, and epg answers via `read-passwd', which needs a live
+;; minibuffer. But every path here that actually decrypts is asynchronous —
+;; the org-gcal token refresh inside a deferred, capture-finalize timers,
+;; `emacsclient --eval' from daily-init.sh (a `server-eval-and-print', i.e. a
+;; process filter) — so the moment gpg-agent's passphrase cache lapses the
+;; prompt has nowhere to land: gpg exits before BEGIN_DECRYPTION (epg records
+;; the error as `Exit' and signals "Can't decrypt"), or blocks forever on
+;; --command-fd with nothing to answer it.
+;;
+;; Measured 2026-08-18, agent cache cleared, decrypting oauth2-auto.plist from
+;; the exact failing shape (timer → `aio-wait-for' → url callback):
+;;   epg-pinentry-mode 'loopback  → gpg hung indefinitely, had to be killed
+;;   epg-pinentry-mode nil        → plaintext returned, no prompt at all
+;; because pinentry-mac reads the passphrase from the login keychain (service
+;; "GnuPG", account = the encryption subkey's keygrip) and talks to the window
+;; server directly, so it works from a timer, a process filter, or a launchd
+;; daemon alike — which is precisely what loopback cannot do. With a locked
+;; keychain it degrades to a normal macOS dialog rather than to a hang.
+;;
+;; gpg-agent.conf keeps `allow-loopback-pinentry', so a `let'-bound loopback
+;; still works anywhere a minibuffer really is available.
 (setq epg-user-id "aayushbajaj7@gmail.com"
-      epg-pinentry-mode 'loopback)
+      epg-pinentry-mode nil)
 
 ;; Configure plstore to encrypt to GPG key (used by oauth2-auto for OAuth tokens)
 (require 'plstore)
