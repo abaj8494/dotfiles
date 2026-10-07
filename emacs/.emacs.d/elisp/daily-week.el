@@ -9,11 +9,19 @@
 ;;; Code:
 
 (require 'daily-structure)
+(require 'calendar)
+(require 'cal-iso)
 
 (declare-function org-roam-db-query "org-roam-db")
+(declare-function org-roam-db-update-file "org-roam-db")
 (declare-function org-fold-folded-p "org-fold")
 (declare-function org-cycle "org")
 (declare-function org-transclusion-mode "org-transclusion")
+(declare-function org-id-find "org-id")
+(declare-function org-id-get-create "org-id")
+(declare-function org-set-tags "org")
+(declare-function org-get-heading "org")
+(declare-function org-table-align "org-table")
 
 (defvar aj/yearly-file-ids
   '((2026 . "51fe6c3d-45e2-4655-bc1c-9358f989d02a"))
@@ -43,6 +51,136 @@ Returns (id . title) or nil if not found."
       (let ((row (car result)))
         (cons (car row) (cadr row))))))
 
+;; ---------------------------------------------------------------------------
+;; Creating the week heading in the yearly file
+;; ---------------------------------------------------------------------------
+;; The transclude a daily carries points at `* Week N' inside the yearly file.
+;; That heading used to be added by hand, so the first daily of a new week
+;; opened onto a dangling link and org-transclusion reported
+;;   (user-error "Org-transclusion: `org-link-open' cannot open link, id:…::* Week N")
+;; on every visit until the heading was written. (Seen 2026-08-18: the yearly
+;; file stopped at Week 31 while the dailies had moved on to Week 34.)
+;; `aj/ensure-week-heading' creates it instead, in the same shape as the ones
+;; already there: the heading tagged with the year, an ID so it is an org-roam
+;; node the daily can link to by name, and the month's calendar table with this
+;; week's row bolded. Regenerating Weeks 27/30/31 with this code reproduces the
+;; hand-written tables byte for byte.
+;;
+;; All the date arithmetic goes through calendar.el's absolute day numbers, not
+;; `time-add'/`days-to-time': adding 86400-second days across the April DST
+;; change lands on 23:00 of the day before, which silently shifted the bolded
+;; row off by one.
+
+(defun aj/week--monday-absolute (week-num year)
+  "Absolute day number of the Monday that starts ISO week WEEK-NUM of YEAR."
+  (let* ((jan4 (list 1 4 year))              ; Jan 4 is always in ISO week 1
+         (dow (calendar-day-of-week jan4))   ; 0 = Sunday
+         (iso-dow (if (= dow 0) 7 dow)))     ; 1 = Monday … 7 = Sunday
+    (+ (calendar-absolute-from-gregorian jan4)
+       (- 1 iso-dow)
+       (* 7 (1- week-num)))))
+
+(defun aj/week--month-table-rows (week-num year)
+  "Return (CAPTION ROWS) for the yearly-file table of ISO week WEEK-NUM of YEAR.
+The grid is the calendar month containing that week's Sunday, Sunday-first.
+Each element of ROWS is nine strings: Su…Sa, the row's ISO week number, and
+the row's index within the grid.  The cells of WEEK-NUM's own row are bolded."
+  (let* ((sunday (1- (aj/week--monday-absolute week-num year)))
+         (greg (calendar-gregorian-from-absolute sunday))
+         (gm (nth 0 greg))
+         (gy (nth 2 greg))
+         (first (calendar-absolute-from-gregorian (list gm 1 gy)))
+         (lead (calendar-day-of-week (list gm 1 gy)))
+         (ndays (calendar-last-day-of-month gm gy))
+         (nrows (ceiling (+ lead ndays) 7))
+         rows)
+    (dotimes (r nrows)
+      (let* ((start (+ first (- lead) (* 7 r)))
+             (boldp (= start sunday))
+             cells)
+        (dotimes (i 7)
+          (let ((day (+ (- start first) i 1)))
+            (push (cond ((or (< day 1) (> day ndays)) "")
+                        (boldp (format "*%d*" day))
+                        (t (number-to-string day)))
+                  cells)))
+        (push (append (nreverse cells)
+                      (list (number-to-string
+                             (car (calendar-iso-from-absolute (1+ start))))
+                            (number-to-string (1+ r))))
+              rows)))
+    (list (format "%s %d" (calendar-month-name gm) gy) (nreverse rows))))
+
+(defun aj/week--insert-month-table (week-num year)
+  "Insert (and align) the calendar table for ISO week WEEK-NUM of YEAR at point."
+  (pcase-let ((`(,caption ,rows) (aj/week--month-table-rows week-num year)))
+    (let ((table-start (point)))
+      (insert "#+CAPTION: " caption "\n"
+              "| Su | Mo | Tu | We | Th | Fr | Sa | Σ | ζ |\n"
+              "|----|\n"
+              (mapconcat (lambda (row)
+                           (concat "| " (mapconcat #'identity row " | ") " |"))
+                         rows "\n")
+              "\n")
+      (save-excursion
+        (goto-char table-start)
+        (forward-line 1)
+        (org-table-align)))))
+
+(defun aj/week--yearly-file (year)
+  "Return the path of YEAR's yearly file, or nil if there isn't one."
+  (let ((file-id (cdr (assoc year aj/yearly-file-ids))))
+    (when file-id
+      (car (org-id-find file-id)))))
+
+(defun aj/ensure-week-heading (week-num year)
+  "Ensure `* Week WEEK-NUM' exists in YEAR's yearly file.  Return (ID . TITLE).
+Creates the heading — tagged with YEAR, given an ID, and followed by the
+month's calendar table — when it is missing, keeping the file's newest-week-
+first ordering.  Returns nil if YEAR has no yearly file."
+  (let ((file (aj/week--yearly-file year)))
+    (when file
+      (with-current-buffer (find-file-noselect file)
+        ;; Plain save-excursion/save-restriction rather than
+        ;; `org-with-wide-buffer': that macro is not defined at byte-compile
+        ;; time here (this file doesn't require org), so it would compile to a
+        ;; bare function call and fail at runtime.
+        (save-excursion
+         (save-restriction
+          (widen)
+          (goto-char (point-min))
+         (unless (re-search-forward (format "^\\* Week %d\\(?:[ \t]\\|$\\)" week-num)
+                                    nil t)
+           ;; Weeks are listed newest first: land before the first heading for
+           ;; an earlier week, so a gap in the sequence still sorts correctly.
+           (goto-char (point-min))
+           (let ((insert-at
+                  (catch 'found
+                    (while (re-search-forward "^\\* Week \\([0-9]+\\)" nil t)
+                      (when (< (string-to-number (match-string 1)) week-num)
+                        (throw 'found (line-beginning-position))))
+                    ;; No earlier week: this is the oldest, so append.
+                    (point-max))))
+             (goto-char insert-at)
+             (save-excursion
+               ;; Leading blank line: `org-id-get-create' drops the property
+               ;; drawer in between, and the existing entries separate it from
+               ;; the table with an empty line.
+               (insert (format "* Week %d\n\n" week-num))
+               (aj/week--insert-month-table week-num year)
+               (insert "\n\n"))
+             (org-set-tags (list (number-to-string year)))
+             (org-id-get-create))
+           (save-buffer)
+           (when (fboundp 'org-roam-db-update-file)
+             (org-roam-db-update-file file)))
+          ;; Re-find: the heading either already existed or was just written.
+          (goto-char (point-min))
+          (when (re-search-forward (format "^\\* Week %d\\(?:[ \t]\\|$\\)" week-num)
+                                   nil t)
+            (cons (org-id-get-create)
+                  (org-get-heading t t t t)))))))))
+
 (defun aj/insert-week-transclude ()
   "Insert linked week heading and transclude directive.
 Parses date from filename, calculates ISO week, inserts a heading
@@ -62,7 +200,12 @@ linking to the week node followed by transclude directive."
              (week-num (aj/iso-week-number date-time))
              (file-id (cdr (assoc year aj/yearly-file-ids)))
              (file-name (cdr (assoc year aj/yearly-file-names)))
-             (week-info (aj/get-week-heading-info week-num year))
+             ;; Prefer the org-roam DB (no file I/O); fall back to opening the
+             ;; yearly file, which both creates a missing week heading and
+             ;; recovers one the DB simply hasn't indexed yet. Either way the
+             ;; `id:…::* Week N' search below now has something to land on.
+             (week-info (or (aj/get-week-heading-info week-num year)
+                            (aj/ensure-week-heading week-num year)))
              (week-id (car week-info))
              (week-title (cdr week-info)))
         (when (and file-id file-name)

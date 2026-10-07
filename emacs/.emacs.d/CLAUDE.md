@@ -66,7 +66,8 @@ launchd (at login)
                                 and the C-c d / C-c d r keymaps.
     daily-structure.el       ← Heading scaffolding: ensure-heading-*, separators, newpages,
                                 blank-line normalizer, daily-date-file-p, under-heading-p
-    daily-week.el            ← Week transclude (yearly-file IDs, ISO week resolver, fold-on-open)
+    daily-week.el            ← Week transclude (yearly-file IDs, ISO week resolver, fold-on-open,
+                                auto-creation of the `* Week N` heading in the yearly file)
     daily-recurring.el       ← tasks.org agenda → due-set, subtree extract/strip, bring-forward
                                 (overdue captures + recurring), refresh-daily-recurring
     daily-capture.el         ← org-capture + org-roam-dailies templates, lifecycle hooks,
@@ -123,6 +124,23 @@ in `daily-garmin.el`.
 2. For new files: inserts week transclude, ensures heading structure, populates recurring tasks, calendar
 3. For existing files: refreshes recurring, brings forward overdue captures, refreshes calendar
 4. Enables `org-transclusion-mode`, saves buffer
+
+**Week heading auto-creation** (`aj/ensure-week-heading`, daily-week.el): every daily
+transcludes `* Week N` out of the yearly file (`twenty_twenty_six.org`). That heading
+used to be written by hand, so the first daily of a new week opened onto a dangling
+link and org-transclusion reported `cannot open link, id:…::* Week N` on every visit
+until someone added it (seen 2026-08-18 with the yearly file stalled at Week 31 while
+the dailies had reached Week 34). `aj/insert-week-transclude` now falls back from the
+org-roam DB lookup to `aj/ensure-week-heading`, which writes the heading in the same
+shape as the existing ones — year tag, an `:ID:` so it is a linkable node, and the
+month's Sunday-first calendar table with that week's row bolded, a `Σ` column of ISO
+week numbers and a `ζ` column of row indices — inserted so the file's newest-week-first
+ordering survives gaps. Regenerating Weeks 27/30/31 with this code reproduces the
+hand-written tables byte for byte, which is how the format was pinned down.
+- **Date arithmetic goes through `calendar.el` absolute day numbers, never
+  `time-add`/`days-to-time`.** Adding 86400-second days from January across the April
+  DST change lands on 23:00 of the *previous* day, which silently shifted the bolded
+  row off by one while leaving every other column correct.
 
 **Schedule/deadline date anchoring**: `org-schedule` and `org-deadline`
 are around-advised by `aj/daily--anchor-org-read-date`
