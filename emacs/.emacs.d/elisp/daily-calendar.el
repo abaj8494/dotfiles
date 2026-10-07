@@ -42,6 +42,13 @@ directly from the local cache. Set to 0 to always hit the network.")
   "Optional file to manually set weather location.
 Format: LAT LON NAME (e.g., -33.8148 151.1029 West Ryde)")
 
+(defvar-local aj/calendar--weather-epoch 0
+  "Bumped by `my/insert-aj-day-calendar' every time it wipes and rebuilds
+the Calendar section.  An async weather callback captures the epoch it was
+launched under and must not insert once that epoch is stale: its section was
+already wiped and re-populated by a later run, so its insert would stack a
+second copy on top of the newer one instead of replacing it.")
+
 ;; ---------------------------------------------------------------------------
 ;; Calendar & Weather
 ;; ---------------------------------------------------------------------------
@@ -173,7 +180,7 @@ YEAR and MONTH are used to build the ID link."
             (format "%s  " link)
           (format "%s " link))))))
 
-(defun my/insert-aj-day-calendar (&optional force)
+(defun my/insert-aj-day-calendar (&optional force skip-weather)
   "Insert formatted calendar for a daily org-roam note with life stats.
 Parses date from #+title: YYYY-MM-DD line.
 Outputs an org table with links to daily files.
@@ -182,7 +189,11 @@ Outputs an org table with links to daily files.
 
 When FORCE is non-nil, the weather fetch ignores the local cache and
 hits the server. Otherwise a fresh cache (see `aj/weather-cache-ttl')
-short-circuits the ssh+rsync."
+short-circuits the ssh+rsync.
+
+With SKIP-WEATHER non-nil, rebuild the date table only and start no
+weather fetch at all — for callers that do their own synchronous fetch
+straight afterwards (see `aj/refresh-daily-calendar-sync')."
   (interactive "P")
   (save-excursion
     (goto-char (point-min))
@@ -211,7 +222,11 @@ short-circuits the ssh+rsync."
                                  (point-max)))))
             (delete-region (1+ heading-end) section-end))
           (goto-char (line-end-position))
-          (insert "\n\n"))
+          (insert "\n\n")
+          ;; The section just got wiped — invalidate any weather fetch still
+          ;; in flight from an earlier rebuild so its callback can't stack a
+          ;; second copy of the weather blocks on top of this one's.
+          (setq aj/calendar--weather-epoch (1+ aj/calendar--weather-epoch)))
 
         ;; Caption with month name
         (let ((month-name (format-time-string "%B %Y" date)))
@@ -246,7 +261,8 @@ short-circuits the ssh+rsync."
         (org-table-align)
 
         ;; Fetch weather asynchronously and insert when ready
-        (aj/fetch-calendar-weather-async date-str (current-buffer) force)))))
+        (unless skip-weather
+          (aj/fetch-calendar-weather-async date-str (current-buffer) force))))))
 
 
 ;; ---------------------------------------------------------------------------
@@ -512,6 +528,13 @@ existing cache file counts as fresh."
               aj/weather-cache-ttl)))
      (t (or (file-exists-p hourly) (file-exists-p daily))))))
 
+(defun aj/--weather-epoch-current-p (buffer epoch)
+  "Return non-nil if BUFFER is live and still on weather EPOCH.
+A nil EPOCH means the caller is not epoch-guarded (the synchronous path)."
+  (and (buffer-live-p buffer)
+       (or (null epoch)
+           (= epoch (buffer-local-value 'aj/calendar--weather-epoch buffer)))))
+
 (defun aj/--insert-weather-from-cache-and-finalize (buffer date-str)
   "Insert weather + hourly table into BUFFER for DATE-STR and re-sweep newpages.
 Shared tail of the async/cache-hit paths."
@@ -542,7 +565,9 @@ unconditionally hit the server."
       (progn
         (message "Weather: cache hit for %s, skipping fetch" date-str)
         (aj/--insert-weather-from-cache-and-finalize buffer date-str))
-    (let* ((location (aj/get-weather-location))
+    (let* ((epoch (and (buffer-live-p buffer)
+                       (buffer-local-value 'aj/calendar--weather-epoch buffer)))
+           (location (aj/get-weather-location))
            (lat (number-to-string (nth 0 location)))
            (lon (number-to-string (nth 1 location)))
            (name (nth 2 location)))
@@ -567,12 +592,19 @@ unconditionally hit the server."
                (set-process-sentinel
                 sync-proc
                 (lambda (_p2 e2)
-                  (if (not (string-match-p "finished" e2))
-                      (message "Weather: sync failed - %s" (string-trim e2))
+                  (cond
+                   ((not (string-match-p "finished" e2))
+                    (message "Weather: sync failed - %s" (string-trim e2)))
+                   ;; The Calendar section was rebuilt while we were out on
+                   ;; the network; a later run owns its contents now, so
+                   ;; inserting here would stack a duplicate.
+                   ((not (aj/--weather-epoch-current-p buffer epoch))
+                    (message "Weather: superseded for %s, discarding fetch" date-str))
+                   (t
                     (message "Weather: inserting into buffer...")
                     (aj/--insert-weather-from-cache-and-finalize buffer date-str)
                     (when (buffer-live-p buffer)
-                      (message "Weather: done for %s ✓" name)))))))))))))
+                      (message "Weather: done for %s ✓" name))))))))))))))
 
 (defun aj/fetch-calendar-weather-sync (date-str buffer)
   "Synchronous version of `aj/fetch-calendar-weather-async'.
@@ -629,7 +661,11 @@ synchronously-inserted date table."
   (interactive)
   (unless (aj/daily-date-file-p)
     (user-error "Not in a daily note"))
-  (my/insert-aj-day-calendar)                 ; inserts table + starts async fetch
+  ;; SKIP-WEATHER: rebuild the date table only.  Letting this start its own
+  ;; async fetch meant two inserts per call — the async one (immediate, and
+  ;; fully synchronous on a cache hit) plus the sync one below — each
+  ;; appending its own conditions table.
+  (my/insert-aj-day-calendar nil t)
   (let ((date-str (file-name-base (buffer-file-name))))
     (aj/fetch-calendar-weather-sync date-str (current-buffer))))
 
@@ -648,6 +684,34 @@ synchronously-inserted date table."
           (condition-case nil
               (json-read)
             (error nil)))))))
+
+(defun aj/--delete-conditions-tables (limit)
+  "Delete every weather conditions table between point and LIMIT.
+
+The conditions table (sun/moon/rain/UV/humidity/wind) is the only weather
+block with no text marker of its own — every other block is anchored by a
+`forecast:' or `hourly:' line that its own remover greps for — so it has to
+be recognised structurally: a contiguous run of table rows containing a
+`| sun | ↑ … |' row.  Trailing blank lines are swallowed too, since each
+stacked copy also left a blank line behind.
+
+Without this the insert was not idempotent: a second weather insert into an
+un-wiped Calendar section appended another copy rather than replacing the
+first, which is how `sync-daily.sh' baked three conditions tables into every
+generated daily."
+  (save-excursion
+    (while (re-search-forward "^| +sun +|" limit t)
+      (beginning-of-line)
+      ;; Walk back to the first row of this table.
+      (while (and (not (bobp))
+                  (save-excursion (forward-line -1) (looking-at-p "^|")))
+        (forward-line -1))
+      (let ((start (point)))
+        (while (and (< (point) limit) (looking-at-p "^|"))
+          (forward-line 1))
+        (while (and (< (point) limit) (looking-at-p "^$"))
+          (forward-line 1))
+        (delete-region start (point))))))
 
 (defun aj/insert-hourly-weather-table (buffer date-str)
   "Insert hourly weather table and conditions table into BUFFER's Calendar section.
@@ -694,6 +758,13 @@ Works for any date that has archived hourly data, plus today/tomorrow from live 
                     (re-search-forward "^\\* Calendar\\b" nil t)
                     (while (re-search-forward "^\\(sun:\\|moon:\\|today:\\)" section-end t)
                       (delete-region (line-beginning-position) (1+ (line-end-position)))))
+                  ;; Remove any existing conditions table(s) — this insert has
+                  ;; to be idempotent, since the hook and the -sync variant
+                  ;; both land here on the same buffer.
+                  (save-excursion
+                    (goto-char (point-min))
+                    (re-search-forward "^\\* Calendar\\b" nil t)
+                    (aj/--delete-conditions-tables section-end))
                   ;; Find insertion point after forecast block
                   (goto-char (point-min))
                   (re-search-forward "^\\* Calendar\\b" nil t)
@@ -798,14 +869,17 @@ Works for any date that has archived hourly data, plus today/tomorrow from live 
                         ;; Align hourly table
                         (forward-line -2)
                         (org-table-align)
-                        ;; Move past hourly table for conditions table
+                        ;; Conditions table goes ABOVE the hourly block, i.e.
+                        ;; back at INSERT-POINT — which still marks the start of
+                        ;; the text just inserted.  (This block used to try to
+                        ;; walk *past* the hourly table instead, on a
+                        ;; `(looking-at "\\|^|")' whose leading `\\|' is an empty
+                        ;; alternative that matches anywhere, so the walk ran to
+                        ;; the section end and would have spilled the table into
+                        ;; the next section.  It only ever produced the layout
+                        ;; below because the bounded `re-search-forward' failed
+                        ;; and skipped the whole walk.)
                         (goto-char insert-point)
-                        (when (re-search-forward "^hourly:" section-end t)
-                          (while (and (< (point) section-end) (looking-at "\\|^|"))
-                            (forward-line 1))
-                          (forward-line 1)
-                          (while (and (< (point) section-end) (looking-at "^|"))
-                            (forward-line 1)))
                         ;; Insert conditions table
                         (insert "\n|----------+-------------------|\n")
                         (insert (format "| sun      | ↑ %s  ↓ %s |\n"
