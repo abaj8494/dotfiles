@@ -4,5 +4,6 @@
     "scroll_past_end_of_document": true,
     "posix_terminal_shell": "bash",
     "document_author": "aayush bajaj",
-    "jobs_tab_visibility": "shown"
+    "jobs_tab_visibility": "shown",
+    "default_latex_program": "LuaLaTeX"
 }
