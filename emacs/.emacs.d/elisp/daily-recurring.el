@@ -447,8 +447,15 @@ Returns list of (HEADING-TEXT . SUBTREE-CONTENT) pairs, tagged :overdue:."
                              (and (string-match "SCHEDULED: <\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)" subtree)
                                   (string> (match-string 1 subtree) date-str))))
                         (unless future-p
+                          ;; Strip the trailing `-----' separator block. Must
+                          ;; NOT be `\(\n*-+\n*\)+\'' — that repeated group has
+                          ;; ambiguous internal boundaries and backtracks
+                          ;; exponentially (2.5s at 24 separator chars, ~4x per
+                          ;; extra 2) against exactly the stacked separators a
+                          ;; `* Capture' section accumulates. This hung the
+                          ;; daemon mid-carry-forward and cost real captures.
                           (let ((cleaned (replace-regexp-in-string
-                                          "\\(\n*-+\n*\\)+\\'" "" subtree)))
+                                          "\n*-[-\n]*\\'" "" subtree)))
                             (push (list heading-text (aj/tag-headings-overdue cleaned) prev-file)
                                   results)))))))))))))
     (nreverse results)))
@@ -482,7 +489,8 @@ present/past files."
              (today (format-time-string "%Y-%m-%d")))
         (unless (string> date-str today)
           (let* ((overdue (aj/get-overdue-captures date-str))
-                 (added 0))
+                 (added 0)
+                 (pending-cancels '()))
             (when overdue
               (aj/ensure-heading-exists "Capture")
               (dolist (pair overdue)
@@ -505,24 +513,44 @@ present/past files."
                           (insert "\n"))
                         (insert content "\n")
                         (setq added (1+ added))
-                        ;; Mark source item as CANCEL to prevent re-scanning
+                        ;; Don't retire the source yet — queue it (see below).
                         (when source-file
-                          (with-current-buffer (find-file-noselect source-file)
-                            (save-excursion
-                              (goto-char (point-min))
-                              (when (re-search-forward "^\\* Capture" nil t)
-                                (let ((src-end (save-excursion
-                                                 (if (re-search-forward "^\\* " nil t)
-                                                     (line-beginning-position)
-                                                   (point-max)))))
-                                  (when (re-search-forward
-                                         (format "^\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
-                                                 (regexp-quote heading-text))
-                                         src-end t)
-                                    (beginning-of-line)
-                                    (let ((aj/daily-hook-suppress t))
-                                      (org-todo "CANCEL"))))))
-                            (save-buffer)))))))))
+                          (push (cons heading-text source-file) pending-cancels)))))))
+              ;; Persist the DESTINATION before retiring any source.
+              ;;
+              ;; This move must not be able to lose an item. The previous order
+              ;; CANCEL-stamped each source and `save-buffer'd it *immediately*,
+              ;; while the matching insert was still only in this (unsaved)
+              ;; buffer — so anything that interrupted the hook before its own
+              ;; final save left the item retired at the source and absent
+              ;; here: silently gone, and never rescanned (the scan only picks
+              ;; up TODO/WAIT). That is exactly what the exponential-backtrack
+              ;; regex hang did — it fires from this same hook, moments later —
+              ;; and it cost three real captures on 2026-07-29.
+              ;;
+              ;; Saving here first makes the worst case a *duplicate*, which
+              ;; `aj/capture-heading-exists-p' already suppresses next pass.
+              (when (> added 0)
+                (save-buffer))
+              (dolist (cancel (nreverse pending-cancels))
+                (let ((heading-text (car cancel))
+                      (source-file (cdr cancel)))
+                  (with-current-buffer (find-file-noselect source-file)
+                    (save-excursion
+                      (goto-char (point-min))
+                      (when (re-search-forward "^\\* Capture" nil t)
+                        (let ((src-end (save-excursion
+                                         (if (re-search-forward "^\\* " nil t)
+                                             (line-beginning-position)
+                                           (point-max)))))
+                          (when (re-search-forward
+                                 (format "^\\*\\*+ \\(TODO\\|WAIT\\) \\(?:\\[#[A-Z]\\] \\)?%s"
+                                         (regexp-quote heading-text))
+                                 src-end t)
+                            (beginning-of-line)
+                            (let ((aj/daily-hook-suppress t))
+                              (org-todo "CANCEL"))))))
+                    (save-buffer)))))
             (when (> added 0)
               (message "Brought forward %d overdue capture(s) for %s" added date-str))))))))
 
@@ -619,9 +647,13 @@ Returns list of (PARENT-NAME HEADING-TEXT CONTENT SOURCE-FILE) tuples, tagged :o
                                                      subtree))
                                                 subtree))
                                      (cleaned subtree))
-                                ;; Strip SCHEDULED lines, CLOSED lines, and trailing separators
+                                ;; Strip SCHEDULED lines, CLOSED lines, and trailing separators.
+                                ;; Not a repeated `(\n*-+\n*)+' group — that form backtracks
+                                ;; exponentially once several separator runs stack up. This
+                                ;; variant still requires a `-', so (unlike a bare `[\n-]*')
+                                ;; it leaves a pure-newline tail alone, matching the original.
                                 (setq cleaned (replace-regexp-in-string
-                                               "\\(\n*-+\n*\\)+\\'" "" cleaned))
+                                               "\n*-[-\n]*\\'" "" cleaned))
                                 (setq cleaned (replace-regexp-in-string
                                                "\nSCHEDULED: <[^>]+>" "" cleaned))
                                 (setq cleaned (replace-regexp-in-string

@@ -265,9 +265,12 @@ HEADING is the captured entry's heading text. Demotes from ** to ***."
                   ;; Demote: ** → ***, *** → ****, etc.
                   (let* ((demoted (replace-regexp-in-string
                                     "^\\(\\*+\\) " "*\\1 " entry-text))
-                         ;; Strip trailing separators to avoid doubles
+                         ;; Strip trailing separators to avoid doubles.
+                         ;; Not `\(\n*-+\n*\)+\'' — that form backtracks
+                         ;; exponentially on stacked `-----' blocks (see the
+                         ;; note in daily-recurring.el's `aj/get-overdue-captures').
                          (demoted (replace-regexp-in-string
-                                   "\\(\n*-+\n*\\)+\\'" "\n" demoted)))
+                                   "\n*-[-\n]*\\'" "\n" demoted)))
                     ;; Ensure blank line before insertion
                     (unless (bolp) (insert "\n"))
                     (unless (save-excursion (forward-line -1) (looking-at "^$"))
