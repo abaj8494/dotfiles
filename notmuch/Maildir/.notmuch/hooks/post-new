@@ -1,0 +1,71 @@
+#!/bin/bash
+# Notmuch post-new hook
+# This hook is called after 'notmuch new' indexes new emails
+
+LOG_FILE="$HOME/.jobsync/local-sync.log"
+JOBSYNC_DIR="/Users/aayushbajaj/lattice/code/private/jobsync"
+
+echo "[$(date -Iseconds)] post-new hook triggered" >> "$LOG_FILE"
+
+# --- Reconcile notmuch tags with server-side folder moves --------------------
+# notmuch tags do NOT follow a message when mbsync moves its file between
+# folders. So trashing a message in K9 / webmail (which moves it to the server
+# Trash) leaves it tagged inbox/unread in notmuch even though its file now lives
+# in the local Trash maildir — it keeps showing in Emacs. Retag by folder so
+# Emacs reflects phone-side trashing (and un-trashing). Runs FIRST, before the
+# Ollama gate and JobSync below, so it always happens and trashed mail is
+# de-inboxed before JobSync classifies it. Gmail is exempt (lieer syncs labels).
+NOTMUCH=/opt/homebrew/bin/notmuch
+
+# Quiet hours: no mail notifications 23:00-07:59 (the wake alarm owns the morning).
+quiet_hours() { h=$(date +%H); [ "$h" -ge 23 ] || [ "$h" -le 7 ]; }
+TRASH_FOLDERS='folder:abaj/Trash or folder:lambda-pi/Trash or folder:tern-cis/Trash or folder:fatfort/Trash or folder:fattails/Trash or folder:tutorsfirst/Trash or folder:"unsw/Deleted Items" or folder:"unsw-school/Deleted Items"'
+INBOX_FOLDERS='folder:abaj/Inbox or folder:lambda-pi/Inbox or folder:tern-cis/Inbox or folder:fatfort/Inbox or folder:fattails/Inbox or folder:tutorsfirst/Inbox or folder:unsw/Inbox or folder:unsw-school/Inbox'
+# In a trash folder → it's trash: drop inbox/unread/new.
+"$NOTMUCH" tag +trash -inbox -unread -new -- \
+    "($TRASH_FOLDERS) and (tag:inbox or tag:unread or tag:new or not tag:trash)" 2>>"$LOG_FILE"
+# Moved back into an inbox folder but still tagged trash → phone un-trash.
+"$NOTMUCH" tag -trash +inbox -- \
+    "($INBOX_FOLDERS) and tag:trash" 2>>"$LOG_FILE"
+
+# --- Tern Trading: pulse tags (cis@tern.trading account; nothing excessive) ---
+"$NOTMUCH" tag +tern -- 'path:tern-cis/** and not tag:tern' 2>>"$LOG_FILE"
+"$NOTMUCH" tag +shrike -- 'folder:tern-cis/Shrike and not tag:shrike' 2>>"$LOG_FILE"
+"$NOTMUCH" tag +alpaca -- 'from:alpaca.markets and not tag:alpaca' 2>>"$LOG_FILE"
+
+# --- Preview notifications: one banner per newly landed message (see mail-notify.sh) ---
+"$HOME/.local/bin/mail-notify.sh" >> "$LOG_FILE" 2>&1 || true
+
+# --- Finance: auto-tag & file known receipt senders (rent, etc.) on arrival ---
+# Runs before the Ollama gate below so receipts still get tagged even when Ollama
+# is down (filing then retries on the Thursday file-invoices cron). All logic and
+# the sender rules live in the finance repo; this is just the trigger.
+/Users/aayushbajaj/lattice/2-areas/finance/beancount/autotag-invoices.sh \
+    >> /Users/aayushbajaj/lattice/2-areas/finance/beancount/autotag-invoices.log 2>&1 || true
+
+# --- Finance: buy 0.001 BTC when CoinJar reports a deposit --------------------
+# Files "Deposit received" mail to +Finance/out of the inbox and, for genuinely
+# new ones, launches the buy pipeline. Guards against double-spending live in
+# the script; `|| true` so a failure here never blocks the rest of the hook.
+/Users/aayushbajaj/lattice/2-areas/finance/beancount/coinjar-autobuy.sh \
+    >> /Users/aayushbajaj/lattice/2-areas/finance/beancount/coinjar-autobuy.log 2>&1 || true
+
+# Check if Ollama is running
+if ! curl -s --connect-timeout 2 http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo "[$(date -Iseconds)] Ollama not running, skipping JobSync" >> "$LOG_FILE"
+    exit 0
+fi
+
+# Source config for environment variables
+source ~/.jobsync/config
+
+# Scan for user corrections first (few-shot learning)
+echo "[$(date -Iseconds)] Scanning for corrections..." >> "$LOG_FILE"
+cd "$JOBSYNC_DIR" && node scripts/jobsync-scan-corrections.js >> "$LOG_FILE" 2>&1
+
+# Run the local sync script
+cd "$JOBSYNC_DIR" && node scripts/jobsync-local-sync.js >> "$LOG_FILE" 2>&1
+
+# The old "JobSync email sync complete" banner fired on every sync (~50/day of
+# pure noise); it is now a log line. The mail previews above are the signal.
+echo "[$(date -Iseconds)] JobSync email sync complete" >> "$LOG_FILE"
