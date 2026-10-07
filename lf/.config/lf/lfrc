@@ -17,6 +17,20 @@ map ff $lf -remote "send $id select \"$(fzf)\""
 map ss &tmux split-window -h lf
 map s- &tmux split-window -v lf
 
+# Count directories visited inside lf towards zoxide (which feeds the numbered
+# links in ~/lattice/1-projects via zoxide-top). Debounced: a dir only counts if
+# lf is still sitting in it 2s later, so walking through parents with h/l doesn't
+# score every directory on the way. Physical path, so a visit through a symlink
+# (e.g. "1-projects/01. dotfiles") is credited to the real directory.
+cmd on-cd &{{
+    stamp="${TMPDIR:-/tmp}/lf-zoxide-$id"
+    dir="$(pwd -P)"
+    printf '%s %s' "$$" "$dir" > "$stamp"
+    sleep 2
+    [ "$(cat "$stamp" 2>/dev/null)" = "$$ $dir" ] && zoxide add -- "$dir"
+}}
+cmd on-quit $rm -f "${TMPDIR:-/tmp}/lf-zoxide-$id"
+
 cmd zip ${{
 	zip -r "$f".zip "$f"
 }}

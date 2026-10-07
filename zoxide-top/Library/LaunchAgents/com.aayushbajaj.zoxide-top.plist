@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/aayushbajaj</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.aayushbajaj.zoxide-top</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/aayushbajaj/.local/bin/zoxide-top</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/aayushbajaj/Library/Logs/zoxide-top.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/aayushbajaj/Library/Logs/zoxide-top.log</string>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>WatchPaths</key>
+	<array>
+		<string>/Users/aayushbajaj/Library/Application Support/zoxide</string>
+	</array>
+</dict>
+</plist>

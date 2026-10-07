@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+"""zoxide-top — mirror the top-N zoxide directories as numbered symlinks.
+
+Keeps ~/lattice/1-projects looking like:
+    01. dotfiles -> /Users/aayushbajaj/dotfiles
+    02. new-site -> /Users/aayushbajaj/lattice/code/sites/new-site
+    ...
+Run by launchd (com.aayushbajaj.zoxide-top) whenever zoxide's db changes.
+Only ever touches symlinks named "NN. *"; real files in the dir are left alone.
+"""
+import os
+import re
+import subprocess
+import sys
+
+LINK_DIR = os.path.expanduser(os.environ.get("ZOXIDE_TOP_DIR", "~/lattice/1-projects"))
+TOP_N = int(os.environ.get("ZOXIDE_TOP_N", "20"))
+ZOXIDE = os.environ.get("ZOXIDE_BIN", "/opt/homebrew/bin/zoxide")
+MANAGED = re.compile(r"^\d\d\. ")
+
+
+def top_dirs():
+    out = subprocess.run([ZOXIDE, "query", "-ls"], check=True,
+                         capture_output=True, text=True).stdout
+    link_real = os.path.realpath(LINK_DIR)
+    picked, seen = [], set()
+    for line in out.splitlines():  # already sorted by score, descending
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        path = parts[1]
+        real = os.path.realpath(path)
+        # Skip the link dir itself and anything reached through it, otherwise
+        # cd-ing via these links would feed links-to-links back into the list.
+        inside = [p == d or p.startswith(d + os.sep)
+                  for p in (path, real) for d in (LINK_DIR, link_real)]
+        if any(inside) or real in seen or not os.path.isdir(path):
+            continue
+        seen.add(real)
+        picked.append(path)
+        if len(picked) == TOP_N:
+            break
+    return picked
+
+
+def label(path):
+    if path == "/":
+        return "root"
+    return os.path.basename(path.rstrip("/"))
+
+
+def desired_links(paths):
+    labels = [label(p) for p in paths]
+    links = {}
+    for i, (path, name) in enumerate(zip(paths, labels), 1):
+        if labels.count(name) > 1:  # disambiguate duplicate basenames
+            name = "%s (%s)" % (name, label(os.path.dirname(path.rstrip("/"))))
+        links["%02d. %s" % (i, name)] = path
+    return links
+
+
+def main():
+    os.makedirs(LINK_DIR, exist_ok=True)
+    want = desired_links(top_dirs())
+    if not want:
+        print("zoxide returned no directories; leaving links as they are", file=sys.stderr)
+        return 1
+
+    changed = False
+    for name in os.listdir(LINK_DIR):
+        full = os.path.join(LINK_DIR, name)
+        if MANAGED.match(name) and os.path.islink(full):
+            if want.get(name) != os.readlink(full):
+                os.unlink(full)
+                changed = True
+    for name, target in want.items():
+        full = os.path.join(LINK_DIR, name)
+        if os.path.islink(full):
+            continue
+        if os.path.exists(full):
+            print("skip %r: a real file is in the way" % name, file=sys.stderr)
+            continue
+        os.symlink(target, full)
+        changed = True
+
+    if changed:
+        print("updated:")
+        for name in sorted(want):
+            print("  %s -> %s" % (name, want[name]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
