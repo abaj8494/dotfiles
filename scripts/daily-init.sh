@@ -33,33 +33,6 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') — $*"; }
 
 log "daily-init starting for $TODAY"
 
-# ── Gotcha guard: only GENERATE when absent (regenerating an existing daily
-#    would org-touch and risk a wake-watch fire loop). But still REFRESH the
-#    Problems block from problems.org so a re-schedule made after the file was
-#    first created lands by morning — idempotently, waking the deploy watch
-#    only when the file content actually changed (else restore the mtime).
-if [ -f "$ORG_FILE" ]; then
-    log "today's daily already exists — refreshing Problems block (no re-generation)"
-    USER_TMP="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
-    SOCK="${USER_TMP%/}/emacs$(id -u)/server"
-    SOCK_ARG=(); [ -S "$SOCK" ] && SOCK_ARG=(--socket-name="$SOCK")
-    BEFORE="$(cksum < "$ORG_FILE" 2>/dev/null || echo a)"
-    STAMP="$(mktemp)"; touch -r "$ORG_FILE" "$STAMP"
-    "$EMACSCLIENT" "${SOCK_ARG[@]}" --eval "(ignore-errors
-        (with-current-buffer (find-file-noselect \"$ORG_FILE\")
-          (aj/insert-problems-due)
-          (when (buffer-modified-p) (save-buffer))))" >/dev/null 2>&1 || true
-    AFTER="$(cksum < "$ORG_FILE" 2>/dev/null || echo b)"
-    if [ "$BEFORE" = "$AFTER" ]; then
-        touch -r "$STAMP" "$ORG_FILE"   # no real change — don't wake the watch
-        log "Problems block unchanged — mtime restored"
-    else
-        log "Problems block updated — wake-watch/poll will redeploy"
-    fi
-    rm -f "$STAMP"
-    exit 0
-fi
-
 # Hard timeout so a wedged daemon can't hang the launchd job forever.
 if [ -x /opt/homebrew/bin/timeout ]; then
     TIMEOUT=/opt/homebrew/bin/timeout
@@ -78,6 +51,9 @@ SOCK="${USER_TMP%/}/emacs$(id -u)/server"
 SOCK_ARG=()
 [ -S "$SOCK" ] && SOCK_ARG=(--socket-name="$SOCK")
 
+EC=("$EMACSCLIENT" "${SOCK_ARG[@]}")
+[ -n "$TIMEOUT" ] && EC=("$TIMEOUT" 120 "$EMACSCLIENT" "${SOCK_ARG[@]}")
+
 # Probe: is the daemon responsive?
 if [ -n "$TIMEOUT" ]; then
     if ! "$TIMEOUT" 5 "$EMACSCLIENT" "${SOCK_ARG[@]}" --eval '(+ 1 1)' >/dev/null 2>&1; then
@@ -86,8 +62,52 @@ if [ -n "$TIMEOUT" ]; then
     fi
 fi
 
-EC=("$EMACSCLIENT" "${SOCK_ARG[@]}")
-[ -n "$TIMEOUT" ] && EC=("$TIMEOUT" 120 "$EMACSCLIENT" "${SOCK_ARG[@]}")
+
+# ── Gotcha guard: only GENERATE when absent (regenerating an existing daily
+#    would org-touch and risk a wake-watch fire loop). But still REFRESH the
+#    Problems block from problems.org so a re-schedule made after the file was
+#    first created lands by morning — idempotently, waking the deploy watch
+#    only when the file content actually changed (else restore the mtime).
+if [ -f "$ORG_FILE" ]; then
+    log "today's daily already exists — refreshing in place (no re-generation)"
+    BEFORE="$(cksum < "$ORG_FILE" 2>/dev/null || echo a)"
+    STAMP="$(mktemp)"; touch -r "$ORG_FILE" "$STAMP"
+    # A pre-existing file is not necessarily a *set-up* file: dailies are
+    # stubbed out weeks ahead (title + ID only), so "already exists" was
+    # refreshing the Problems block of a file that had no Journal/Recurring/
+    # Calendar at all — which is how a `** Problems' block ends up stranded
+    # at top level (see `aj/delete-orphan-problems-blocks'). Run the full
+    # open hook when the file still needs setup; only the already-built case
+    # gets the cheap Problems-only refresh.
+    #
+    # `find-file-noselect' PROMPTS ("changed on disk; really edit the
+    # buffer?") when the daemon holds a stale buffer for this file, and a
+    # prompt in a frameless daemon blocks it until a human answers. On
+    # 2026-08-22 that wedged Emacs from 00:00:05 to 15:41:20 and every
+    # ferrari populate that day logged "Emacs server not responsive". Revert
+    # a clean stale buffer first so the prompt has nothing to ask about, and
+    # bound the call with $TIMEOUT so this job can never hang all day again.
+    "${EC[@]}" --eval "(ignore-errors
+        (let ((buf (get-file-buffer \"$ORG_FILE\")))
+          (when (and buf
+                     (not (buffer-modified-p buf))
+                     (not (verify-visited-file-modtime buf)))
+            (with-current-buffer buf (revert-buffer t t t))))
+        (with-current-buffer (find-file-noselect \"$ORG_FILE\")
+          (if (aj/daily-needs-setup-p)
+              (aj/daily-file-open-hook)
+            (aj/insert-problems-due))
+          (when (buffer-modified-p) (save-buffer))))" >/dev/null 2>&1 || true
+    AFTER="$(cksum < "$ORG_FILE" 2>/dev/null || echo b)"
+    if [ "$BEFORE" = "$AFTER" ]; then
+        touch -r "$STAMP" "$ORG_FILE"   # no real change — don't wake the watch
+        log "daily unchanged — mtime restored"
+    else
+        log "daily updated — wake-watch/poll will redeploy"
+    fi
+    rm -f "$STAMP"
+    exit 0
+fi
 
 RESULT="$("${EC[@]}" --eval '(condition-case err
     (let ((default-directory (expand-file-name "~/")))

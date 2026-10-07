@@ -95,12 +95,79 @@ Only modifies headings listed in `aj/headings-with-statistics'."
           (goto-char (match-end 1))
           (insert " [/]"))))))
 
+(defun aj/daily-today-or-later-p (&optional file)
+  "Return non-nil if FILE (default: this buffer) is today's daily or a future one.
+Past dailies are frozen: their PDFs may already carry reMarkable pen
+strokes, and any edit that re-flows the page breaks orphans those."
+  (let ((base (file-name-base (or file (buffer-file-name) ""))))
+    (and (string-match-p "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\'" base)
+         (not (string< base (format-time-string "%Y-%m-%d"))))))
+
+(defvar aj/heading-scaffolding-re
+  "\\`\\(?:[ \t]*\n\\|-----[ \t]*\n\\|#\\+LATEX:[ \t]+\\\\newpage[ \t]*\n\\)*\\'"
+  "Matches a section body made up of nothing but structural scaffolding.
+That is: blank lines, `-----' separators and `#+LATEX: \\newpage'
+directives — everything `aj/ensure-heading-separators' and
+`aj/ensure-heading-newpages' put there themselves. A body matching this
+carries no content of the user's, so it counts as empty.")
+
+(defun aj/delete-titleless-headings ()
+  "Delete headings that carry no title text and no content.
+
+A bare `* ' line (star, space, nothing after it) is not a section. It
+exports as a blank page, and `aj/ensure-heading-separators' /
+`aj/ensure-heading-newpages' keep decorating it with a fresh triple
+separator and a \\newpage on every refresh, so it never goes away on its
+own.
+
+Only removed when the whole subtree is scaffolding (see
+`aj/heading-scaffolding-re') — a titleless heading that somehow acquired
+real content is left alone rather than silently taking that content with
+it. Call this BEFORE the separator/newpage passes; they rebuild the
+decoration this swallows on the way out.
+
+Never touches a PAST daily. Removing a heading re-flows every page break
+below it, which orphans the reMarkable pen strokes already drawn on that
+day\'s PDF — the same reason `aj/insert-problems-due\' freezes the
+Problems block once the day is over."
+  (when (aj/daily-today-or-later-p)
+    (save-excursion
+      (save-restriction
+        (widen)
+        (let ((hits nil))
+          (goto-char (point-min))
+          (while (re-search-forward "^\\*+[ \t]*$" nil t)
+            (push (line-beginning-position) hits))
+          ;; Bottom-to-top: deletions cannot invalidate an unvisited position.
+          (dolist (bol hits)
+            (goto-char bol)
+            (let* ((heading-eol (line-end-position))
+                   (end (save-excursion (org-end-of-subtree t t) (point)))
+                   (body (buffer-substring-no-properties
+                          (min (1+ heading-eol) end) end)))
+              (when (string-match-p aj/heading-scaffolding-re body)
+                (let ((start bol))
+                  (save-excursion
+                    (goto-char start)
+                    (forward-line -1)
+                    (while (and (> (point) (point-min))
+                                (or (looking-at-p "^[ \t]*$")
+                                    (looking-at-p "^-----[ \t]*$")
+                                    (looking-at-p "^#\\+LATEX:[ \t]+\\\\newpage[ \t]*$")))
+                      (setq start (line-beginning-position))
+                      (forward-line -1)))
+                  (delete-region start end))))))))))
+
 (defun aj/ensure-daily-structure ()
   "Ensure the daily note has all required headings in the correct order.
 Order: Journal, Recurring, Calendar, Capture, Tasks."
   (interactive)
   (when (aj/daily-date-file-p)
     (save-excursion
+      ;; Drop empty `* ' headings first, so the separator/newpage passes
+      ;; below rebuild the decoration around the real headings instead of
+      ;; re-decorating a blank one.
+      (aj/delete-titleless-headings)
       (dolist (heading aj/daily-heading-order)
         (aj/ensure-heading-exists heading))
       ;; Ensure statistics cookies on headings that need them

@@ -48,10 +48,18 @@ Checks if the file is missing the Journal heading (indicates bare template)."
 (defun aj/setup-daily-file ()
   "Run full setup for a daily file.
 Inserts transclude, ensures headings, populates recurring and calendar."
-  ;; 1. Insert week transclude if not present
+  ;; 1. Insert week transclude if not present.
+  ;; The "is it already here?" probe must match the WEEK transclude
+  ;; specifically — its target always ends `::* Week N'. A bare
+  ;; `^#+transclude:' test also matches the `** Problems' block's
+  ;; transclusions, and `daily-init.sh' can write that block BEFORE this setup
+  ;; ever runs (it refreshes Problems on an existing bare file; if the daemon
+  ;; is wedged at midnight the interactive open-hook lands hours later). The
+  ;; broad test then saw Problems' transclude, concluded the week was already
+  ;; present, and silently skipped it for the whole day.
   (save-excursion
     (goto-char (point-min))
-    (unless (or (re-search-forward "^#\\+transclude:" nil t)
+    (unless (or (re-search-forward "^#\\+transclude:.*::\\* Week [0-9]+" nil t)
                 (progn (goto-char (point-min))
                        (re-search-forward "^\\* \\(\\[\\[id:[^]]+\\]\\[\\)?Week [0-9]+" nil t)))
       (aj/insert-week-transclude)))
@@ -79,14 +87,24 @@ Inserts transclude, ensures headings, populates recurring and calendar."
   (save-excursion
     (goto-char (point-min))
     (when (re-search-forward "^\\* Calendar\\b" nil t)
-      (let ((heading-end (line-end-position))
-            (next-heading (save-excursion
-                            (forward-line 1)
-                            (if (re-search-forward "^\\* " nil t)
-                                (line-beginning-position)
-                              (point-max)))))
-        ;; Check if there's no content between Calendar and next heading
-        (when (< (- next-heading heading-end) 5)
+      (let* ((heading-end (line-end-position))
+             (next-heading (save-excursion
+                             (forward-line 1)
+                             (if (re-search-forward "^\\* " nil t)
+                                 (line-beginning-position)
+                               (point-max))))
+             (body (buffer-substring-no-properties
+                    (min (1+ heading-end) next-heading) next-heading)))
+        ;; Emptiness has to be judged on real content, not on a byte count.
+        ;; Step 2 above already ran `aj/ensure-daily-structure', which puts
+        ;; `-----'x3 + `#+LATEX: \\newpage' (~40 chars) between `* Calendar'
+        ;; and the heading after it — so the old `(< (- next-heading
+        ;; heading-end) 5)' test could never be true here and the calendar was
+        ;; never inserted on a freshly set-up daily. It only ever arrived via
+        ;; the existing-file `aj/refresh-daily-calendar' branch of the open
+        ;; hook, or ferrari's `aj/refresh-daily-calendar-sync'; when neither
+        ;; ran (a wedged daemon), the day shipped with an empty Calendar.
+        (when (string-match-p aj/heading-scaffolding-re body)
           (my/insert-aj-day-calendar)))))
   )
 

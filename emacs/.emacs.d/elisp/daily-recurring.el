@@ -1028,6 +1028,55 @@ Maintains template order even when some headings already exist."
                 (forward-line -1)))
             (delete-region start end)))))))
 
+(defun aj/delete-orphan-problems-blocks ()
+  "Delete every `** Problems' block that is NOT under `* Recurring'.
+
+A `** Problems' block written into a daily while it had no `* Recurring'
+heading — which is exactly what happens to the pre-created future stubs,
+since `daily-init.sh' refreshes Problems on a file that is still just a
+title — ends up stranded under whatever level-1 heading precedes it once
+`aj/ensure-daily-structure' appends the real sections at end-of-buffer.
+
+`aj/delete-recurring-child' searches only inside the `* Recurring'
+section, so the rebuild below cannot see such a block: it adds a second,
+correct one and the stale copy survives every refresh, duplicating its
+transclusions into the exported PDF forever.
+
+Returns the number of blocks removed."
+  (let ((removed 0))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (let ((hits nil))
+          (goto-char (point-min))
+          (while (re-search-forward "^\\*\\* Problems[ \t]*$" nil t)
+            (push (line-beginning-position) hits))
+          ;; `hits' is bottom-to-top, so deletions never invalidate a
+          ;; position we have not visited yet.
+          (dolist (bol hits)
+            (goto-char bol)
+            (let ((parent (save-excursion
+                            (when (re-search-backward "^\\* \\(.*\\)$" nil t)
+                              (match-string 1)))))
+              (unless (and parent (string-match-p "\\`Recurring\\b" parent))
+                (let ((start bol)
+                      (end (save-excursion (org-end-of-subtree t t) (point))))
+                  ;; Swallow the blank lines and lowercase `#+latex: \newpage'
+                  ;; sitting directly above, exactly as
+                  ;; `aj/delete-recurring-child' does, so removing the block
+                  ;; does not leave an orphaned page break behind.
+                  (save-excursion
+                    (goto-char start)
+                    (forward-line -1)
+                    (while (and (> (point) (point-min))
+                                (or (looking-at-p "^[ \t]*$")
+                                    (looking-at-p "^#\\+latex:[ \t]+\\\\newpage[ \t]*$")))
+                      (setq start (line-beginning-position))
+                      (forward-line -1)))
+                  (delete-region start end)
+                  (setq removed (1+ removed)))))))))
+    removed))
+
 (defun aj/insert-problems-due ()
   "Rebuild the `** Problems' transclusion block under * Recurring for this daily.
 One `#+transclude:' per problems.org entry SCHEDULED on the daily's title date.
@@ -1051,6 +1100,9 @@ Idempotent: collapse live transcludes, delete the old block, rewrite, re-add."
           ;; Collapse any live transclusions back to directives before editing.
           (when (bound-and-true-p org-transclusion-mode)
             (ignore-errors (org-transclusion-remove-all)))
+          ;; Sweep stranded copies first — they live outside `* Recurring'
+          ;; and are therefore invisible to `aj/delete-recurring-child'.
+          (aj/delete-orphan-problems-blocks)
           (aj/delete-recurring-child "Problems")
           (when ids
             (aj/ensure-heading-exists "Recurring")
