@@ -62,15 +62,31 @@
           ;; Inboxes
           (:name "Gmail" :query "path:gmail-lieer/** and tag:inbox" :key "g" :sort-order newest-first)
           (:name "Abaj" :query "folder:abaj/Inbox" :key "b" :sort-order newest-first)
+          (:name "Tern" :query "path:tern-cis/** and not folder:tern-cis/Sent and not folder:tern-cis/Trash and not folder:tern-cis/Junk" :key "C" :sort-order newest-first)
+          (:name "Shrike" :query "tag:shrike" :key "k" :sort-order newest-first)
           (:name "TF-Aayush" :query "folder:tutorsfirst-aayush/Inbox" :key "T" :sort-order newest-first)
           (:name "TF-Manager" :query "folder:tutorsfirst-manager/Inbox" :key "M" :sort-order newest-first)
+          (:name "TF-Support" :query "folder:tutorsfirst-support/Inbox" :key "P" :sort-order newest-first)
+          (:name "FF-Support" :query "folder:fatfort-support/Inbox" :key "F" :sort-order newest-first)
+          (:name "FatFort" :query "folder:fatfort/Inbox" :key "l" :sort-order newest-first)
+          (:name "FatTails" :query "folder:fattails/Inbox" :key "e" :sort-order newest-first)
+          (:name "TutorsFirst" :query "folder:tutorsfirst/Inbox" :key "L" :sort-order newest-first)
+          (:name "Rajah" :query "folder:abaj-rajah/Inbox" :key "r" :sort-order newest-first)
+          (:name "FF-Founder" :query "folder:fatfort-founder/Inbox" :key "d" :sort-order newest-first)
+          (:name "FF-Arcade" :query "folder:fatfort-arcade/Inbox" :key "c" :sort-order newest-first)
+          (:name "FF-Lambda" :query "folder:fatfort-lambda/Inbox" :key "a" :sort-order newest-first)
+          (:name "λ Study" :query "folder:lambda-pi/Inbox" :key "i" :sort-order newest-first)
+          (:name "λ Info" :query "folder:lambda-info/Inbox" :key "I" :sort-order newest-first)
+          (:name "TF-Bugs" :query "folder:tutorsfirst-bugs/Inbox" :key "B" :sort-order newest-first)
+          (:name "AX-Supervisor" :query "folder:arcade-supervisor/Inbox" :key "v" :sort-order newest-first)
+          (:name "AX-Support" :query "folder:arcade-support/Inbox" :key "p" :sort-order newest-first)
           (:name "UNSW" :query "folder:unsw/Inbox" :key "n" :sort-order newest-first)
           (:name "School" :query "folder:unsw-school/Inbox" :key "S" :sort-order newest-first)
           ;; Gmail labels
           (:name "Starred" :query "path:gmail-lieer/** and (tag:flagged or tag:YELLOW_STAR)" :key "f" :sort-order newest-first)
           (:name "Finance" :query "path:gmail-lieer/** and tag:Finance" :key "$" :sort-order newest-first)
           (:name "Orders" :query "path:gmail-lieer/** and tag:Orders" :key "o" :sort-order newest-first)
-          (:name "Sent" :query "tag:sent or folder:abaj/Sent or folder:tutorsfirst-aayush/Sent or folder:tutorsfirst-manager/Sent or folder:\"unsw/Sent Items\" or folder:\"unsw-school/Sent Items\"" :key "s" :sort-order newest-first)
+          (:name "Sent" :query "tag:sent or folder:abaj/Sent or folder:tutorsfirst-aayush/Sent or folder:tutorsfirst-manager/Sent or folder:tutorsfirst-support/Sent or folder:fatfort-support/Sent or folder:fatfort/Sent or folder:fattails/Sent or folder:tutorsfirst/Sent or folder:abaj-rajah/Sent or folder:fatfort-founder/Sent or folder:fatfort-arcade/Sent or folder:tutorsfirst-bugs/Sent or folder:arcade-supervisor/Sent or folder:arcade-support/Sent or folder:fatfort-lambda/Sent or folder:lambda-pi/Sent or folder:lambda-info/Sent or folder:\"unsw/Sent Items\" or folder:\"unsw-school/Sent Items\"" :key "s" :sort-order newest-first)
           (:name "Trash" :query "tag:trash" :key "x" :sort-order newest-first)))
 
   ;; Show counts in hello screen
@@ -89,8 +105,23 @@
   (setq notmuch-identities
         '("Aayush Bajaj <aayushbajaj7@gmail.com>"
           "Aayush Bajaj <j@abaj.ai>"
+          "Cistern | Tern Trading <cis@tern.trading>"
           "Aayush Bajaj | TutorsFirst <aayush@tutorsfirst.com.au>"
-          "TutorsFirst <manager@tutorsfirst.com.au>"
+          "Manager | TutorsFirst <manager@tutorsfirst.com.au>"
+          "TutorsFirst Support <support@tutorsfirst.com.au>"
+          "FatFort Support <support@fatfort.com>"
+          "Admin | FatFort <liminf@fatfort.com>"
+          "Aayush Bajaj | FatTails <esssup@fattails.net>"
+          "Admin | TutorsFirst <limsup@tutorsfirst.com.au>"
+          "Aayush Bajaj <rajah@abaj.ai>"
+          "Founder | FatFort <founder@fatfort.com>"
+          "Arcade | FatFort <arcade@fatfort.com>"
+          "Lambda | FatFort <lambda@fatfort.com>"
+          "λambda study <pi@lambda.study>"
+          "λambda study <info@lambda.study>"
+          "Bugs | TutorsFirst <bugs@tutorsfirst.com.au>"
+          "Supervisor | Arcade Express <supervisor@arcade.express>"
+          "Support | Arcade Express <support@arcade.express>"
           "Aayush Bajaj <z5362216@zmail.unsw.edu.au>"
           "Aayush Bajaj <aayush.bajaj@student.unsw.edu.au>"))
 
@@ -103,8 +134,23 @@
   (setq notmuch-fcc-dirs
         `(("aayushbajaj7@gmail.com" . nil)  ; Gmail saves sent automatically
           ("j@abaj.ai" . ,(expand-file-name "~/Maildir/abaj/Sent"))
+          ("cis@tern.trading" . ,(expand-file-name "~/Maildir/tern-cis/Sent"))
           ("aayush@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst-aayush/Sent"))
           ("manager@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst-manager/Sent"))
+          ("support@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst-support/Sent"))
+          ("support@fatfort.com" . ,(expand-file-name "~/Maildir/fatfort-support/Sent"))
+          ("liminf@fatfort.com" . ,(expand-file-name "~/Maildir/fatfort/Sent"))
+          ("esssup@fattails.net" . ,(expand-file-name "~/Maildir/fattails/Sent"))
+          ("limsup@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst/Sent"))
+          ("rajah@abaj.ai" . ,(expand-file-name "~/Maildir/abaj-rajah/Sent"))
+          ("founder@fatfort.com" . ,(expand-file-name "~/Maildir/fatfort-founder/Sent"))
+          ("arcade@fatfort.com" . ,(expand-file-name "~/Maildir/fatfort-arcade/Sent"))
+          ("lambda@fatfort.com" . ,(expand-file-name "~/Maildir/fatfort-lambda/Sent"))
+          ("pi@lambda.study" . ,(expand-file-name "~/Maildir/lambda-pi/Sent"))
+          ("info@lambda.study" . ,(expand-file-name "~/Maildir/lambda-info/Sent"))
+          ("bugs@tutorsfirst.com.au" . ,(expand-file-name "~/Maildir/tutorsfirst-bugs/Sent"))
+          ("supervisor@arcade.express" . ,(expand-file-name "~/Maildir/arcade-supervisor/Sent"))
+          ("support@arcade.express" . ,(expand-file-name "~/Maildir/arcade-support/Sent"))
           ("z5362216@zmail.unsw.edu.au" . ,(expand-file-name "~/Maildir/unsw/Sent Items"))
           ("aayush.bajaj@student.unsw.edu.au" . ,(expand-file-name "~/Maildir/unsw-school/Sent Items"))))
 
@@ -325,6 +371,19 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
        ((string-match "/abaj/" files) 'abaj)
        ((string-match "/tutorsfirst-aayush/" files) 'tf-aayush)
        ((string-match "/tutorsfirst-manager/" files) 'tf-manager)
+       ((string-match "/tutorsfirst-support/" files) 'tf-support)
+       ((string-match "/fatfort-support/" files) 'ff-support)
+       ((string-match "/fatfort/" files) 'fatfort)
+       ((string-match "/fattails/" files) 'fattails)
+       ((string-match "/tutorsfirst/" files) 'tutorsfirst)
+       ((string-match "/abaj-rajah/" files) 'abaj-rajah)
+       ((string-match "/fatfort-founder/" files) 'ff-founder)
+       ((string-match "/fatfort-arcade/" files) 'ff-arcade)
+       ((string-match "/lambda-pi/" files) 'lambda-pi)
+       ((string-match "/lambda-info/" files) 'lambda-info)
+       ((string-match "/tutorsfirst-bugs/" files) 'tf-bugs)
+       ((string-match "/arcade-supervisor/" files) 'ax-supervisor)
+       ((string-match "/arcade-support/" files) 'ax-support)
        ((string-match "/unsw-school/" files) 'school)
        ((string-match "/unsw/" files) 'unsw)
        (t nil))))
@@ -341,6 +400,19 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
            ((string-match "/abaj/" files) 'abaj)
            ((string-match "/tutorsfirst-aayush/" files) 'tf-aayush)
            ((string-match "/tutorsfirst-manager/" files) 'tf-manager)
+           ((string-match "/tutorsfirst-support/" files) 'tf-support)
+           ((string-match "/fatfort-support/" files) 'ff-support)
+           ((string-match "/fatfort/" files) 'fatfort)
+           ((string-match "/fattails/" files) 'fattails)
+           ((string-match "/tutorsfirst/" files) 'tutorsfirst)
+           ((string-match "/abaj-rajah/" files) 'abaj-rajah)
+           ((string-match "/fatfort-founder/" files) 'ff-founder)
+           ((string-match "/fatfort-arcade/" files) 'ff-arcade)
+           ((string-match "/lambda-pi/" files) 'lambda-pi)
+           ((string-match "/lambda-info/" files) 'lambda-info)
+           ((string-match "/tutorsfirst-bugs/" files) 'tf-bugs)
+           ((string-match "/arcade-supervisor/" files) 'ax-supervisor)
+           ((string-match "/arcade-support/" files) 'ax-support)
            ((string-match "/unsw-school/" files) 'school)
            ((string-match "/unsw/" files) 'unsw)
            (t nil))))))
@@ -353,6 +425,19 @@ Works during sync — only the bulk action (d/a/etc.) waits for sync."
                      ((eq account 'abaj) "~/Maildir/abaj")
                      ((eq account 'tf-aayush) "~/Maildir/tutorsfirst-aayush")
                      ((eq account 'tf-manager) "~/Maildir/tutorsfirst-manager")
+                     ((eq account 'tf-support) "~/Maildir/tutorsfirst-support")
+                     ((eq account 'ff-support) "~/Maildir/fatfort-support")
+                     ((eq account 'fatfort) "~/Maildir/fatfort")
+                     ((eq account 'fattails) "~/Maildir/fattails")
+                     ((eq account 'tutorsfirst) "~/Maildir/tutorsfirst")
+                     ((eq account 'abaj-rajah) "~/Maildir/abaj-rajah")
+                     ((eq account 'ff-founder) "~/Maildir/fatfort-founder")
+                     ((eq account 'ff-arcade) "~/Maildir/fatfort-arcade")
+                     ((eq account 'lambda-pi) "~/Maildir/lambda-pi")
+                     ((eq account 'lambda-info) "~/Maildir/lambda-info")
+                     ((eq account 'tf-bugs) "~/Maildir/tutorsfirst-bugs")
+                     ((eq account 'ax-supervisor) "~/Maildir/arcade-supervisor")
+                     ((eq account 'ax-support) "~/Maildir/arcade-support")
                      ((eq account 'unsw) "~/Maildir/unsw")
                      ((eq account 'school) "~/Maildir/unsw-school")
                      (t nil))))
@@ -938,6 +1023,12 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
        :smtp-port 465
        :smtp-stream ssl
        :fcc ,(expand-file-name "~/Maildir/abaj/Sent"))
+      ("cis@tern.trading"
+       :name "Cistern | Tern Trading"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/tern-cis/Sent"))
       ("aayush@tutorsfirst.com.au"
        :name "Aayush Bajaj | TutorsFirst"
        :smtp-server "mail.abaj.ai"
@@ -945,11 +1036,77 @@ Only adds jobsync-was/<original> on the FIRST rotation to track the original cla
        :smtp-stream ssl
        :fcc ,(expand-file-name "~/Maildir/tutorsfirst-aayush/Sent"))
       ("manager@tutorsfirst.com.au"
-       :name "TutorsFirst"
+       :name "Manager | TutorsFirst"
        :smtp-server "mail.abaj.ai"
        :smtp-port 465
        :smtp-stream ssl
        :fcc ,(expand-file-name "~/Maildir/tutorsfirst-manager/Sent"))
+      ("support@tutorsfirst.com.au"
+       :name "TutorsFirst Support"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/tutorsfirst-support/Sent"))
+      ("support@fatfort.com"
+       :name "FatFort Support"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/fatfort-support/Sent"))
+      ("liminf@fatfort.com"
+       :name "Admin | FatFort"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/fatfort/Sent"))
+      ("esssup@fattails.net"
+       :name "Aayush Bajaj | FatTails"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/fattails/Sent"))
+      ("limsup@tutorsfirst.com.au"
+       :name "Admin | TutorsFirst"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/tutorsfirst/Sent"))
+      ("rajah@abaj.ai"
+       :name "Aayush Bajaj"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/abaj-rajah/Sent"))
+      ("founder@fatfort.com"
+       :name "Founder | FatFort"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/fatfort-founder/Sent"))
+      ("arcade@fatfort.com"
+       :name "Arcade | FatFort"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/fatfort-arcade/Sent"))
+      ("bugs@tutorsfirst.com.au"
+       :name "Bugs | TutorsFirst"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/tutorsfirst-bugs/Sent"))
+      ("supervisor@arcade.express"
+       :name "Supervisor | Arcade Express"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/arcade-supervisor/Sent"))
+      ("support@arcade.express"
+       :name "Support | Arcade Express"
+       :smtp-server "mail.abaj.ai"
+       :smtp-port 465
+       :smtp-stream ssl
+       :fcc ,(expand-file-name "~/Maildir/arcade-support/Sent"))
       ("z5362216@zmail.unsw.edu.au"
        :name "Aayush Bajaj"
        :smtp-server "smtp.office365.com"
