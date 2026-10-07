@@ -17,7 +17,15 @@ if ! [ -f "$FILE_PATH" ] && ! [ -h "$FILE_PATH" ]; then
   exit
 fi
 
-if [ -n "$INSIDE_EMACS" ] || { [ "$TERM" != "xterm-kitty" ] && [ -z "$KITTY_WINDOW_ID" ]; }; then
+# Can this terminal take a kitty graphics escape? Direct kitty says so via TERM
+# or KITTY_WINDOW_ID; tmux passes KITTY_WINDOW_ID through from whatever started
+# the server. A herdr pane has neither — its TERM is xterm-256color and its
+# server is launched by launchd, so nothing kitty-ish is in the environment —
+# yet it does render graphics (with [experimental] kitty_graphics = true).
+# Without HERDR_PANE_ID here, every image preview inside herdr silently
+# degrades to the pistol text fallback.
+if [ -n "$INSIDE_EMACS" ] ||
+  { [ "$TERM" != "xterm-kitty" ] && [ -z "$KITTY_WINDOW_ID" ] && [ -z "$HERDR_PANE_ID" ]; }; then
   NO_IMAGE_PREVIEW=1
 fi
 

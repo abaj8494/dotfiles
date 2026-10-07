@@ -1,3 +1,13 @@
 #!/usr/bin/env bash
 
+# Inside a herdr pane, ask herdr to drop the pane's placements directly.
+# `icat --clear` below emits kitty's in-band "delete all images" escape, which
+# herdr does not reliably act on — stale previews stay on screen after moving
+# off a file or quitting lf. pane.graphics.clear is the API herdr does honour.
+# Harmless anywhere else: HERDR_PANE_ID is only set inside a herdr pane.
+if [ -n "$HERDR_PANE_ID" ] && [ -x "$HOME/.config/herdr/scripts/api.py" ]; then
+  "$HOME/.config/herdr/scripts/api.py" pane.graphics.clear \
+    "{\"pane_id\": \"$HERDR_PANE_ID\"}" >/dev/null 2>&1
+fi
+
 kitty +kitten icat --clear --stdin no --transfer-mode memory < /dev/null > /dev/tty
