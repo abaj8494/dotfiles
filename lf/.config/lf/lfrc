@@ -234,7 +234,7 @@ map } half-down
 map w wall
 
 # --- Lattice (PARA) navigation ---
-map gl cd "~/lattice"
+map gL cd "~/lattice"
 map g0 cd "~/lattice/0-inbox"
 map g1 cd "~/lattice/1-projects"
 map g2 cd "~/lattice/2-areas"
@@ -253,8 +253,9 @@ map gdf cd "~/lattice/2-areas/finance/beancount/ledger/"
 map gdu cd "~/lattice/4-archive/uni"
 map gds cd "~/lattice/code/sites/new-site"
 map gdc cd "~/lattice/code/shared"
-map gsc cd "~/lattice/notes"
-map gcf cd "~/lattice/notes/flashcards"
+map glo cd "~/lattice/org-notes"
+map glu cd "~/lattice/org-notes/uni/"
+map glf cd "~/lattice/org-notes/flashcards"
 map gdd cd "~/lattice/3-resources/doc"
 map gm cd "~/Music"
 map gua cd "~"
