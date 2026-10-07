@@ -80,6 +80,12 @@ ZSH_THEME="robbyrussell"
 #plugins=(git)
 plugins=(git z zsh-autosuggestions zsh-syntax-highlighting fast-syntax-highlighting zsh-autocomplete)
 
+# Homebrew's completions (Apple Silicon prefix) — `brew shellenv` is never run
+# here (PATH is set by hand below), so this dir would otherwise miss FPATH and
+# brew-installed completions like herdr's would silently never load.
+# Must precede oh-my-zsh, which is what runs compinit.
+fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
+
 source $ZSH/oh-my-zsh.sh
 
 # User configuration

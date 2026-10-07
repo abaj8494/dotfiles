@@ -1,0 +1,58 @@
+# Local herdr plugin — the pieces of the tmux setup that a keybinding can't
+# express, because they have to happen without anyone pressing anything.
+#
+# tmux.conf ends with:
+#     run-shell -b 'sleep 3 && ~/.config/sesh/scripts/startup.sh …'
+# which pre-creates the always-open sesh sessions after tpm/continuum settle.
+# herdr has no run-shell hook, but a plugin's [[startup]] command runs once per
+# server start, *after* the session is restored — the same moment in the
+# lifecycle. sesh.sh startup is idempotent (it skips workspaces that already
+# exist), so a restored session plus this hook converges on the same set.
+#
+# Linked, not installed:  herdr plugin link ~/.config/herdr/plugins/aj
+# Status:                 herdr plugin list
+# Registry lives in ~/.config/herdr/.plugins.lock (global per user, not in git).
+
+id = "aj"
+name = "aj dotfiles"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "sesh workspace pre-warm on server start, plus snapshot actions"
+platforms = ["macos"]
+
+# tmux: run-shell -b '… startup.sh' at the bottom of tmux.conf
+[[startup]]
+command = ["/Users/aayushbajaj/.config/herdr/scripts/sesh.sh", "startup"]
+
+# tmux has switch-client -l; herdr has no last-workspace action, so the history
+# is kept by hand. Hooking the event (rather than recording inside sesh.sh)
+# means every route counts — sidebar, picker, prefix+( / ), navigate, mouse.
+[[events]]
+on = "workspace.focused"
+command = ["/Users/aayushbajaj/.config/herdr/scripts/focus-track.sh"]
+
+# Actions show up in herdr's plugin menu and are scriptable with
+# `herdr plugin action invoke <id>` — the same operations as the keybindings,
+# reachable without remembering a chord.
+[[actions]]
+id = "sesh-prewarm"
+title = "sesh: pre-create always-open workspaces"
+command = ["/Users/aayushbajaj/.config/herdr/scripts/sesh.sh", "startup"]
+
+[[actions]]
+id = "snapshot-save"
+title = "snapshot: save layout"
+command = ["/usr/bin/python3", "/Users/aayushbajaj/.config/herdr/scripts/persist.py", "save"]
+
+[[actions]]
+id = "snapshot-restore"
+title = "snapshot: restore last autosave"
+command = ["/usr/bin/python3", "/Users/aayushbajaj/.config/herdr/scripts/persist.py", "restore", "--name", "auto"]
+
+[[panes]]
+id = "sesh-picker"
+title = "sesh"
+placement = "popup"
+width = "80%"
+height = "70%"
+command = ["/Users/aayushbajaj/.config/herdr/scripts/sesh.sh", "picker"]

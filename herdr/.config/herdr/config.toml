@@ -1,0 +1,347 @@
+# herdr — agent multiplexer. Every binding below is a deliberate copy of
+# tmux/.config/tmux/tmux.conf so the migration doesn't cost a rebind; each one
+# carries the tmux line it came from.
+#
+# Vocabulary map (tmux -> herdr):
+#   session -> workspace     window -> tab     pane -> pane
+#
+# `herdr config check` validates this file, `herdr server reload-config`
+# (prefix+C-r) applies it to the running server. Two caveats learned the hard
+# way, both worth remembering before editing:
+#
+#   1. `config check` ALWAYS exits 0. Grep its stdout for "config: ok" — a
+#      non-zero exit never happens, even on a fatal parse error.
+#   2. It only detects a chord bound twice when BOTH bindings are written out
+#      here. A binding that silently collides with a herdr *default* still
+#      reports "ok" and then loses at runtime. That's why every displaced
+#      default below is spelled out (or set to "" to disable it) rather than
+#      left implicit.
+
+onboarding = false
+
+[terminal]
+# Empty = $SHELL. shell_mode "auto" gives login shells on macOS, which is what
+# this zsh setup (omz + p10k) expects.
+default_shell = ""
+shell_mode = "auto"
+new_cwd = "follow"          # tmux: -c "#{pane_current_path}" on every split
+
+[theme]
+# Deliberately NOT tokyo-night: tmux.conf runs janoamaral/tokyo-night-tmux, and
+# the whole point of running both is being able to tell at a glance which one
+# you're looking at. kanagawa is the furthest from tokyo-night's blue/violet
+# that herdr ships — warm ink-wash greens and browns.
+name = "kanagawa"
+[theme.custom]
+accent = "#7e9cd8"
+
+[ui]
+# tmux: set -g mouse on
+mouse_capture = true
+
+# --- the status bar ----------------------------------------------------
+# herdr has no status *line* with a format string — there is no equivalent of
+# tmux's status-left/status-right. What it has is the tab row plus the sidebar,
+# so the tmux status bar is reassembled from those two:
+#
+#   tab row  -> moved to the bottom, always visible: the window list
+#   sidebar  -> workspace name + git branch + git status, i.e. what
+#               tokyo-night-tmux puts in status-left/right
+#
+# (If you ever want tmux-style widgets — clock, battery, netspeed — the hook is
+# `workspace.report_metadata`, whose custom values render as $name tokens in
+# the rows below. Nothing reports any today.)
+tab_bar_position = "bottom"
+hide_tab_bar_when_single_tab = false
+
+# Agent name in the pane border, so a split of agents is readable without
+# consulting the sidebar.
+show_agent_labels_on_pane_borders = true
+
+[ui.sidebar.spaces]
+row_gap = 0
+rows = [["state_icon", "workspace"], ["branch", "git_status"]]
+
+[ui.sidebar.agents]
+row_gap = 0
+rows = [["state_icon", "workspace", "tab"], ["agent"]]
+[ui.sidebar.agents.rows_by_agent]
+claude = [["state_icon", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]
+
+[advanced]
+# tmux: set -g history-limit 20000
+scrollback_lines = 20000
+
+[session]
+# Agent panes come back in their own conversations after a server restart,
+# rather than as bare shells. Requires the matching agent integration —
+# `herdr integration status` / `herdr integration install claude`.
+resume_agents_on_restore = true
+
+[experimental]
+# lf's previewer shells out to `kitty +kitten icat`, which writes Kitty
+# graphics escapes straight to the pane tty. herdr drops those unless this is
+# on ("pane graphics require experimental.kitty_graphics") — the analogue of
+# `set -g allow-passthrough` in tmux.conf. Needs a Kitty-graphics-capable outer
+# terminal (kitty is) AND a client that reconnected after this was enabled:
+# `grep 'client connected' ~/.config/herdr/herdr-server.log` must show non-zero
+# cell_width_px, or icat fails with "Terminal does not support reporting screen
+# sizes in pixels".
+kitty_graphics = true
+
+# tmux: set -g @resurrect-capture-pane-contents 'on'
+pane_history = true
+
+[keys]
+# tmux: set -g prefix C-a  (send-prefix is automatic — press it twice)
+prefix = "ctrl+a"
+
+# --- panes -------------------------------------------------------------
+# tmux binds pane focus to the yabai-style v/w/b/m rather than hjkl.
+focus_pane_up    = "prefix+v"          # tmux: bind -r v select-pane -U
+focus_pane_down  = "prefix+w"          # tmux: bind -r w select-pane -D
+focus_pane_left  = "prefix+b"          # tmux: bind -r b select-pane -L
+focus_pane_right = "prefix+m"          # tmux: bind -r m select-pane -R
+cycle_pane_next     = "prefix+tab"     # tmux: bind -r Tab select-pane -t :.+
+cycle_pane_previous = "prefix+shift+tab"
+
+split_horizontal = "prefix+minus"      # tmux: bind - split-window -v
+split_vertical   = "prefix+s"          # tmux: bind s split-window -h
+close_pane       = "prefix+x"          # tmux: bind x kill-pane
+zoom             = "prefix+."          # tmux: bind -r . resize-pane -Z
+
+swap_pane_up   = "prefix+ctrl+o"       # tmux: bind C-o swap-pane -U (also tmux's default `{`)
+swap_pane_down = "prefix+}"            # tmux default: } swap-pane -D
+last_pane      = "prefix+semicolon"    # tmux default: ; last-pane
+# Left/right have no tmux counterpart, and their herdr defaults sit on
+# prefix+shift+h/l — which tmux uses for swap-window and for the lf split. An
+# unwritten default collides invisibly, so disable them explicitly.
+swap_pane_left  = ""
+swap_pane_right = ""
+
+# --- tabs (tmux windows) -----------------------------------------------
+previous_tab = "prefix+h"              # tmux: bind h select-window -p
+next_tab     = "prefix+t"              # tmux: bind t select-window -n
+new_tab      = "prefix+e"              # tmux: bind e new-window (c unbound)
+rename_tab   = "prefix+r"              # tmux: bind r command-prompt rename-window
+switch_tab   = "prefix+1..9"           # tmux default: prefix 0-9 select-window
+close_tab    = "prefix+&"              # tmux default: & kill-window
+copy_mode    = "prefix+,"              # tmux: bind , copy-mode
+
+# --- workspaces (tmux sessions) ----------------------------------------
+new_workspace      = "prefix+o"        # tmux: bind o new-session
+workspace_picker   = "prefix+'"        # tmux: bind -r ' choose-tree -Zw
+previous_workspace = "prefix+("        # tmux default: ( switch-client -p
+next_workspace     = "prefix+)"        # tmux default: ) switch-client -n
+rename_workspace   = "prefix+$"        # tmux default: $ rename-session
+goto               = "prefix+f"        # tmux default: f find-window
+help               = "prefix+?"        # tmux default: ? list-keys
+
+# --- agents (no tmux equivalent — herdr's own first-class concept) ------
+previous_agent = "prefix+["
+next_agent     = "prefix+]"
+focus_agent    = "prefix+alt+1..9"
+
+# --- navigate mode (opened by workspace_picker above) ------------------
+# These are bare keys, live only while the navigator is open, and are separate
+# from focus_pane_*. h/j/k/l walk panes; ctrl+n / ctrl+p walk workspaces.
+navigate_workspace_down = "ctrl+n"
+navigate_workspace_up   = "ctrl+p"
+
+# --- session ------------------------------------------------------------
+detach        = "prefix+d"             # tmux default; herdr ships prefix+q
+reload_config = "prefix+ctrl+r"        # tmux: bind R source-file
+
+# --- displaced herdr defaults ------------------------------------------
+# These moved because the tmux mapping above claimed their default keys.
+toggle_sidebar           = "prefix+shift+b"  # default prefix+b       -> focus_pane_left
+settings                 = "prefix+shift+s"  # default prefix+s       -> split_vertical
+edit_scrollback          = "prefix+shift+e"  # default prefix+e       -> new_tab
+open_notification_target = "prefix+shift+o"  # default prefix+o       -> new_workspace
+resize_mode              = "prefix+shift+r"  # default prefix+r       -> rename_tab
+close_workspace          = "prefix+shift+d"  # herdr default, kept (tmux has no kill-session binding)
+rename_pane              = "prefix+shift+p"  # herdr default, kept (no tmux equivalent)
+
+# ==== custom commands ==================================================
+# `type = "shell"` runs `/bin/sh -lc "<command>"` detached (no pane), "pane"
+# and "popup" run `/bin/sh -c` with a terminal. Arguments, quoting and pipes
+# all work. Scripts set their own PATH — the server's is bare.
+
+# --- tmux default chords that need an alias ----------------------------
+# herdr binds one key per action, so the tmux defaults that duplicate a
+# tmux.conf binding (% and " alongside s and -) have to go through the API
+# instead. HERDR_ACTIVE_PANE_{ID,CWD} are injected into custom commands.
+
+# tmux default: % split-window -h  (same as the `s` binding above)
+[[keys.command]]
+key = "prefix+%"
+type = "shell"
+command = "/opt/homebrew/bin/herdr pane split --pane \"$HERDR_ACTIVE_PANE_ID\" --direction right --cwd \"$HERDR_ACTIVE_PANE_CWD\" --focus"
+description = "split right"
+
+# tmux default: " split-window -v  (same as the `-` binding above)
+[[keys.command]]
+key = "prefix+\""
+type = "shell"
+command = "/opt/homebrew/bin/herdr pane split --pane \"$HERDR_ACTIVE_PANE_ID\" --direction down --cwd \"$HERDR_ACTIVE_PANE_CWD\" --focus"
+description = "split below"
+
+# tmux default: { swap-pane -U  (same as the C-o binding above)
+[[keys.command]]
+key = "prefix+{"
+type = "shell"
+command = "/opt/homebrew/bin/herdr pane swap --pane \"$HERDR_ACTIVE_PANE_ID\" --direction up"
+description = "swap pane up"
+
+# tmux default: ! break-pane — no herdr action, and no way to make an empty
+# tab, so the script makes one and closes the placeholder pane.
+[[keys.command]]
+key = "prefix+!"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/break-pane.sh"
+description = "break pane into its own tab"
+
+# tmux: bind-key l splitw -c "#{pane_current_path}" lf
+[[keys.command]]
+key = "prefix+l"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/lf-split.sh down"
+description = "lf in a split below"
+
+# tmux: bind-key L splitw -c "#{pane_current_path}" -h lf
+[[keys.command]]
+key = "prefix+shift+l"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/lf-split.sh right"
+description = "lf in a split to the right"
+
+# No tmux counterpart: the same split, but through `lc`, the cd-on-quit lf
+# wrapper. Quitting lf tears the pane down like every other lf split here.
+# (Lives on M-l because C-l is `sesh last`, as in tmux.conf.)
+[[keys.command]]
+key = "prefix+alt+l"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/lf-split.sh down lc"
+description = "lc (lf) in a throwaway split"
+
+# tmux: bind H swap-window -t -1 \; select-window -p
+[[keys.command]]
+key = "prefix+shift+h"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/tab-move.sh left"
+description = "move this tab left"
+
+# tmux: bind T swap-window -t +1 \; select-window -n
+[[keys.command]]
+key = "prefix+shift+t"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/tab-move.sh right"
+description = "move this tab right"
+
+# --- sesh --------------------------------------------------------------
+# sesh only drives tmux, so scripts/sesh.sh reimplements connect over herdr's
+# socket API while still reading ~/.config/sesh/sesh.toml for the session
+# list, paths, startup commands and windows.
+
+# tmux: bind-key "K" display-popup … gum filter  /  bind-key "V" picker.sh
+# Both tmux chords land on the same fzf picker here — the gum variant is
+# strictly worse (no preview, no source filters, no agent state) and stays
+# available as `sesh.sh gum` for anyone who wants it.
+[[keys.command]]
+key = "prefix+shift+k"
+type = "popup"
+command = "/Users/aayushbajaj/.config/herdr/scripts/sesh.sh picker"
+width = "80%"
+height = "70%"
+description = "sesh picker"
+
+[[keys.command]]
+key = "prefix+shift+v"
+type = "popup"
+command = "/Users/aayushbajaj/.config/herdr/scripts/sesh.sh picker"
+width = "80%"
+height = "70%"
+description = "sesh picker"
+
+# Same picker on the ctrl variants of both chords, since C-a C-k / C-a C-v
+# (ctrl held through the roll) are what the fingers actually produce. Without
+# the ctrl+v spelling the chord fell through to nothing — or to focus_pane_up
+# if ctrl was released early. (Default ctrl+v is only remote_image_paste, raw
+# key, --remote only: no collision.)
+[[keys.command]]
+key = "prefix+ctrl+k"
+type = "popup"
+command = "/Users/aayushbajaj/.config/herdr/scripts/sesh.sh picker"
+width = "80%"
+height = "70%"
+description = "sesh picker"
+
+[[keys.command]]
+key = "prefix+ctrl+v"
+type = "popup"
+command = "/Users/aayushbajaj/.config/herdr/scripts/sesh.sh picker"
+width = "80%"
+height = "70%"
+description = "sesh picker"
+
+# tmux: bind-key C-l run-shell "sesh last"
+[[keys.command]]
+key = "prefix+ctrl+l"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/sesh.sh last"
+description = "sesh last"
+
+# tmux runs startup.sh from tmux.conf via `run-shell -b`; herdr has no such
+# hook, so the pre-warm is a keypress (the aj-startup plugin also fires it on
+# server start — see scripts/plugin/).
+[[keys.command]]
+key = "prefix+alt+w"
+type = "shell"
+command = "/Users/aayushbajaj/.config/herdr/scripts/sesh.sh startup"
+description = "pre-create the always-open sesh workspaces"
+
+# --- resurrect / continuum ---------------------------------------------
+# tmux: set -g @resurrect-restore 'C-S-r' (save is resurrect's prefix+C-s).
+# The 60s autosave is com.aayushbajaj.herdr-snapshot.plist, not a binding.
+[[keys.command]]
+key = "prefix+ctrl+s"
+type = "shell"
+command = "/usr/bin/python3 /Users/aayushbajaj/.config/herdr/scripts/persist.py save"
+description = "save a layout snapshot"
+
+[[keys.command]]
+key = "prefix+ctrl+shift+r"
+type = "popup"
+command = "/usr/bin/python3 /Users/aayushbajaj/.config/herdr/scripts/persist.py restore --name auto; echo; read -r _"
+width = "70%"
+height = "50%"
+description = "restore the last layout snapshot"
+
+# --- tools --------------------------------------------------------------
+# tmux: bind-key C-t display-popup -E -w 80% -h 70% '… tv'
+[[keys.command]]
+key = "prefix+ctrl+t"
+type = "popup"
+command = "PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" tv"
+width = "80%"
+height = "70%"
+description = "television channel picker"
+
+# tmux: bind-key C-g new-window -n gdrive '… tv gdrive … && lf "$f"'
+# A real pane, not a popup: TV renders PDF/image previews over the kitty
+# graphics protocol, and that only flows through panes.
+[[keys.command]]
+key = "prefix+ctrl+g"
+type = "pane"
+command = "export PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\"; f=$(tv gdrive) && [ -n \"$f\" ] && lf \"$f\""
+description = "gdrive (television)"
+
+# No tmux counterpart — kept from the herdr defaults because the tmux habit is
+# to split into lazygit anyway.
+[[keys.command]]
+key = "prefix+alt+g"
+type = "popup"
+command = "lazygit"
+width = "80%"
+height = "80%"
+description = "lazygit"

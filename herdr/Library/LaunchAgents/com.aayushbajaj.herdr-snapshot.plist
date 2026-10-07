@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/aayushbajaj</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.aayushbajaj.herdr-snapshot</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python3</string>
+		<string>/Users/aayushbajaj/.config/herdr/scripts/persist.py</string>
+		<string>save</string>
+		<string>--auto</string>
+		<string>--all-sessions</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/aayushbajaj/Library/Logs/herdr-snapshot.launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/aayushbajaj/Library/Logs/herdr-snapshot.launchd.log</string>
+	<key>StartInterval</key>
+	<integer>60</integer>
+</dict>
+</plist>

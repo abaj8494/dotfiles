@@ -90,3 +90,6 @@ emacs/.emacs.d/savehist
 
 # untracked secrets (sourced by .zshrc)
 zsh/.config/zsh/secrets.zsh
+
+# Python bytecode caches next to helper scripts
+__pycache__/
